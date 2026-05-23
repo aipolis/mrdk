@@ -4,6 +4,7 @@
 import { drawSteeringGauge } from './gaugeDraw.js'
 import { getDisplayLevel, dailyQuote, formatHeaderDate } from './theme.js'
 import { normalizeSections } from './indicators.js'
+import { drawQrCode } from './qrDraw.js'
 
 export const POSTER_W = 1080
 const SCALE = POSTER_W / 750
@@ -15,7 +16,6 @@ const CARD_GAP = sc(20)
 const GRID_CELL_H = sc(132)
 const GRID_GAP = sc(12)
 const FONT = 'PingFang SC, -apple-system, BlinkMacSystemFont, sans-serif'
-const SITE_URL = 'mrdk.pages.dev'
 
 const COLORS = {
   pageTop: '#0c1224',
@@ -415,23 +415,32 @@ function drawTrendCard(ctx, x, y, w, trend) {
 }
 
 function calcFooterHeight() {
-  return sc(120)
+  return sc(28) + sc(40) + sc(156) + sc(48) + sc(28)
 }
 
 function drawFooter(ctx, x, y, w) {
+  const qrSize = sc(140)
   const h = calcFooterHeight()
   drawCard(ctx, x, y, w, h)
+
   ctx.textAlign = 'center'
   ctx.textBaseline = 'alphabetic'
   ctx.fillStyle = COLORS.muted
   ctx.font = `400 ${sc(22)}px ${FONT}`
   ctx.fillText('数据仅供参考，不构成投资建议', x + w / 2, y + sc(36))
+
+  const qrX = x + (w - qrSize) / 2
+  const qrY = y + sc(52)
+  drawQrCode(ctx, qrX, qrY, qrSize)
+
   ctx.fillStyle = COLORS.red
   ctx.font = `600 ${sc(28)}px ${FONT}`
-  ctx.fillText(`完整数据 → ${SITE_URL}`, x + w / 2, y + sc(72))
+  ctx.fillText('完整实时数据更新', x + w / 2, qrY + qrSize + sc(40))
+
   ctx.fillStyle = COLORS.dim
-  ctx.font = `400 ${sc(18)}px ${FONT}`
-  ctx.fillText('抖音发图 · 链接放主页简介', x + w / 2, y + sc(98))
+  ctx.font = `400 ${sc(20)}px ${FONT}`
+  ctx.fillText('扫码访问', x + w / 2, qrY + qrSize + sc(72))
+
   return h
 }
 
