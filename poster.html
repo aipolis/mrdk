@@ -1,0 +1,122 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+  <meta charset="UTF-8"/>
+  <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover"/>
+  <meta name="description" content="明日当空 · 抖音日更海报，一键导出竖版 PNG"/>
+  <title>明日当空 · 分享海报</title>
+  <link rel="stylesheet" href="/css/app.css"/>
+  <style>
+    .poster-page { max-width: 420px; }
+    .poster-preview-wrap {
+      margin: 16px 0;
+      border-radius: 16px;
+      overflow: hidden;
+      border: 1px solid var(--border);
+      background: #070b14;
+      box-shadow: 0 12px 40px rgba(0, 0, 0, 0.35);
+      min-height: 240px;
+      position: relative;
+    }
+    .poster-preview-wrap.loading::after {
+      content: '海报生成中…';
+      position: absolute;
+      inset: 0;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      color: var(--muted);
+      font-size: 14px;
+      pointer-events: none;
+    }
+    #previewCanvas {
+      display: block;
+      width: 100%;
+      max-width: 100%;
+      vertical-align: top;
+    }
+    .poster-actions {
+      display: flex;
+      gap: 12px;
+      margin-bottom: 16px;
+    }
+    .poster-actions .btn-primary { flex: 1; }
+    .poster-actions .btn-secondary { flex: 0 0 auto; }
+    .btn-primary, .btn-secondary {
+      border: none;
+      border-radius: 12px;
+      padding: 14px 20px;
+      font-size: 16px;
+      font-weight: 600;
+      cursor: pointer;
+      font-family: inherit;
+    }
+    .btn-primary {
+      background: #ff4d4f;
+      color: #fff;
+    }
+    .btn-primary:disabled {
+      opacity: 0.45;
+      cursor: not-allowed;
+    }
+    .btn-secondary {
+      background: var(--card);
+      color: var(--text);
+      border: 1px solid var(--border);
+    }
+    .poster-tips {
+      color: var(--muted);
+      font-size: 14px;
+      line-height: 1.7;
+      padding: 16px;
+      background: var(--card);
+      border-radius: 12px;
+      border: 1px solid var(--border);
+    }
+    .poster-tips li { margin-left: 18px; margin-bottom: 6px; }
+  </style>
+</head>
+<body>
+  <section class="page poster-page">
+    <header class="site-header">
+      <section class="brand">
+        <span class="brand-mark">明</span>
+        <span class="brand-name">分享海报</span>
+      </section>
+      <section class="header-actions">
+        <a class="nav-link" href="/">情绪</a>
+        <a class="nav-link" href="/history.html">历史</a>
+        <a class="nav-link active" href="/poster.html">海报</a>
+      </section>
+    </header>
+
+    <p class="status-bar" id="statusBar">正在加载…</p>
+
+    <section class="poster-preview-wrap">
+      <canvas id="previewCanvas" aria-label="海报预览"></canvas>
+    </section>
+
+    <section class="poster-actions">
+      <button type="button" class="btn-primary" id="downloadBtn" disabled>下载 PNG（与首页一致）</button>
+      <button type="button" class="btn-secondary" id="refreshBtn" title="刷新">↻</button>
+    </section>
+
+    <article class="poster-tips">
+      <strong>抖音发图建议</strong>
+      <ul>
+        <li>含：情绪表盘、昨日概览、盘中实时（不含外围/竞价/趋势，更适合手机竖图）</li>
+        <li>高度随内容自动调整，一屏内信息更集中</li>
+        <li>发图时在简介固定放 <code>mrdk.pages.dev</code></li>
+        <li>更好效果：用剪映给海报加 5 秒轻微放大动画</li>
+        <li>口播带一句：数据仅供参考，不构成投资建议</li>
+      </ul>
+    </article>
+
+    <footer class="site-footer">
+      <p>数据仅供参考，不构成投资建议。</p>
+    </footer>
+  </section>
+
+  <script type="module" src="/js/poster.js"></script>
+</body>
+</html>

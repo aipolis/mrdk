@@ -1,38 +1,12 @@
-import { API_BASE, FETCH_TIMEOUT_MS, AUTO_REFRESH_MS } from './config.js'
+import { AUTO_REFRESH_MS } from './config.js'
 import { drawSteeringGauge } from './gaugeDraw.js'
 import { getDisplayLevel, dailyQuote, formatHeaderDate } from './theme.js'
 import { normalizeSections } from './indicators.js'
+import { fetchToday, fetchHistory } from './api.js'
+
+export { fetchToday, fetchHistory }
 
 const $ = (sel) => document.querySelector(sel)
-
-async function fetchJson(path) {
-  const ctrl = new AbortController()
-  const timer = setTimeout(() => ctrl.abort(), FETCH_TIMEOUT_MS)
-  try {
-    const res = await fetch(`${API_BASE.replace(/\/$/, '')}${path}`, {
-      signal: ctrl.signal,
-      headers: { Accept: 'application/json' },
-    })
-    const json = await res.json()
-    if (json.code === 2 && /预热/.test(json.message || '')) {
-      const err = new Error(json.message || '缓存预热中')
-      err.warming = true
-      throw err
-    }
-    if (json.code !== 0) throw new Error(json.message || `请求失败 ${res.status}`)
-    return json.data
-  } finally {
-    clearTimeout(timer)
-  }
-}
-
-export function fetchToday() {
-  return fetchJson('/api/sentiment/today')
-}
-
-export function fetchHistory(days = 30) {
-  return fetchJson(`/api/sentiment/history?days=${days}&tab=day`)
-}
 
 function esc(s) {
   return String(s ?? '')

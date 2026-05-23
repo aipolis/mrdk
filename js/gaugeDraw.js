@@ -66,7 +66,10 @@ export function drawSteeringGauge(ctx, width, height, score, theme = 'dark', opt
   const cx = snap(width / 2)
   const cy = snap(height * 0.62)
   const radius = snap(Math.min(width * 0.4, height * 0.46))
-  const bandW = 16
+  const bandW = options.bandWidth != null
+    ? options.bandWidth
+    : Math.max(14, Math.round(radius * 0.16))
+  const bandScale = bandW / 16
   const isLight = theme === 'light'
 
   if (!skipClear) ctx.clearRect(0, 0, width, height)
@@ -80,7 +83,7 @@ export function drawSteeringGauge(ctx, width, height, score, theme = 'dark', opt
     ctx.stroke()
   }
 
-  strokeArc(START_ANGLE, START_ANGLE + SWEEP, isLight ? '#e5e7eb' : '#232b3e', bandW + 8, 'round')
+  strokeArc(START_ANGLE, START_ANGLE + SWEEP, isLight ? '#e5e7eb' : '#232b3e', bandW + Math.round(8 * bandScale), 'round')
 
   const segTotal = 40
   const gap = 0.012
@@ -95,7 +98,7 @@ export function drawSteeringGauge(ctx, width, height, score, theme = 'dark', opt
   const tipR = radius + bandW / 2 + 1
   const tipX = cx + tipR * Math.cos(pointerAngle)
   const tipY = cy + tipR * Math.sin(pointerAngle)
-  const baseR = radius - bandW / 2 - 8
+  const baseR = radius - bandW / 2 - Math.round(8 * bandScale)
   const baseX = cx + baseR * Math.cos(pointerAngle)
   const baseY = cy + baseR * Math.sin(pointerAngle)
   const pointerColor = segmentFillColor(s, true, theme)
@@ -103,21 +106,25 @@ export function drawSteeringGauge(ctx, width, height, score, theme = 'dark', opt
   const py = Math.sin(pointerAngle)
   const nx = -py
   const ny = px
+  const pw = 6 * bandScale
+  const pl = 9 * bandScale
 
   ctx.beginPath()
   ctx.moveTo(tipX, tipY)
-  ctx.lineTo(baseX + nx * 6 - px * 9, baseY + ny * 6 - py * 9)
-  ctx.lineTo(baseX - nx * 6 - px * 9, baseY - ny * 6 - py * 9)
+  ctx.lineTo(baseX + nx * pw - px * pl, baseY + ny * pw - py * pl)
+  ctx.lineTo(baseX - nx * pw - px * pl, baseY - ny * pw - py * pl)
   ctx.closePath()
   ctx.fillStyle = pointerColor
   ctx.fill()
 
+  const tipOuter = Math.max(4, 5 * bandScale)
+  const tipInner = Math.max(2.5, 3 * bandScale)
   ctx.beginPath()
-  ctx.arc(tipX, tipY, 5, 0, Math.PI * 2)
+  ctx.arc(tipX, tipY, tipOuter, 0, Math.PI * 2)
   ctx.fillStyle = '#ffffff'
   ctx.fill()
   ctx.beginPath()
-  ctx.arc(tipX, tipY, 3, 0, Math.PI * 2)
+  ctx.arc(tipX, tipY, tipInner, 0, Math.PI * 2)
   ctx.fillStyle = pointerColor
   ctx.fill()
 }
