@@ -1,82 +1,113 @@
 # Cloudflare Pages 部署说明
 
-## 一、本地预览
+## 仓库说明
 
-在项目根目录执行：
+网站代码在 **`web/`** 目录，并已单独关联 GitHub：
+
+- 仓库：[github.com/aipolis/mrdk](https://github.com/aipolis/mrdk)
+- 分支：`main`
+- 仓库根目录即网站根（含 `index.html`），**不是**整个「明日当空」 monorepo
+
+在 `web/` 目录内执行 git 命令：
+
+```powershell
+cd "c:\Users\Administrator\Desktop\量化交易\明日当空\web"
+git status
+git add .
+git commit -m "说明你的修改"
+git push origin main
+```
+
+---
+
+## 一、Cloudflare Pages 连接 Git（推荐）
+
+### 首次：从「手动上传」改为 Git 部署
+
+若已有 `mrdk.pages.dev` 且是 Upload 创建的，建议 **新建一个 Git 项目**，或删除旧项目后重建（Custom domain 可再绑回来）。
+
+### 步骤
+
+1. 打开 [Cloudflare Dashboard](https://dash.cloudflare.com) → **Workers & Pages** → **Create**
+2. 选 **Pages** → **Connect to Git**
+3. 授权 **GitHub**，选择仓库 **`aipolis/mrdk`**
+4. **Build settings**（静态站，无需构建）：
+
+| 配置项 | 填写 |
+|--------|------|
+| Production branch | `main` |
+| Framework preset | **None** |
+| Build command | （留空） |
+| Build output directory | `/` |
+
+> ⚠️ 若误填 `web`，部署会失败（本仓库根目录就是网站，没有上层 `web` 文件夹）。
+
+5. 点 **Save and Deploy**，等待 1～2 分钟
+6. 得到 `https://mrdk.pages.dev`（或 Cloudflare 分配的新子域）
+7. 若之前有自定义域名：项目 → **Custom domains** → 重新绑定
+
+### 之后每次更新
 
 ```powershell
 cd web
-python -m http.server 8080
+git add .
+git commit -m "更新说明"
+git push origin main
 ```
 
-浏览器打开：http://127.0.0.1:8080
+Push 后 Cloudflare **自动重新部署**，一般 1～2 分钟生效。
 
-> 必须用 HTTP 服务打开（ES Module 不支持 file:// 协议）。
+---
 
-## 二、Cloudflare Pages 部署
+## 二、本地预览
 
-### 方式 A：直接上传（最快）
+```powershell
+cd web
+.\preview.ps1
+```
 
-1. 登录 [Cloudflare Dashboard](https://dash.cloudflare.com) → **Workers & Pages** → **Create**
-2. 选择 **Pages** → **Upload assets**
-3. 将整个 `web/` 文件夹内容打包为 zip（zip 根目录需包含 `index.html`）
-4. 上传后获得地址：`https://xxx.pages.dev`
+浏览器打开：http://127.0.0.1:8888
 
-### 方式 B：连接 Git（推荐长期）
-
-1. 将项目 push 到 GitHub / GitLab
-2. Cloudflare Pages → **Connect to Git**
-3. 构建设置：
-
-| 项 | 值 |
-|----|-----|
-| Production branch | `main` 或 `master` |
-| Build command | （留空） |
-| Build output directory | `web` |
-
-4. 保存并部署
+---
 
 ## 三、API 配置
 
-编辑 `web/js/config.js` 中的 `API_BASE`：
+`web/js/config.js`：
 
 ```javascript
 export const API_BASE = 'https://mingri-api-260693-8-1435576840.sh.run.tcloudbase.com'
+export const AUTO_REFRESH_MS = 2 * 60 * 1000  // 首页每 2 分钟自动刷新
 ```
 
-后端 CORS 已允许跨域（`allow_origins=["*"]`），无需额外配置。
+---
 
-## 四、自定义域名（可选）
+## 四、部署后检查
 
-Cloudflare Pages → 项目 → **Custom domains** → 添加你的域名。
+- [ ] 首页情绪分、指标板块正常
+- [ ] `/history.html` 上证涨跌带 `%`
+- [ ] 首页约 2 分钟自动静默刷新
+- [ ] 页脚免责声明可见
 
-## 五、部署后检查
+---
 
-1. 首页能显示情绪分仪表盘
-2. 四大指标板块有数据
-3. `/history.html` 历史列表正常
-4. 页脚免责声明可见
+## 五、方式 A：手动上传（备用）
 
-若显示「缓存预热中」，等待 5 秒自动重试，或调用：
+不想用 Git 时：Pages → **Upload assets**，将 `web/` **内部文件**打 zip（根目录含 `index.html`）上传。
 
-```
-POST https://你的API/api/cache/warm-home
-Header: x-cron-secret: 你的密钥
-```
+---
 
-## 六、目录结构
+## 目录结构
 
 ```
-web/
-  index.html          首页
-  history.html        历史页
-  css/app.css         样式
+web/                    ← Git 仓库根（推送到 aipolis/mrdk）
+  index.html
+  history.html
+  css/app.css
   js/
-    config.js         API 地址
-    app.js            首页逻辑
-    history.js        历史页
-    gaugeDraw.js      仪表盘 Canvas
-    theme.js          等级/语录
-    indicators.js     指标板块
-  _headers            Cloudflare 安全头
+    config.js
+    app.js
+    history.js
+    ...
+  _headers
+  preview.ps1
 ```
