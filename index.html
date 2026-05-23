@@ -1,0 +1,81 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+  <meta charset="UTF-8"/>
+  <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover"/>
+  <meta name="description" content="明日当空 · A股短线情绪量化参考工具，龙空龙复盘辅助，数据仅供参考，不构成投资建议。"/>
+  <title>明日当空 · 市场情绪</title>
+  <link rel="stylesheet" href="/css/app.css"/>
+</head>
+<body>
+  <section class="page">
+    <header class="site-header">
+      <section class="brand">
+        <span class="brand-mark">明</span>
+        <span class="brand-name">明日当空</span>
+      </section>
+      <section class="header-actions">
+        <span class="header-date" id="headerDate">--</span>
+        <a class="nav-link active" href="/">情绪</a>
+        <a class="nav-link" href="/history.html">历史</a>
+        <button type="button" class="btn-icon" id="refreshBtn" title="刷新">↻</button>
+      </section>
+    </header>
+
+    <p class="status-bar" id="statusBar">正在加载…</p>
+
+    <section id="loadingSkeleton">
+      <span class="skeleton"></span>
+      <span class="skeleton mid"></span>
+      <span class="skeleton"></span>
+    </section>
+
+    <section id="contentBlock" hidden>
+      <article class="card quote-bar">
+        <span class="pill">与君共勉</span>
+        <p class="quote-text" id="quoteText">买在分歧，卖在一致。</p>
+      </article>
+
+      <article class="card gauge-card">
+        <header class="gauge-head">
+          <span class="gauge-title">市场情绪</span>
+          <span class="gauge-time" id="generatedAt">更新中</span>
+        </header>
+        <section class="gauge-level-row">
+          <span class="gauge-level neutral" id="levelLabel">--</span>
+          <span class="gauge-desc" id="positionDesc"></span>
+        </section>
+        <section class="gauge-body">
+          <canvas id="gaugeCanvas" class="gauge-canvas"></canvas>
+          <section class="gauge-hub">
+            <span class="gauge-score neutral" id="displayScore">--</span>
+            <span class="gauge-score-label">情绪分</span>
+          </section>
+        </section>
+        <footer class="gauge-foot" id="baselineFoot" hidden>
+          <span class="gauge-baseline" id="baselineLine">基准分 --</span>
+          <span class="gauge-baseline-hint"> · 昨日+外围，盘中不变</span>
+        </footer>
+        <p class="empty-tip" id="emptyTip" hidden></p>
+      </article>
+
+      <section id="sections"></section>
+
+      <article class="card trend-card">
+        <h2 class="trend-title">近 10 日情绪趋势</h2>
+        <canvas id="trendCanvas" class="trend-canvas"></canvas>
+      </article>
+    </section>
+
+    <footer class="site-footer">
+      <p><strong>免责声明</strong>：本站展示的市场情绪数据、指标与分数均为作者个人复盘参考，<strong>不构成任何投资建议或证券咨询</strong>。市场有风险，决策需独立判断。</p>
+      <p class="footer-meta">数据来源：公开行情接口 · API 由作者自建服务提供</p>
+    </footer>
+  </section>
+
+  <script type="module">
+    import { initHomePage } from '/js/app.js'
+    initHomePage()
+  </script>
+</body>
+</html>
