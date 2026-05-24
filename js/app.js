@@ -1,11 +1,13 @@
 import { AUTO_REFRESH_MS } from './config.js'
-import { drawSteeringGauge } from './gaugeDraw.js'
 import { getDisplayLevel, dailyQuote, formatHeaderDate } from './theme.js'
 import { normalizeSections } from './indicators.js'
 import { fetchToday, fetchHistory, fetchDay } from './api.js'
 import { createTrendController } from './trendDraw.js'
+import { createGaugeController, IDLE_MIN_MS } from './gaugeAnim.js'
 
 export { fetchToday, fetchHistory }
+
+const LOADING_DESC = '正在汇总昨日收盘数据…'
 
 const $ = (sel) => document.querySelector(sel)
 
@@ -17,15 +19,109 @@ function esc(s) {
     .replace(/"/g, '&quot;')
 }
 
-function setupGaugeCanvas(canvas, score) {
-  if (!canvas) return
-  const dpr = window.devicePixelRatio || 1
-  const rect = canvas.getBoundingClientRect()
-  canvas.width = Math.round(rect.width * dpr)
-  canvas.height = Math.round(rect.height * dpr)
-  const ctx = canvas.getContext('2d')
-  ctx.setTransform(dpr, 0, 0, dpr, 0, 0)
-  drawSteeringGauge(ctx, rect.width, rect.height, score, 'dark')
+let gaugeCtrl = null
+let gaugeIdleTimer = null
+let gaugePendingMeta = null
+let gaugeFetchStartAt = 0
+
+function ensureGaugeCtrl() {
+  if (gaugeCtrl) return gaugeCtrl
+  gaugeCtrl = createGaugeController({
+    getTheme: () => 'dark',
+    onScoreReveal: (score) => {
+      setGaugeCalculating(false)
+      const el = $('#displayScore')
+      if (el) el.textContent = String(score)
+    },
+  })
+  return gaugeCtrl
+}
+
+function bindGaugeCanvas() {
+  return ensureGaugeCtrl().bindCanvas($('#gaugeCanvas'))
+}
+
+function setGaugeCalculating(on) {
+  const dots = $('#gaugeDots')
+  const score = $('#displayScore')
+  const level = $('#levelLabel')
+  if (dots) {
+    dots.hidden = !on
+    dots.setAttribute('aria-hidden', on ? 'false' : 'true')
+  }
+  if (score) score.hidden = on
+  if (level && on) {
+    level.textContent = '计算中'
+    level.className = 'gauge-level calculating'
+  }
+}
+
+function applyGaugeMeta(data, displayScore, level) {
+  const meta = gaugePendingMeta || {}
+  const levelLabel = data.levelLabel || data.displayLevel || meta.levelLabel || level.label
+  const levelClass = data.levelClass || meta.levelClass || level.class
+  const positionDesc = data.positionDesc || meta.positionDesc || ''
+
+  $('#levelLabel').textContent = levelLabel
+  $('#levelLabel').className = `gauge-level ${levelClass}`
+  $('#positionDesc').textContent = positionDesc
+  $('#displayScore').textContent = displayScore
+  $('#displayScore').className = `gauge-score ${levelClass}`
+  setGaugeCalculating(false)
+}
+
+function stopGaugeAnimation() {
+  if (gaugeIdleTimer) {
+    clearTimeout(gaugeIdleTimer)
+    gaugeIdleTimer = null
+  }
+  ensureGaugeCtrl().stop()
+}
+
+function beginGaugeLoading() {
+  gaugeFetchStartAt = Date.now()
+  bindGaugeCanvas()
+  setGaugeCalculating(true)
+  $('#positionDesc').textContent = LOADING_DESC
+  ensureGaugeCtrl().startIdle(IDLE_MIN_MS)
+}
+
+function finishGaugeAnimation(displayScore, data, level, options = {}) {
+  const { skipAnim = false } = options
+  const ctrl = ensureGaugeCtrl()
+  bindGaugeCanvas()
+
+  const done = () => {
+    applyGaugeMeta(data, displayScore, level)
+    gaugePendingMeta = null
+  }
+
+  if (skipAnim) {
+    stopGaugeAnimation()
+    ctrl.drawFinal(displayScore)
+    applyGaugeMeta(data, displayScore, level)
+    gaugePendingMeta = null
+    return
+  }
+
+  if (gaugeIdleTimer) {
+    clearTimeout(gaugeIdleTimer)
+    gaugeIdleTimer = null
+  }
+
+  if (!ctrl.isIdle()) {
+    setGaugeCalculating(true)
+    ctrl.startIdle(IDLE_MIN_MS)
+    gaugeFetchStartAt = Date.now()
+  }
+
+  const elapsed = Date.now() - (gaugeFetchStartAt || Date.now())
+  const remain = Math.max(600, IDLE_MIN_MS - elapsed)
+
+  gaugeIdleTimer = setTimeout(() => {
+    gaugeIdleTimer = null
+    ctrl.settleTo(displayScore, done)
+  }, remain)
 }
 
 function renderPeripheral(items) {
@@ -97,7 +193,8 @@ function renderSections(sections) {
   `).join('')
 }
 
-function applyData(data) {
+function applyData(data, options = {}) {
+  const { silent = false } = options
   const displayScore = data.displayScore != null ? data.displayScore : data.score
   const level = getDisplayLevel(displayScore)
   const quote = dailyQuote(data.adviceDate || data.date)
@@ -107,11 +204,16 @@ function applyData(data) {
   $('#headerDate').textContent = formatHeaderDate()
   $('#generatedAt').textContent = data.generatedAtLabel || data.generatedAt || '更新中'
   $('#quoteText').textContent = formattedQuote
-  $('#levelLabel').textContent = data.levelLabel || data.displayLevel || level.label
-  $('#levelLabel').className = `gauge-level ${data.levelClass || level.class}`
-  $('#positionDesc').textContent = data.positionDesc || ''
-  $('#displayScore').textContent = displayScore
-  $('#displayScore').className = `gauge-score ${data.levelClass || level.class}`
+
+  gaugePendingMeta = {
+    levelLabel: data.levelLabel || data.displayLevel || level.label,
+    levelClass: data.levelClass || level.class,
+    positionDesc: data.positionDesc || '',
+  }
+
+  if (!silent) {
+    $('#positionDesc').textContent = LOADING_DESC
+  }
 
   const foot = $('#baselineFoot')
   if (data.scoreMode === 'live' && data.baselineScore != null) {
@@ -130,11 +232,18 @@ function applyData(data) {
     emptyTip.hidden = true
   }
 
-  setupGaugeCanvas($('#gaugeCanvas'), displayScore)
   renderSections(normalizeSections(data.indicatorSections, data))
 
   $('#statusBar').textContent = `参考日 ${data.refDate || data.adviceDate || '--'} · 数据已更新`
   $('#statusBar').className = 'status-bar ok'
+
+  if (silent) {
+    stopGaugeAnimation()
+    ensureGaugeCtrl().drawFinal(displayScore)
+    applyGaugeMeta(data, displayScore, level)
+  } else {
+    finishGaugeAnimation(displayScore, data, level)
+  }
 }
 
 function showError(err) {
@@ -196,6 +305,7 @@ async function attachAuctionArchives(data, histList) {
 export async function loadHome(options = {}) {
   const { silent = false } = options
   if (!silent) {
+    gaugeFetchStartAt = Date.now()
     showLoading()
   } else {
     const bar = $('#statusBar')
@@ -211,8 +321,9 @@ export async function loadHome(options = {}) {
     ])
     if (!silent) hideLoading()
     const histList = histData?.list || histData || []
+    if (!silent) beginGaugeLoading()
     await attachAuctionArchives(data, histList)
-    applyData(data)
+    applyData(data, { silent })
     if (Array.isArray(histList) && histList.length) {
       initTrendController().setHistoryList(histList)
     } else if (Array.isArray(data.trend) && data.trend.length) {
@@ -261,10 +372,15 @@ function stopAutoRefresh() {
 
 export function initHomePage() {
   initTrendController()
+  bindGaugeCanvas()
   $('#refreshBtn')?.addEventListener('click', () => loadHome())
   window.addEventListener('resize', () => {
+    const ctrl = ensureGaugeCtrl()
+    ctrl.bindCanvas($('#gaugeCanvas'))
     const score = Number($('#displayScore')?.textContent)
-    if (!Number.isNaN(score)) setupGaugeCanvas($('#gaugeCanvas'), score)
+    if (!Number.isNaN(score) && $('#displayScore')?.hidden === false) {
+      ctrl.drawFinal(score)
+    }
     trendCtrl?.render()
   })
   document.addEventListener('visibilitychange', () => {

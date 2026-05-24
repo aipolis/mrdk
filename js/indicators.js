@@ -50,6 +50,13 @@ const INTRADAY_DEFS = [
 
 const ZERO_PCT = new Set(['+0.00%', '-0.00%', '0.00%', '0%', '0', '0.0'])
 
+function shouldShowAuctionTodayValues() {
+  const now = new Date()
+  const wd = now.getDay()
+  if (wd === 0 || wd === 6) return false
+  return now.getHours() * 60 + now.getMinutes() >= 9 * 60 + 15
+}
+
 
 
 function pickPrev(primary, fallback) {
@@ -154,20 +161,18 @@ function buildAuctionPrevMap(data) {
   const refMap = archiveByKey(data?.refAuctionArchive)
   const prevMap = archiveByKey(data?.prevAuctionArchive)
   const m = data?.metrics || {}
-  const grid = data?.grid9 || []
-  const byKey = {}
-  grid.forEach((c) => { byKey[c.key || c.name] = c })
 
   AUCTION_DEFS.forEach(({ key }) => {
     if (map[key] && map[key] !== '--') return
     const picked = pickPrevMany(
-      auctionArchiveVal(refMap[key]),
+      prevMap[key]?.prev,
+      prevMap[key]?.yesterday,
+      auctionArchiveVal(prevMap[key]),
       refMap[key]?.prev,
       refMap[key]?.yesterday,
-      auctionArchiveVal(prevMap[key]),
-      key === 'auctionOneWord' ? m.one_word_count : null,
+      auctionArchiveVal(refMap[key]),
       key === 'auctionOneWord' ? m.auction_one_word_count : null,
-      key === 'auctionOneWord' ? byKey.oneWord?.value : null,
+      key === 'auctionOneWord' ? m.auction_one_word : null,
       key === 'auctionVolume' ? formatYi(m.auction_volume_yi) : null,
       key === 'yesterdayFirst' ? formatPct(m.first_board_auction_chg) : null,
       key === 'yesterdayMulti' ? formatPct(m.multi_board_auction_chg) : null,
@@ -182,22 +187,21 @@ function buildAuctionPrevMap(data) {
 
 function mergeAuctionItems(rawItems, data) {
   const prevMap = buildAuctionPrevMap(data)
-  const refMap = archiveByKey(data?.refAuctionArchive)
+  const showToday = shouldShowAuctionTodayValues()
   const byKey = {}
   ;(data?.auction || []).forEach((it) => { if (it?.key) byKey[it.key] = it })
   ;(rawItems || []).forEach((it) => { if (it?.key) byKey[it.key] = it })
 
   return AUCTION_DEFS.map(({ key, label }) => {
     const it = byKey[key]
-    const prev = pickPrev(it?.prev ?? it?.yesterday, prevMap[key])
-    let value = it?.displayValue ?? it?.value
-    value = value != null && String(value).trim() !== '' ? String(value) : '--'
-    if (ZERO_PCT.has(value)) value = '--'
-    if (value === '--') {
-      const refVal = auctionArchiveVal(refMap[key])
-      if (refVal) value = refVal
+    const prev = pickPrev(showToday && it ? (it.prev ?? it.yesterday) : null, prevMap[key])
+    let value = '--'
+    if (showToday && it) {
+      value = it.displayValue ?? it.value
+      value = value != null && String(value).trim() !== '' ? String(value) : '--'
+      if (ZERO_PCT.has(value)) value = '--'
+      if (key === 'auctionOneWord' && value === '0') value = '--'
     }
-    if (key === 'auctionOneWord' && value === '0') value = '--'
     return {
       key,
       label: it?.label || label,
