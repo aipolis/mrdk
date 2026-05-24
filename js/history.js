@@ -1,5 +1,6 @@
-import { fetchHistory } from './app.js'
+import { fetchHistory } from './api.js'
 import { getDisplayLevel } from './theme.js'
+import { createTrendController } from './trendDraw.js'
 
 const $ = (sel) => document.querySelector(sel)
 
@@ -47,14 +48,29 @@ function renderList(list) {
   }).join('')
 }
 
+let trendCtrl = null
+
+function initTrendController() {
+  if (trendCtrl) return trendCtrl
+  trendCtrl = createTrendController({
+    canvas: $('#trendCanvas'),
+    titleEl: $('#trendTitle'),
+    periodRoot: $('#trendPeriods'),
+    defaultDays: 10,
+  })
+  return trendCtrl
+}
+
 export async function loadHistoryPage() {
   $('#historyStatus').textContent = '加载中…'
   $('#historyStatus').className = 'status-bar'
   try {
     const data = await fetchHistory(30)
     const list = (data && data.list) || data || []
-    renderList(Array.isArray(list) ? list : [])
-    $('#historyStatus').textContent = `共 ${Array.isArray(list) ? list.length : 0} 条记录`
+    const rows = Array.isArray(list) ? list : []
+    renderList(rows)
+    initTrendController().setHistoryList(rows)
+    $('#historyStatus').textContent = `共 ${rows.length} 条记录`
     $('#historyStatus').className = 'status-bar ok'
   } catch (err) {
     $('#historyStatus').textContent = err?.message || '加载失败'
@@ -63,6 +79,8 @@ export async function loadHistoryPage() {
 }
 
 export function initHistoryPage() {
+  initTrendController()
   $('#refreshBtn')?.addEventListener('click', () => loadHistoryPage())
+  window.addEventListener('resize', () => trendCtrl?.render())
   loadHistoryPage()
 }

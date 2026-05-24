@@ -28,3 +28,9 @@ export function fetchToday() {
 export function fetchHistory(days = 30) {
   return fetchJson(`/api/sentiment/history?days=${days}&tab=day`)
 }
+
+export function fetchDay(date) {
+  const d = String(date || '').replace(/-/g, '').slice(0, 8)
+  if (!d) return Promise.reject(new Error('无效日期'))
+  return fetchJson(`/api/sentiment/day?date=${d}`)
+}

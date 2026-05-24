@@ -2,7 +2,8 @@ import { AUTO_REFRESH_MS } from './config.js'
 import { drawSteeringGauge } from './gaugeDraw.js'
 import { getDisplayLevel, dailyQuote, formatHeaderDate } from './theme.js'
 import { normalizeSections } from './indicators.js'
-import { fetchToday, fetchHistory } from './api.js'
+import { fetchToday, fetchHistory, fetchDay } from './api.js'
+import { createTrendController } from './trendDraw.js'
 
 export { fetchToday, fetchHistory }
 
@@ -56,8 +57,10 @@ function renderGridSection(section) {
     for (const cell of row) {
       const arrow = cell.trendArrow || ''
       const good = cell.trendGood !== false
-      const prev = cell.prev && cell.prev !== '--'
-        ? `<span class="grid9-sub"><span class="grid9-sub-prefix">${prefix}</span><span class="grid9-sub-val">${esc(cell.prev)}</span></span>`
+      const prevText = cell.prev && cell.prev !== '--' ? cell.prev : '--'
+      const showPrev = section.id === 'auction' || (cell.prev && cell.prev !== '--')
+      const prev = showPrev
+        ? `<span class="grid9-sub"><span class="grid9-sub-prefix">${prefix}</span><span class="grid9-sub-val">${esc(prevText)}</span></span>`
         : '<span class="grid9-sub grid9-sub--empty"></span>'
       html += `
         <article class="grid9-cell">
@@ -94,68 +97,6 @@ function renderSections(sections) {
   `).join('')
 }
 
-function drawTrend(canvas, trend) {
-  if (!canvas) return
-  window.__lastTrend = trend || []
-  if (!trend?.length) return
-
-  const dpr = window.devicePixelRatio || 1
-  const rect = canvas.getBoundingClientRect()
-  canvas.width = Math.round(rect.width * dpr)
-  canvas.height = Math.round(rect.height * dpr)
-  const ctx = canvas.getContext('2d')
-  ctx.setTransform(dpr, 0, 0, dpr, 0, 0)
-  const w = rect.width
-  const h = rect.height
-  ctx.clearRect(0, 0, w, h)
-
-  const padL = 28
-  const padR = 12
-  const padT = 20
-  const padB = 32
-  const chartW = w - padL - padR
-  const chartH = h - padT - padB
-  const n = trend.length
-
-  ctx.strokeStyle = 'rgba(255,255,255,0.06)'
-  ctx.lineWidth = 1
-  for (let i = 0; i <= 4; i++) {
-    const y = padT + (chartH / 4) * i
-    ctx.beginPath()
-    ctx.moveTo(padL, y)
-    ctx.lineTo(padL + chartW, y)
-    ctx.stroke()
-  }
-
-  const points = trend.map((item, i) => ({
-    x: padL + (n <= 1 ? chartW / 2 : (i / (n - 1)) * chartW),
-    y: padT + chartH - (Math.max(0, Math.min(100, item.score)) / 100) * chartH,
-    date: item.date,
-  }))
-
-  ctx.strokeStyle = '#ff4d4f'
-  ctx.lineWidth = 2
-  ctx.beginPath()
-  points.forEach((p, i) => {
-    if (i === 0) ctx.moveTo(p.x, p.y)
-    else ctx.lineTo(p.x, p.y)
-  })
-  ctx.stroke()
-
-  points.forEach((p, i) => {
-    ctx.fillStyle = '#ff4d4f'
-    ctx.beginPath()
-    ctx.arc(p.x, p.y, 3, 0, Math.PI * 2)
-    ctx.fill()
-    if (i === 0 || i === Math.floor((n - 1) / 2) || i === n - 1) {
-      ctx.fillStyle = '#6b7280'
-      ctx.font = '10px sans-serif'
-      ctx.textAlign = 'center'
-      ctx.fillText(String(p.date), p.x, padT + chartH + 14)
-    }
-  })
-}
-
 function applyData(data) {
   const displayScore = data.displayScore != null ? data.displayScore : data.score
   const level = getDisplayLevel(displayScore)
@@ -190,8 +131,7 @@ function applyData(data) {
   }
 
   setupGaugeCanvas($('#gaugeCanvas'), displayScore)
-  renderSections(normalizeSections(data.indicatorSections))
-  drawTrend($('#trendCanvas'), data.trend || [])
+  renderSections(normalizeSections(data.indicatorSections, data))
 
   $('#statusBar').textContent = `参考日 ${data.refDate || data.adviceDate || '--'} · 数据已更新`
   $('#statusBar').className = 'status-bar ok'
@@ -219,6 +159,39 @@ function hideLoading() {
 
 let retryTimer = null
 let refreshTimer = null
+let trendCtrl = null
+
+function initTrendController() {
+  if (trendCtrl) return trendCtrl
+  trendCtrl = createTrendController({
+    canvas: $('#trendCanvas'),
+    titleEl: $('#trendTitle'),
+    periodRoot: $('#trendPeriods'),
+    defaultDays: 10,
+  })
+  return trendCtrl
+}
+
+function tradeDateKey(raw) {
+  return String(raw || '').replace(/-/g, '').slice(0, 8)
+}
+
+async function attachAuctionArchives(data, histList) {
+  const refD = tradeDateKey(data.refDate)
+  if (!refD) return data
+
+  const rows = Array.isArray(histList) ? histList : []
+  const refIdx = rows.findIndex((i) => tradeDateKey(i.date) === refD)
+  const prevD = refIdx >= 0 ? tradeDateKey(rows[refIdx + 1]?.date) : ''
+
+  const fetches = [fetchDay(refD).catch(() => null)]
+  if (prevD && prevD !== refD) fetches.push(fetchDay(prevD).catch(() => null))
+  const [refDetail, prevDetail] = await Promise.all(fetches)
+
+  data.refAuctionArchive = refDetail?.auction || []
+  data.prevAuctionArchive = prevDetail?.auction || []
+  return data
+}
 
 export async function loadHome(options = {}) {
   const { silent = false } = options
@@ -232,9 +205,24 @@ export async function loadHome(options = {}) {
     }
   }
   try {
-    const data = await fetchToday()
+    const [data, histData] = await Promise.all([
+      fetchToday(),
+      fetchHistory(20).catch(() => null),
+    ])
     if (!silent) hideLoading()
+    const histList = histData?.list || histData || []
+    await attachAuctionArchives(data, histList)
     applyData(data)
+    if (Array.isArray(histList) && histList.length) {
+      initTrendController().setHistoryList(histList)
+    } else if (Array.isArray(data.trend) && data.trend.length) {
+      initTrendController().setHistoryList(
+        data.trend.slice().reverse().map((item) => ({
+          date: item.date,
+          score: item.score,
+        }))
+      )
+    }
     if (retryTimer) {
       clearTimeout(retryTimer)
       retryTimer = null
@@ -272,11 +260,12 @@ function stopAutoRefresh() {
 }
 
 export function initHomePage() {
+  initTrendController()
   $('#refreshBtn')?.addEventListener('click', () => loadHome())
   window.addEventListener('resize', () => {
     const score = Number($('#displayScore')?.textContent)
     if (!Number.isNaN(score)) setupGaugeCanvas($('#gaugeCanvas'), score)
-    drawTrend($('#trendCanvas'), window.__lastTrend || [])
+    trendCtrl?.render()
   })
   document.addEventListener('visibilitychange', () => {
     if (!document.hidden) loadHome({ silent: true })

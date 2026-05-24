@@ -63,7 +63,14 @@
       <section id="sections"></section>
 
       <article class="card trend-card">
-        <h2 class="trend-title">近 10 日情绪趋势</h2>
+        <header class="trend-head">
+          <h2 class="trend-title" id="trendTitle">近 10 日情绪趋势</h2>
+          <section class="trend-periods" id="trendPeriods">
+            <button type="button" class="trend-period" data-days="5">5天</button>
+            <button type="button" class="trend-period active" data-days="10">10天</button>
+            <button type="button" class="trend-period" data-days="20">20天</button>
+          </section>
+        </header>
         <canvas id="trendCanvas" class="trend-canvas"></canvas>
       </article>
     </section>

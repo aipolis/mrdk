@@ -388,10 +388,45 @@ a {
   margin-bottom: 16px;
 }
 
+.trend-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  flex-wrap: wrap;
+  margin-bottom: 8px;
+}
+
 .trend-title {
   font-size: 15px;
   font-weight: 600;
-  margin-bottom: 8px;
+  margin: 0;
+}
+
+.trend-periods {
+  display: flex;
+  gap: 6px;
+}
+
+.trend-period {
+  border: 1px solid rgba(255, 255, 255, 0.12);
+  background: rgba(255, 255, 255, 0.04);
+  color: var(--dim);
+  font-size: 12px;
+  padding: 4px 10px;
+  border-radius: 999px;
+  cursor: pointer;
+  line-height: 1.2;
+}
+
+.trend-period.active {
+  color: #fff;
+  border-color: rgba(255, 77, 79, 0.55);
+  background: rgba(255, 77, 79, 0.18);
+}
+
+.trend-period:hover {
+  border-color: rgba(255, 255, 255, 0.22);
 }
 
 .trend-canvas {
