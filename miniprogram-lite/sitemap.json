@@ -1,0 +1,4 @@
+{
+  "desc": "明日当空 Lite",
+  "rules": [{ "action": "allow", "page": "*" }]
+}

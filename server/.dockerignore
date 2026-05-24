@@ -1,0 +1,13 @@
+__pycache__
+**/__pycache__
+*.pyc
+*.pyo
+.git
+.gitignore
+*.md
+start.bat
+pack-zip.ps1
+.env
+.venv
+venv/
+requirements-ocr.txt

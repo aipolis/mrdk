@@ -1,0 +1,63 @@
+<view class="page">
+  <view class="card">
+    <view class="calendar-nav">
+      <text class="nav-btn" bindtap="onPrevMonth">‹</text>
+      <text class="nav-month">{{calendarYear}}年{{calendarMonth}}月</text>
+      <text class="nav-btn" bindtap="onNextMonth">›</text>
+    </view>
+
+    <view class="month-stats">
+      <view class="ms-item"><text class="ms-num">{{monthStats.matched || 0}}</text><text class="ms-label">匹配天数</text></view>
+      <view class="ms-item"><text class="ms-num green">{{monthStats.excellent || 0}}</text><text class="ms-label">优秀天数</text></view>
+      <view class="ms-item"><text class="ms-num">{{monthStats.avgMatchRate || 0}}%</text><text class="ms-label">平均匹配度</text></view>
+      <view class="ms-item"><text class="ms-num">{{monthStats.winRate || 0}}%</text><text class="ms-label">胜率</text></view>
+    </view>
+
+    <view class="calendar-weekdays">
+      <text wx:for="{{['日','一','二','三','四','五','六']}}" wx:key="*this">{{item}}</text>
+    </view>
+
+    <view class="calendar-body">
+      <view class="calendar-row" wx:for="{{calendarWeeks}}" wx:key="index">
+        <view
+          class="calendar-cell {{cell.empty ? 'empty' : ''}} tier-{{cell.tier}} {{selectedDay && selectedDay.date === cell.date ? 'selected' : ''}}"
+          wx:for="{{item}}"
+          wx:for-item="cell"
+          wx:for-index="ci"
+          wx:key="ci"
+          data-item="{{cell}}"
+          bindtap="onDayTap"
+        >
+          <text class="cell-day" wx:if="{{!cell.empty}}">{{cell.day}}</text>
+          <text class="cell-rate" wx:if="{{cell.hasRecord}}">{{cell.matchRate}}%</text>
+        </view>
+      </view>
+    </view>
+
+    <view class="calendar-legend">
+      <view class="legend-item" wx:for="{{legend}}" wx:key="tier">
+        <view class="legend-dot" style="background: {{item.color}}"></view>
+        <text>{{item.label}}</text>
+      </view>
+    </view>
+  </view>
+
+  <view class="card day-panel" wx:if="{{selectedDay}}">
+    <view class="panel-head">
+      <text class="panel-date">{{selectedDay.shortDate}}</text>
+      <text class="panel-badge {{selectedDay.tierClass}}">{{selectedDay.tierLabel}}</text>
+    </view>
+    <view class="panel-row">
+      <text>情绪区间参考</text><text>{{selectedDay.suggestedPercent}}%</text>
+    </view>
+    <view class="panel-row">
+      <text>实际持仓</text><text>{{selectedDay.actualPercent}}%</text>
+    </view>
+    <view class="panel-row highlight">
+      <text>匹配度</text><text class="green">{{selectedDay.matchRate}}%</text>
+    </view>
+    <view class="panel-encourage">
+      <text>{{selectedDay.message}}</text>
+    </view>
+  </view>
+</view>

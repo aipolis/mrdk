@@ -1,0 +1,54 @@
+{
+  "setting": {
+    "es6": true,
+    "postcss": true,
+    "minified": true,
+    "uglifyFileName": false,
+    "enhance": true,
+    "packNpmRelationList": [],
+    "babelSetting": {
+      "ignore": [],
+      "disablePlugins": [],
+      "outputPath": ""
+    },
+    "useCompilerPlugins": false,
+    "minifyWXML": true,
+    "compileWorklet": false,
+    "uploadWithSourceMap": true,
+    "packNpmManually": false,
+    "minifyWXSS": true,
+    "localPlugins": false,
+    "disableUseStrict": false,
+    "condition": false,
+    "swc": false,
+    "disableSWC": true
+  },
+  "compileType": "miniprogram",
+  "simulatorPluginLibVersion": {},
+  "packOptions": {
+    "ignore": [
+      {
+        "value": "mingri-api.zip",
+        "type": "file"
+      },
+      {
+        "value": "home.png",
+        "type": "file"
+      },
+      {
+        "value": "server",
+        "type": "folder"
+      },
+      {
+        "value": ".claude",
+        "type": "folder"
+      }
+    ],
+    "include": []
+  },
+  "appid": "wxf9cd48540ad006cd",
+  "projectname": "明日当空",
+  "description": "龙空龙情绪数据工具 - 盘前市场情绪指标",
+  "editorSetting": {},
+  "libVersion": "3.16.1"
+}

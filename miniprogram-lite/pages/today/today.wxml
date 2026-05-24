@@ -1,0 +1,117 @@
+<view class="page today-page {{themeClass}}">
+  <!-- 页头 -->
+  <view class="today-head">
+    <view class="head-row">
+      <text class="brand">{{appTitle}}</text>
+      <view class="head-date-pill">
+        <text class="head-date">{{headerDate}}</text>
+      </view>
+    </view>
+    <text class="head-subtitle">{{appSubtitle}}</text>
+  </view>
+
+  <view wx:if="{{loading && !pageReady}}" class="state-card">
+    <text class="state-text">正在读取今日天气…</text>
+  </view>
+
+  <view wx:elif="{{error}}" class="state-card">
+    <text class="state-text">{{error}}</text>
+    <text class="state-hint">下拉刷新重试</text>
+  </view>
+
+  <block wx:else>
+    <!-- 今日天气卡片 358×192 -->
+    <view class="hero-card">
+      <view class="hero-top">
+        <text class="hero-title">今日天气</text>
+        <view class="hero-update" wx:if="{{updateBadge}}">
+          <text class="hero-update-text">{{updateBadge}}</text>
+        </view>
+      </view>
+
+      <view class="hero-body">
+        <view class="hero-score-wrap">
+          <text class="hero-score">{{displayScore}}</text>
+          <text class="hero-score-degree">°</text>
+        </view>
+        <text class="hero-verdict">{{verdictChar}}·{{weatherShort}}</text>
+        <view class="hero-divider"/>
+        <text class="hero-desc">{{weatherText}}，{{actionText}}</text>
+      </view>
+
+      <view class="hero-pills">
+        <view
+          wx:for="{{verdictTabs}}"
+          wx:key="key"
+          class="hero-pill {{item.pillClass}} {{verdictKey === item.key ? 'hero-pill--active' : ''}}"
+        >
+          <image class="pill-icon" src="{{item.icon}}" mode="aspectFit"/>
+          <text class="pill-char">{{item.char}}</text>
+          <text class="pill-hint">·{{item.actionHint}}</text>
+        </view>
+      </view>
+    </view>
+
+    <!-- 近10日走势 358×186 -->
+    <view class="trend-card" wx:if="{{trendBars.length}}">
+      <view class="trend-head">
+        <text class="trend-title">近10日天气走势</text>
+        <view class="trend-legend">
+          <view class="legend-item">
+            <view class="legend-dot legend-dot--long"/>
+            <text>龙</text>
+          </view>
+          <view class="legend-item">
+            <view class="legend-dot legend-dot--mid"/>
+            <text>中</text>
+          </view>
+          <view class="legend-item">
+            <view class="legend-dot legend-dot--empty"/>
+            <text>空</text>
+          </view>
+        </view>
+      </view>
+      <view class="trend-bars">
+        <view wx:for="{{trendBars}}" wx:key="fullDate" class="trend-col">
+          <view class="trend-bar-wrap">
+            <view
+              class="trend-bar {{item.isToday ? 'trend-bar--today' : ''}}"
+              style="height: {{item.heightPct}}%; background-color: {{item.color}};"
+            />
+          </view>
+          <text class="trend-date {{item.isToday ? 'trend-date--today' : ''}}">{{item.dateLabel}}</text>
+        </view>
+      </view>
+    </view>
+
+    <!-- 游资语录 358×222 -->
+    <view class="quote-card">
+      <view class="quote-card-head">
+        <text class="quote-card-title">{{quoteSection.title}}</text>
+        <text class="quote-card-more">{{quoteSection.moreLabel}}</text>
+      </view>
+      <view
+        wx:for="{{quoteSection.items}}"
+        wx:key="author"
+        class="quote-box quote-box--{{item.theme}}"
+      >
+        <text class="quote-text">{{item.text}}</text>
+        <text class="quote-author">{{item.author}}</text>
+      </view>
+    </view>
+
+    <!-- 订阅按钮 -->
+    <view class="subscribe-wrap">
+      <button
+        class="subscribe-btn {{subscribed ? 'subscribe-btn--done' : ''}}"
+        bindtap="onSubscribe"
+      >
+        <text class="subscribe-text">{{subscribed ? '已开启提醒' : '订阅提醒，避免淋雨'}}</text>
+        <view class="subscribe-bell {{subscribed ? 'subscribe-bell--done' : ''}}">
+          <image class="subscribe-icon" src="/images/icon-bell.png" mode="aspectFit"/>
+          <text class="subscribe-bell-text">{{subscribed ? '已开启' : '立即订阅'}}</text>
+        </view>
+      </button>
+    </view>
+  </block>
+</view>

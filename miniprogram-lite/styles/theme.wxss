@@ -1,0 +1,39 @@
+/* 明日当空 Lite · 深色主题变量 */
+.mr-page {
+  --mr-bg-page: #0a0e1a;
+  --mr-bg-card: #141a2e;
+  --mr-bg-cell: #0d1220;
+  --mr-border: rgba(255, 255, 255, 0.08);
+  --mr-text-primary: #f3f4f6;
+  --mr-text-body: #e5e7eb;
+  --mr-text-secondary: #9ca3af;
+  --mr-text-muted: #6b7280;
+  --mr-text-headline: #ffffff;
+  --mr-menu-border: rgba(255, 255, 255, 0.06);
+  --mr-menu-active: rgba(255, 255, 255, 0.04);
+  --mr-accent: #ff4d4f;
+  --mr-long: #52c41a;
+  --mr-mid: #faad14;
+  --mr-empty: #1890ff;
+}
+
+.mr-page {
+  min-height: 100vh;
+  padding: 0 32rpx 32rpx;
+  padding-bottom: calc(32rpx + env(safe-area-inset-bottom));
+  background: var(--mr-bg-page);
+  color: var(--mr-text-body);
+  font-size: 28rpx;
+  box-sizing: border-box;
+}
+
+.mr-card {
+  background: var(--mr-bg-card);
+  border-radius: 16rpx;
+  border: 1rpx solid var(--mr-border);
+  box-sizing: border-box;
+}
+
+.weather-long { --weather-color: var(--mr-long); }
+.weather-mid { --weather-color: var(--mr-mid); }
+.weather-empty { --weather-color: var(--mr-empty); }

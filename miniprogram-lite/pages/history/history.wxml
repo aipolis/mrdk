@@ -1,0 +1,83 @@
+<view class="page history-page">
+  <view class="history-head">
+    <view class="history-head-row">
+      <text class="history-title">天气走势</text>
+      <view class="head-date-pill">
+        <text class="head-date">{{headerDate}}</text>
+      </view>
+    </view>
+    <text class="history-sub">只看天气，不看别的</text>
+  </view>
+
+  <!-- 走势图 -->
+  <view class="trend-card" wx:if="{{trendBars.length}}">
+    <view class="trend-head">
+      <text class="trend-title">近{{trendDays}}日天气走势</text>
+      <view class="trend-legend">
+        <view class="legend-item">
+          <view class="legend-dot legend-dot--long"/>
+          <text>龙</text>
+        </view>
+        <view class="legend-item">
+          <view class="legend-dot legend-dot--mid"/>
+          <text>中</text>
+        </view>
+        <view class="legend-item">
+          <view class="legend-dot legend-dot--empty"/>
+          <text>空</text>
+        </view>
+      </view>
+    </view>
+
+    <view class="trend-bars">
+      <view wx:for="{{trendBars}}" wx:key="fullDate" class="trend-col">
+        <view class="trend-bar-wrap">
+          <view
+            class="trend-bar {{item.isToday ? 'trend-bar--today' : ''}}"
+            style="height: {{item.heightPct}}%; background-color: {{item.color}};"
+          />
+        </view>
+        <text class="trend-date {{item.isToday ? 'trend-date--today' : ''}}">{{item.dateLabel}}</text>
+      </view>
+    </view>
+
+    <!-- 周期切换 -->
+    <view class="period-tabs">
+      <view
+        wx:for="{{periods}}"
+        wx:key="days"
+        class="period-tab {{trendDays === item.days ? 'period-tab--active' : ''}}"
+        data-days="{{item.days}}"
+        bindtap="onPeriodTap"
+      >
+        <text>{{item.label}}</text>
+      </view>
+    </view>
+  </view>
+
+  <!-- 状态 -->
+  <view wx:if="{{loading}}" class="state-card">
+    <text class="state-text">加载中…</text>
+  </view>
+
+  <view wx:elif="{{error}}" class="state-card">
+    <text class="state-text">{{error}}</text>
+  </view>
+
+  <view wx:elif="{{!list.length}}" class="state-card">
+    <text class="state-text">暂无记录</text>
+  </view>
+
+  <!-- 列表 -->
+  <view wx:else class="list-card">
+    <view
+      wx:for="{{list}}"
+      wx:key="fullDate"
+      class="history-row"
+    >
+      <text class="history-date">{{item.date}}</text>
+      <text class="history-emoji">{{item.verdict.emoji}}</text>
+      <text class="history-line" style="color: {{item.verdict.key === 'long' ? '#e63838' : item.verdict.key === 'mid' ? '#f5a60a' : '#0284c7'}}">{{item.weatherLine}}</text>
+    </view>
+  </view>
+</view>

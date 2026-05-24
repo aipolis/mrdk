@@ -1,0 +1,97 @@
+/* 双主题 CSS 变量：根节点 theme-dark / theme-light，默认等同黑底 */
+
+.mr-page {
+  --mr-bg-page: #0a0e1a;
+  --mr-bg-card: #141a2e;
+  --mr-bg-cell: #0d1220;
+  --mr-bg-skeleton: #141a2e;
+  --mr-border: rgba(255, 255, 255, 0.08);
+  --mr-border-light: rgba(255, 255, 255, 0.06);
+  --mr-text-primary: #f3f4f6;
+  --mr-text-body: #e5e7eb;
+  --mr-text-secondary: #9ca3af;
+  --mr-text-muted: #6b7280;
+  --mr-text-headline: #ffffff;
+  --mr-quote-text: #e5e7eb;
+  --mr-quote-hand: #f0f1f3;
+  --mr-logo-border: rgba(255, 255, 255, 0.08);
+  --mr-icon-btn-bg: #1a2238;
+  --mr-icon-btn-border: rgba(255, 255, 255, 0.12);
+  --mr-icon-btn-glyph: #9ca3af;
+  --mr-empty-tip-bg: rgba(255, 77, 79, 0.08);
+  --mr-empty-tip-border: rgba(255, 77, 79, 0.18);
+  --mr-menu-border: rgba(255, 255, 255, 0.06);
+  --mr-menu-active: rgba(255, 255, 255, 0.04);
+  --mr-pill-bg: rgba(255, 77, 79, 0.1);
+  --mr-pill-border: rgba(255, 77, 79, 0.28);
+  --mr-day-pill-bg: #141a2e;
+  --mr-day-pill-border: rgba(255, 255, 255, 0.08);
+  --mr-table-border: rgba(255, 255, 255, 0.08);
+  --mr-table-row-border: rgba(255, 255, 255, 0.05);
+  --mr-gauge-dot: #6b7280;
+  --mr-theme-toggle-bg: rgba(255, 255, 255, 0.06);
+}
+
+.theme-dark {
+  --mr-bg-page: #0a0e1a;
+  --mr-bg-card: #141a2e;
+  --mr-bg-cell: #0d1220;
+  --mr-bg-skeleton: #141a2e;
+  --mr-border: rgba(255, 255, 255, 0.08);
+  --mr-border-light: rgba(255, 255, 255, 0.06);
+  --mr-text-primary: #f3f4f6;
+  --mr-text-body: #e5e7eb;
+  --mr-text-secondary: #9ca3af;
+  --mr-text-muted: #6b7280;
+  --mr-text-headline: #ffffff;
+  --mr-quote-text: #e5e7eb;
+  --mr-quote-hand: #f0f1f3;
+  --mr-logo-border: rgba(255, 255, 255, 0.08);
+  --mr-icon-btn-bg: #1a2238;
+  --mr-icon-btn-border: rgba(255, 255, 255, 0.12);
+  --mr-icon-btn-glyph: #9ca3af;
+  --mr-empty-tip-bg: rgba(255, 77, 79, 0.08);
+  --mr-empty-tip-border: rgba(255, 77, 79, 0.18);
+  --mr-menu-border: rgba(255, 255, 255, 0.06);
+  --mr-menu-active: rgba(255, 255, 255, 0.04);
+  --mr-pill-bg: rgba(255, 77, 79, 0.1);
+  --mr-pill-border: rgba(255, 77, 79, 0.28);
+  --mr-day-pill-bg: #141a2e;
+  --mr-day-pill-border: rgba(255, 255, 255, 0.08);
+  --mr-table-border: rgba(255, 255, 255, 0.08);
+  --mr-table-row-border: rgba(255, 255, 255, 0.05);
+  --mr-gauge-dot: #6b7280;
+  --mr-theme-toggle-bg: rgba(255, 255, 255, 0.06);
+}
+
+.theme-light {
+  --mr-bg-page: #f3f4f6;
+  --mr-bg-card: #ffffff;
+  --mr-bg-cell: #f9fafb;
+  --mr-bg-skeleton: #ffffff;
+  --mr-border: rgba(15, 23, 42, 0.1);
+  --mr-border-light: rgba(15, 23, 42, 0.06);
+  --mr-text-primary: #111827;
+  --mr-text-body: #374151;
+  --mr-text-secondary: #6b7280;
+  --mr-text-muted: #9ca3af;
+  --mr-text-headline: #0f172a;
+  --mr-quote-text: #374151;
+  --mr-quote-hand: #1f2937;
+  --mr-logo-border: rgba(15, 23, 42, 0.08);
+  --mr-icon-btn-bg: #ffffff;
+  --mr-icon-btn-border: rgba(15, 23, 42, 0.12);
+  --mr-icon-btn-glyph: #6b7280;
+  --mr-empty-tip-bg: rgba(255, 77, 79, 0.06);
+  --mr-empty-tip-border: rgba(255, 77, 79, 0.2);
+  --mr-menu-border: rgba(15, 23, 42, 0.06);
+  --mr-menu-active: rgba(15, 23, 42, 0.04);
+  --mr-pill-bg: rgba(255, 77, 79, 0.08);
+  --mr-pill-border: rgba(255, 77, 79, 0.22);
+  --mr-day-pill-bg: #ffffff;
+  --mr-day-pill-border: rgba(15, 23, 42, 0.1);
+  --mr-table-border: rgba(15, 23, 42, 0.08);
+  --mr-table-row-border: rgba(15, 23, 42, 0.05);
+  --mr-gauge-dot: #9ca3af;
+  --mr-theme-toggle-bg: rgba(15, 23, 42, 0.05);
+}

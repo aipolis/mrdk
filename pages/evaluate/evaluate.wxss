@@ -1,0 +1,156 @@
+.page {
+  padding-bottom: 160rpx;
+}
+
+.trophy-banner {
+  margin: 24rpx;
+  padding: 40rpx 32rpx;
+  background: linear-gradient(135deg, #FFF7E6 0%, #FFFFFF 100%);
+  border-radius: 20rpx;
+  text-align: center;
+  box-shadow: 0 4rpx 24rpx rgba(0, 0, 0, 0.04);
+}
+
+.trophy-icon {
+  font-size: 80rpx;
+}
+
+.trophy-info {
+  display: flex;
+  align-items: baseline;
+  justify-content: center;
+  gap: 12rpx;
+  margin: 12rpx 0;
+}
+
+.trophy-score {
+  font-size: 64rpx;
+  font-weight: 700;
+  color: #FAAD14;
+}
+
+.trophy-label {
+  font-size: 32rpx;
+  font-weight: 600;
+  color: #52C41A;
+}
+
+.trophy-sub {
+  font-size: 24rpx;
+  color: #999999;
+}
+
+.compare-bar {
+  width: 100%;
+  height: 100rpx;
+}
+
+.compare-legend {
+  display: flex;
+  gap: 32rpx;
+  margin-top: 16rpx;
+}
+
+.cl-item {
+  display: flex;
+  align-items: center;
+  gap: 8rpx;
+  font-size: 22rpx;
+  color: #666666;
+}
+
+.cl-dot {
+  width: 16rpx;
+  height: 16rpx;
+  border-radius: 4rpx;
+}
+
+.cl-dot.green { background: #52C41A; }
+
+.cl-line {
+  width: 16rpx;
+  height: 4rpx;
+  background: #FF4D4F;
+}
+
+.bar-item {
+  display: flex;
+  align-items: center;
+  gap: 16rpx;
+  margin-bottom: 20rpx;
+  font-size: 24rpx;
+  color: #666666;
+}
+
+.bar-item text:first-child {
+  width: 120rpx;
+}
+
+.bar-track {
+  flex: 1;
+  height: 16rpx;
+  background: #F0F0F0;
+  border-radius: 8rpx;
+  overflow: hidden;
+}
+
+.bar-fill {
+  height: 100%;
+  background: #52C41A;
+  border-radius: 8rpx;
+}
+
+.bar-fill.stock { background: #FF4D4F; }
+.bar-fill.cash { background: #1890FF; }
+
+.bar-val {
+  width: 80rpx;
+  text-align: right;
+  font-weight: 600;
+  color: #333333;
+}
+
+.advice-card {
+  background: linear-gradient(135deg, #F6FFED 0%, #FFFFFF 100%);
+}
+
+.advice-text {
+  font-size: 28rpx;
+  color: #666666;
+  line-height: 1.7;
+}
+
+.history-chart {
+  width: 100%;
+  height: 240rpx;
+}
+
+.bottom-btns {
+  position: fixed;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  padding: 20rpx 24rpx calc(20rpx + env(safe-area-inset-bottom));
+  background: #FFFFFF;
+  display: flex;
+  gap: 20rpx;
+  box-shadow: 0 -4rpx 16rpx rgba(0, 0, 0, 0.06);
+}
+
+.btn-primary {
+  flex: 1;
+  background: #52C41A;
+  color: #FFFFFF;
+  font-size: 28rpx;
+  border-radius: 44rpx;
+  border: none;
+}
+
+.btn-outline {
+  flex: 1;
+  background: #FFFFFF;
+  color: #52C41A;
+  font-size: 28rpx;
+  border-radius: 44rpx;
+  border: 2rpx solid #52C41A;
+}

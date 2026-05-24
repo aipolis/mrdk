@@ -1,0 +1,10 @@
+@import './styles/theme.wxss';
+
+page {
+  background: #f0f9ff;
+  color: #1e293b;
+  font-family: -apple-system, BlinkMacSystemFont, 'PingFang SC', 'Helvetica Neue', 'Microsoft YaHei', sans-serif;
+  -webkit-font-smoothing: auto;
+  -moz-osx-font-smoothing: auto;
+  text-rendering: optimizeLegibility;
+}

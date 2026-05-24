@@ -1,0 +1,250 @@
+<view class="page mr-page theme-{{uiTheme}}">
+
+  <view class="header header--fixed">
+
+    <view class="header-cap-safe" style="height: {{navCapSafeHeight}}px;"></view>
+
+    <view class="header-row">
+
+      <view class="header-left">
+
+        <image class="logo-img mr-img" src="/images/logo-192.png" mode="aspectFill"/>
+
+        <text class="brand-name">明日当空</text>
+
+      </view>
+
+      <view class="header-right">
+        <view class="theme-toggle mr-icon-btn" catchtap="onToggleTheme">
+          <text class="theme-toggle__glyph">{{uiTheme === 'dark' ? '☀' : '☾'}}</text>
+        </view>
+        <text class="header-date">{{displayAdviceDate}}</text>
+      </view>
+
+    </view>
+
+  </view>
+
+  <view class="header-spacer" style="height: {{navSpacerHeight}}px;"></view>
+
+
+
+  <view class="quote-bar mr-card">
+    <text class="mr-pill">与君共勉</text>
+    <text class="quote-text quote-hand {{quoteFontReady ? '' : 'quote-hand--pending'}}">{{dailyQuoteText}}</text>
+    <text class="quote-from quote-hand {{quoteFontReady ? '' : 'quote-hand--pending'}}" wx:if="{{dailyQuoteAuthor}}">—— {{dailyQuoteAuthor}}</text>
+  </view>
+
+
+
+  <view class="gauge-card mr-card mr-card--gauge">
+
+    <view class="gauge-head">
+
+      <text class="gauge-title">市场情绪</text>
+
+      <text class="gauge-time">{{generatedAt}}</text>
+
+    </view>
+
+    <view class="gauge-wheel-wrap" bindtap="goDetail">
+
+      <view class="gauge-level-row">
+        <text class="gauge-level calculating" wx:if="{{scoreCalculating}}">计算中</text>
+        <text class="gauge-level {{levelClass}}" wx:else>{{levelLabel}}</text>
+        <text class="gauge-desc">{{positionDesc}}</text>
+      </view>
+
+      <view class="gauge-body">
+        <canvas type="2d" id="gaugeCanvas" class="gauge-canvas"></canvas>
+        <view class="gauge-hub">
+          <view class="gauge-dots" wx:if="{{scoreCalculating && !scoreRevealing}}">
+            <text class="gauge-dot"></text>
+            <text class="gauge-dot"></text>
+            <text class="gauge-dot"></text>
+          </view>
+          <text class="gauge-score {{levelClass}}" wx:else>{{displayScore}}</text>
+          <text class="gauge-score-label">情绪分</text>
+        </view>
+      </view>
+
+      <view class="gauge-share mr-icon-btn" catchtap="onSharePoster">
+        <text class="mr-icon-btn__glyph">⎙</text>
+      </view>
+
+    </view>
+
+    <view class="gauge-foot" wx:if="{{scoreMode === 'live' && baselineScore != null}}">
+      <view class="gauge-baseline-row">
+        <text class="gauge-baseline">基准分 {{baselineScore}}</text>
+        <text class="gauge-baseline-hint"> · 昨日+外围，盘中不变</text>
+      </view>
+    </view>
+
+    <view class="empty-tip" wx:if="{{isEmptyPosition && !scoreCalculating}}">
+
+      <text>龙空风险提示 · {{emptyReasons[0] || '综合情绪偏弱'}}（本人复盘，非投资建议）</text>
+
+    </view>
+
+  </view>
+
+
+
+  <view class="loading-wrap" wx:if="{{loading}}">
+
+    <view class="sk-card"></view>
+
+    <view class="sk-card sk-mid"></view>
+
+    <view class="sk-card sk-short"></view>
+
+  </view>
+
+
+
+  <block wx:else>
+
+    <view class="section" wx:for="{{indicatorSections}}" wx:key="id">
+
+      <view class="mr-section-head">
+
+        <text class="mr-section-title">{{item.title}}</text>
+
+        <text class="mr-section-meta">{{item.meta}}</text>
+
+      </view>
+
+
+
+      <view class="section-card mr-card">
+
+        <block wx:if="{{item.layout !== 'row3'}}">
+
+          <view class="mr-grid9" wx:if="{{item.rows.length}}">
+
+            <view class="mr-grid9-row" wx:for="{{item.rows}}" wx:key="rowIdx" wx:for-item="row" wx:for-index="rowIdx">
+
+              <view class="mr-grid9-cell" wx:for="{{row}}" wx:key="key" wx:for-item="cell">
+
+                <view class="mr-grid9-item-inner">
+
+                  <view class="mr-grid9-value-row">
+                    <text class="mr-grid9-value {{cell.key === 'advance' ? 'mr-up' : ''}}">{{cell.displayValue || cell.value}}</text>
+                    <text
+                      wx:if="{{(item.id === 'yesterday' || item.id === 'auction' || item.id === 'intraday') && cell.trendArrow}}"
+                      class="trend-arrow {{cell.trendGood ? 'trend-good' : 'trend-bad'}}"
+                    >{{cell.trendArrow}}</text>
+                  </view>
+                  <text class="mr-grid9-label {{cell.label.length > 9 ? 'label-long' : ''}}">{{cell.label}}</text>
+                  <view
+                    class="mr-grid9-sub mr-grid9-sub--slot"
+                    wx:if="{{item.id === 'yesterday' || item.id === 'auction' || item.id === 'intraday'}}"
+                  >
+                    <text class="mr-grid9-sub-prefix">{{item.id === 'yesterday' ? '前 ' : '昨 '}}</text>
+                    <text class="mr-grid9-sub-val {{cell.key === 'advance' ? 'mr-up' : ''}}">{{cell.prev || '--'}}</text>
+                  </view>
+
+                </view>
+
+              </view>
+
+            </view>
+
+          </view>
+
+          <view class="grid-empty" wx:else>{{item.id === 'auction' ? '竞价数据等待 9:25 后更新' : '暂无数据'}}</view>
+
+        </block>
+
+
+
+        <view class="peripheral-row" wx:elif="{{item.items.length}}">
+
+          <view class="peripheral-cell" wx:for="{{item.items}}" wx:key="key" wx:for-item="cell">
+
+            <text class="peripheral-label">{{cell.label}}</text>
+
+            <text class="peripheral-price">{{cell.price || cell.value || '--'}}</text>
+
+            <text class="peripheral-chg {{cell.up ? 'mr-up' : (cell.trend === 'down' ? 'mr-down' : '')}}">{{cell.chgText || '--'}}</text>
+
+          </view>
+
+        </view>
+
+
+
+        <view class="grid-empty" wx:elif="{{item.id === 'intraday' && item.pending}}">9:30 开盘后实时更新</view>
+
+        <view class="grid-empty" wx:else>暂无数据</view>
+
+      </view>
+
+    </view>
+
+
+
+    <view class="section section-trend">
+
+      <view class="mr-section-head">
+
+        <text class="mr-section-title">情绪趋势</text>
+
+        <text class="mr-section-meta">近10日</text>
+
+      </view>
+
+      <view class="section-card mr-card trend-card">
+
+        <canvas type="2d" id="trendCanvas" class="trend-canvas"></canvas>
+
+      </view>
+
+    </view>
+
+
+
+    <view class="page-footer-disclaimer">
+
+      <text class="page-footer-disclaimer__text">数据仅供参考，不构成任何证券投资咨询或操作建议</text>
+
+    </view>
+
+  </block>
+
+  <!-- 分享海报：全貌预览 + 底部操作栏 -->
+  <view
+    class="share-sheet {{sharePosterVisible ? 'share-sheet--show' : ''}}"
+    wx:if="{{sharePosterVisible}}"
+  >
+    <view class="share-sheet__mask" catchtap="onCloseSharePoster"></view>
+    <view class="share-sheet__body">
+      <view class="share-sheet__preview-wrap">
+        <image
+          class="share-sheet__preview"
+          src="{{sharePosterPath}}"
+          mode="aspectFit"
+          show-menu-by-longpress="{{false}}"
+        />
+      </view>
+      <view class="share-sheet__footer">
+        <view class="share-sheet__bar">
+          <view
+            class="share-sheet__btn share-sheet__btn--save {{sharePosterSaving ? 'share-sheet__btn--disabled' : ''}}"
+            catchtap="onSaveSharePoster"
+          >{{sharePosterSaving ? '保存中…' : '保存图片'}}</view>
+          <view
+            class="share-sheet__btn share-sheet__btn--forward {{sharePosterForwarding ? 'share-sheet__btn--disabled' : ''}}"
+            catchtap="onForwardSharePoster"
+          >{{sharePosterForwarding ? '打开中…' : '转发好友'}}</view>
+          <view class="share-sheet__btn share-sheet__btn--cancel" catchtap="onCloseSharePoster">取消</view>
+        </view>
+        <view class="share-sheet__safe"></view>
+      </view>
+    </view>
+  </view>
+
+</view>
+
+

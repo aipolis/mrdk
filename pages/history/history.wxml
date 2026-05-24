@@ -1,0 +1,50 @@
+<view class="page mr-page history-page theme-{{uiTheme}}">
+  <!-- 走势图 -->
+  <view class="trend-card mr-card">
+    <view class="trend-head">
+      <text class="trend-title">近{{trendDays}}日情绪走势</text>
+    </view>
+    <canvas type="2d" id="trendCanvas" class="trend-canvas"></canvas>
+    <view class="period-tabs">
+      <view
+        wx:for="{{periods}}"
+        wx:key="days"
+        class="period-tab {{trendDays === item.days ? 'period-tab--active' : ''}}"
+        data-days="{{item.days}}"
+        bindtap="onPeriodTap"
+      >
+        <text>{{item.label}}</text>
+      </view>
+    </view>
+  </view>
+
+  <!-- 数据列表 -->
+  <view class="page-top">
+    <text class="day-pill active">日数据</text>
+  </view>
+
+  <view class="card mr-card table-card">
+    <view class="table-header">
+      <text class="col-date">日期</text>
+      <text class="col-score">情绪分</text>
+      <text class="col-level">状态</text>
+      <text class="col-index">上证涨跌</text>
+    </view>
+    <scroll-view scroll-y class="table-body" wx:if="{{list.length}}">
+      <view class="table-row" wx:for="{{list}}" wx:key="date">
+        <text class="col-date">{{item.dateShort}}</text>
+        <text class="col-score mr-score-color {{item.levelClass}}">{{item.score}}</text>
+        <view class="col-level">
+          <text class="mr-level-tag {{item.levelClass}}">{{item.level}}</text>
+        </view>
+        <text class="col-index {{item.indexUp ? 'mr-up' : 'mr-down'}}">{{item.indexChgText}}</text>
+      </view>
+    </scroll-view>
+    <view class="empty-tip" wx:elif="{{warming}}">
+      <text>历史数据同步中，请稍后下拉刷新</text>
+    </view>
+    <view class="empty-tip" wx:else>
+      <text>{{loading ? '加载中...' : '暂无历史数据'}}</text>
+    </view>
+  </view>
+</view>

@@ -1,0 +1,60 @@
+<view class="page" wx:if="{{record}}">
+  <!-- 顶部奖杯 -->
+  <view class="trophy-banner">
+    <text class="trophy-icon">🏆</text>
+    <view class="trophy-info">
+      <text class="trophy-score">{{record.matchRate}}</text>
+      <text class="trophy-label">{{record.rating}}</text>
+    </view>
+    <text class="trophy-sub">超过了 {{record.exceedPercent}}% 的用户</text>
+  </view>
+
+  <!-- 持仓记录对比 -->
+  <view class="card">
+    <view class="card-title">个人持仓记录</view>
+    <canvas type="2d" id="compareBar" class="compare-bar"></canvas>
+    <view class="compare-legend">
+      <view class="cl-item"><view class="cl-dot green"></view><text>实际持仓 {{record.actualPercent}}%</text></view>
+      <view class="cl-item"><view class="cl-line red"></view><text>情绪区间参考 {{record.suggestedPercent}}%</text></view>
+    </view>
+  </view>
+
+  <!-- 识别结果 -->
+  <view class="card">
+    <view class="card-title">识别结果</view>
+    <view class="bar-item">
+      <text>总仓位</text>
+      <view class="bar-track"><view class="bar-fill" style="width: {{record.actualPercent}}%"></view></view>
+      <text class="bar-val">{{record.actualPercent}}%</text>
+    </view>
+    <view class="bar-item">
+      <text>股票仓位</text>
+      <view class="bar-track"><view class="bar-fill stock" style="width: {{record.stockPercent}}%"></view></view>
+      <text class="bar-val">{{record.stockPercent}}%</text>
+    </view>
+    <view class="bar-item">
+      <text>现金仓位</text>
+      <view class="bar-track"><view class="bar-fill cash" style="width: {{record.cashPercent}}%"></view></view>
+      <text class="bar-val">{{record.cashPercent}}%</text>
+    </view>
+  </view>
+
+  <!-- 复盘备注 -->
+  <view class="card advice-card">
+    <view class="card-title">复盘备注</view>
+    <text class="advice-text">{{record.advice}}</text>
+    <text class="advice-note">以上为个人复盘记录，不构成任何操作建议。</text>
+  </view>
+
+  <!-- 近7日对比 -->
+  <view class="card">
+    <view class="card-title">近7日匹配度对比</view>
+    <canvas type="2d" id="historyChart" class="history-chart"></canvas>
+  </view>
+
+  <!-- 底部按钮 -->
+  <view class="bottom-btns">
+    <button class="btn-primary" bindtap="onShare">分享成绩</button>
+    <button class="btn-outline" bindtap="goCalendar">查看日历</button>
+  </view>
+</view>

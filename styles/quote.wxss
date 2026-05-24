@@ -1,0 +1,12 @@
+/* 语录专用字体样式（仅 .quote-hand，其余保持系统默认） */
+
+.quote-hand {
+  font-family: 'MRQuoteFont', -apple-system, BlinkMacSystemFont, 'PingFang SC', sans-serif;
+  font-weight: 400;
+  -webkit-font-smoothing: antialiased;
+  text-rendering: optimizeLegibility;
+}
+
+.quote-hand--pending {
+  font-family: -apple-system, BlinkMacSystemFont, 'PingFang SC', sans-serif;
+}

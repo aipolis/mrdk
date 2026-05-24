@@ -1,0 +1,8 @@
+@import 'styles/theme-vars.wxss';
+@import 'styles/theme.wxss';
+
+.container {
+  min-height: 100vh;
+  padding-bottom: calc(24rpx + env(safe-area-inset-bottom));
+}
+

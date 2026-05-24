@@ -1,0 +1,114 @@
+<view class="page">
+
+  <view class="card">
+
+    <view class="card-title">今日情绪解读</view>
+
+    <view class="pos-gauge-wrap">
+
+      <canvas type="2d" id="posGauge" class="pos-gauge"></canvas>
+
+    </view>
+
+    <view class="pos-summary">
+
+      <text class="pos-percent">{{score}}分</text>
+
+      <text class="pos-label">{{levelLabel}}</text>
+
+    </view>
+
+  </view>
+
+
+
+  <view class="card rule-card">
+
+    <view class="card-title">情绪摘要</view>
+
+    <text class="rule-text">{{rule}}</text>
+
+  </view>
+
+
+
+  <view class="card">
+
+    <view class="card-title">情绪区间分布</view>
+
+    <view class="range-bar">
+
+      <view class="range-track">
+
+        <view class="range-fill" style="width: {{percent}}%"></view>
+
+        <view class="range-marker" style="left: {{percent}}%"></view>
+
+      </view>
+
+      <view class="range-labels">
+
+        <text wx:for="{{markers}}" wx:key="*this">{{item}}</text>
+
+      </view>
+
+    </view>
+
+  </view>
+
+
+
+  <view class="card">
+
+    <view class="card-title">不同情绪区间说明</view>
+
+    <view class="strategy-list">
+
+      <view class="strategy-item" wx:for="{{strategies}}" wx:key="range">
+
+        <view class="strategy-dot" style="background: {{item.color}}"></view>
+
+        <view class="strategy-content">
+
+          <view class="strategy-head">
+
+            <text class="strategy-name">{{item.name}}</text>
+
+            <text class="strategy-range">{{item.range}}分</text>
+
+          </view>
+
+          <text class="strategy-action">{{item.action}}</text>
+
+        </view>
+
+      </view>
+
+    </view>
+
+  </view>
+
+
+
+  <view class="card">
+
+    <view class="card-title">盘面观察</view>
+
+    <view class="reminder-list">
+
+      <view class="reminder-item" wx:for="{{reminders}}" wx:key="*this">
+
+        <text class="reminder-dot">•</text>
+
+        <text class="reminder-text">{{item}}</text>
+
+      </view>
+
+    </view>
+
+    <text class="disclaimer-note">以上均为客观盘面描述，不构成任何操作建议。</text>
+
+  </view>
+
+</view>
+

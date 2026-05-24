@@ -1,0 +1,63 @@
+<view class="page mr-page profile-page theme-{{uiTheme}}">
+  <view class="user-card mr-card">
+    <view wx:if="{{loggedIn}}" class="user-card__logged">
+      <view class="user-card__main">
+        <image class="avatar-img" src="{{avatarUrl}}" mode="aspectFill"/>
+        <view class="user-meta">
+          <text class="user-name">{{nickName}}</text>
+          <text class="user-id">{{userId ? 'ID ' + userId : (openidHint || '微信用户')}}</text>
+        </view>
+      </view>
+      <text class="logout-link" bindtap="onLogout">退出</text>
+    </view>
+
+    <block wx:else>
+      <button class="avatar-btn" open-type="chooseAvatar" bind:chooseavatar="onChooseAvatar">
+        <image wx:if="{{loginAvatarUrl}}" class="avatar-img" src="{{loginAvatarUrl}}" mode="aspectFill"/>
+        <view wx:else class="avatar-ring">
+          <text class="avatar-char">微信</text>
+        </view>
+      </button>
+      <view class="user-meta user-meta--login">
+        <input
+          id="nickname-input"
+          class="nickname-input"
+          type="nickname"
+          placeholder="点击填写微信昵称"
+          value="{{loginNickName}}"
+          bindinput="onNicknameInput"
+          bindblur="onNicknameBlur"
+          bindnicknamereview="onNicknameReview"
+        />
+        <text class="login-hint">选择头像并填写昵称后自动登录</text>
+      </view>
+    </block>
+  </view>
+
+  <view class="menu-card mr-card">
+    <view class="menu-row">
+      <text class="menu-label">界面主题</text>
+      <view class="theme-switch" bindtap="onToggleTheme">
+        <text class="theme-switch-label">{{uiTheme === 'dark' ? '黑底' : '白底'}}</text>
+        <text class="theme-switch-icon">{{uiTheme === 'dark' ? '☀' : '☾'}}</text>
+      </view>
+    </view>
+    <view class="menu-row">
+      <text class="menu-label">情绪提醒推送</text>
+      <switch checked="{{pushEnabled}}" color="#ff4d4f" bindchange="onPushChange"/>
+    </view>
+    <view class="menu-row">
+      <text class="menu-label">自动更新数据</text>
+      <text class="menu-val on">已开启</text>
+    </view>
+    <view class="menu-row tap" bindtap="goAbout">
+      <text class="menu-label">关于我们</text>
+      <text class="menu-val">v1.0.0</text>
+      <text class="menu-arrow">›</text>
+    </view>
+    <view class="menu-row tap no-border" bindtap="goDisclaimer">
+      <text class="menu-label">免责声明</text>
+      <text class="menu-arrow">›</text>
+    </view>
+  </view>
+</view>

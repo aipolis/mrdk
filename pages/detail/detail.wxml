@@ -1,0 +1,98 @@
+<view class="page mr-page detail-page theme-{{uiTheme}}">
+
+  <view class="share-hero mr-card mr-card--gauge">
+
+    <view class="share-wheel">
+
+      <canvas type="2d" id="shareGauge" class="share-gauge-canvas"></canvas>
+
+      <view class="share-hub">
+
+        <text class="share-score {{levelClass}}">{{score}}</text>
+
+        <text class="share-score-label">情绪分</text>
+
+      </view>
+
+    </view>
+
+    <text class="share-level {{levelClass}}">{{levelLabel}}</text>
+
+    <text class="share-desc">{{positionDesc}}</text>
+
+  </view>
+
+
+
+  <view class="share-section" wx:for="{{indicatorSections}}" wx:key="id">
+
+    <text class="share-section-title">{{item.title}}</text>
+
+    <view class="share-grid mr-card" wx:if="{{item.layout !== 'row3'}}">
+
+      <view class="share-grid-row" wx:for="{{item.rows}}" wx:key="rowIdx" wx:for-item="row">
+
+        <view class="share-cell" wx:for="{{row}}" wx:key="key" wx:for-item="cell">
+
+          <view class="share-val-row">
+            <text class="share-val {{cell.key === 'advance' ? 'mr-up' : ''}}">{{cell.displayValue || cell.value}}</text>
+            <text
+              wx:if="{{(item.id === 'yesterday' || item.id === 'auction') && cell.trendArrow}}"
+              class="share-arrow {{cell.trendGood ? 'trend-good' : 'trend-bad'}}"
+            >{{cell.trendArrow}}</text>
+          </view>
+
+          <text class="share-lbl">{{cell.label}}</text>
+          <view
+            class="share-sub share-sub--slot"
+            wx:if="{{item.id === 'yesterday' || item.id === 'auction' || item.id === 'intraday'}}"
+          >
+            <block wx:if="{{cell.prev && cell.prev !== '--'}}">
+              <text class="share-sub-prefix">{{item.id === 'yesterday' ? '前 ' : '昨 '}}</text>
+              <text class="share-sub-val">{{cell.prev}}</text>
+            </block>
+          </view>
+
+        </view>
+
+      </view>
+
+    </view>
+
+    <view class="share-row mr-card" wx:else>
+
+      <view class="share-row-cell" wx:for="{{item.items}}" wx:key="key" wx:for-item="cell">
+
+        <text class="share-lbl">{{cell.label}}</text>
+
+        <text class="share-val">{{cell.price || cell.value}}</text>
+
+        <text class="share-chg {{cell.up ? 'mr-up' : 'mr-down'}}">{{cell.chgText || '--'}}</text>
+
+      </view>
+
+    </view>
+
+  </view>
+
+
+
+  <view class="footer-card">
+
+    <image class="footer-logo mr-img" src="/images/logo-192.png" mode="aspectFill"/>
+
+    <text class="footer-brand">明日当空</text>
+
+    <text class="footer-quote quote-hand">不必求每天都有机会，而是努力识别「不该出手」的日子</text>
+
+    <text class="footer-disclaimer">数据仅供参考，不构成任何证券投资咨询或操作建议</text>
+
+  </view>
+
+
+
+  <button class="share-btn" open-type="share">分享给好友</button>
+
+</view>
+
+

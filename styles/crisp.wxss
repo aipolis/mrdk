@@ -1,0 +1,34 @@
+/**
+ * 高清清晰化 · 全局视觉规范
+ */
+
+.mr-text-body { font-size: 28rpx; font-weight: 400; line-height: 1.5; color: var(--mr-text-body); }
+.mr-text-secondary { font-size: 24rpx; font-weight: 400; line-height: 1.45; color: var(--mr-text-secondary); }
+.mr-text-caption { font-size: 24rpx; font-weight: 500; line-height: 1.4; color: var(--mr-text-muted); }
+.mr-text-title { font-size: 32rpx; font-weight: 600; line-height: 1.35; color: var(--mr-text-primary); }
+.mr-text-headline { font-size: 36rpx; font-weight: 700; line-height: 1.25; color: var(--mr-text-headline); }
+.mr-text-num { font-variant-numeric: tabular-nums; font-weight: 700; }
+
+.mr-img {
+  display: block;
+  flex-shrink: 0;
+  image-rendering: -webkit-optimize-contrast;
+}
+
+.mr-icon-btn {
+  width: 28px;
+  height: 28px;
+  border-radius: 14px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  box-sizing: border-box;
+  border: 1px solid var(--mr-icon-btn-border);
+  background: var(--mr-icon-btn-bg);
+}
+
+.mr-icon-btn__glyph {
+  font-size: 14px;
+  line-height: 1;
+  color: var(--mr-icon-btn-glyph);
+}

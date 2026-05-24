@@ -1,0 +1,66 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+  <meta charset="UTF-8"/>
+  <title>情绪分 90 预览</title>
+  <style>
+    body { margin: 0; background: #0a0e1a; color: #fff; font-family: sans-serif; display: flex; flex-direction: column; align-items: center; padding: 24px; }
+    h1 { font-size: 18px; color: #9ca3af; font-weight: normal; }
+    canvas { background: #151b2e; border-radius: 16px; border: 1px solid #1f2937; max-width: 375px; width: 100%; }
+    .score { font-size: 72px; font-weight: 800; color: #ff4d4f; margin-top: -180px; pointer-events: none; }
+    .label { color: #6b7280; font-size: 14px; margin-top: 4px; }
+    .wrap { position: relative; text-align: center; max-width: 375px; width: 100%; }
+    input { margin-top: 16px; width: 200px; }
+  </style>
+</head>
+<body>
+  <h1>方向盘仪表盘预览（拖动滑块调分数）</h1>
+  <div class="wrap">
+    <canvas id="c" width="375" height="300"></canvas>
+    <div id="scoreText" class="score">90</div>
+    <div class="label">情绪分</div>
+  </div>
+  <input type="range" id="slider" min="0" max="100" value="90"/>
+  <script>
+    const START = Math.PI * 3 / 4, SW = Math.PI * 3 / 2
+    function colorAt(t, stops) {
+      t = Math.max(0, Math.min(1, t))
+      let i = 0
+      while (i < stops.length - 1 && t > stops[i + 1].pos) i++
+      const a = stops[i], b = stops[Math.min(i + 1, stops.length - 1)]
+      if (a.pos === b.pos) return a.color
+      const f = (t - a.pos) / (b.pos - a.pos)
+      const parse = c => { const h = c.replace('#', ''); return [parseInt(h.slice(0, 2), 16), parseInt(h.slice(2, 4), 16), parseInt(h.slice(4, 6), 16)] }
+      const [r1, g1, b1] = parse(a.color), [r2, g2, b2] = parse(b.color)
+      return `rgb(${Math.round(r1 + (r2 - r1) * f)},${Math.round(g1 + (g2 - g1) * f)},${Math.round(b1 + (b2 - b1) * f)})`
+    }
+    function segColor(v, on) {
+      if (!on) return v < 40 ? '#3d4659' : '#2a3348'
+      if (v < 40) return '#8b95a5'
+      if (v <= 80) return colorAt((v - 40) / 40, [{ pos: 0, color: '#52c41a' }, { pos: 0.4, color: '#a0d911' }, { pos: 0.7, color: '#faad14' }, { pos: 1, color: '#ff7a45' }])
+      return colorAt((v - 80) / 20, [{ pos: 0, color: '#ff7a45' }, { pos: 0.5, color: '#ff4d4f' }, { pos: 1, color: '#cf1322' }])
+    }
+    function draw(score) {
+      const c = document.getElementById('c'), ctx = c.getContext('2d'), w = c.width, h = c.height
+      const cx = w / 2, cy = h * 0.62, r = Math.min(w * 0.4, h * 0.46), bw = 16, s = score
+      ctx.clearRect(0, 0, w, h)
+      const arc = (f, t, col, lw, cap) => { ctx.beginPath(); ctx.arc(cx, cy, r, f, t, false); ctx.lineWidth = lw; ctx.lineCap = cap || 'butt'; ctx.strokeStyle = col; ctx.stroke() }
+      arc(START, START + SW, '#232b3e', bw + 8, 'round')
+      for (let i = 0; i < 40; i++) {
+        const a0 = START + (i / 40) * SW + 0.012, a1 = START + ((i + 1) / 40) * SW - 0.012, v = ((i + 0.5) / 40) * 100
+        arc(a0, a1, segColor(v, v <= s), bw)
+      }
+      const pa = START + (s / 100) * SW
+      const tipR = r + bw / 2 + 1, tipX = cx + tipR * Math.cos(pa), tipY = cy + tipR * Math.sin(pa)
+      const baseR = r - bw / 2 - 8, baseX = cx + baseR * Math.cos(pa), baseY = cy + baseR * Math.sin(pa)
+      const col = segColor(s, true), px = Math.cos(pa), py = Math.sin(pa), nx = -py, ny = px
+      ctx.beginPath(); ctx.moveTo(tipX, tipY); ctx.lineTo(baseX + nx * 6 - px * 9, baseY + ny * 6 - py * 9); ctx.lineTo(baseX - nx * 6 - px * 9, baseY - ny * 6 - py * 9); ctx.closePath(); ctx.fillStyle = col; ctx.fill()
+      ctx.beginPath(); ctx.arc(tipX, tipY, 5, 0, 7); ctx.fillStyle = '#fff'; ctx.fill()
+      ctx.beginPath(); ctx.arc(tipX, tipY, 3, 0, 7); ctx.fillStyle = col; ctx.fill()
+      document.getElementById('scoreText').textContent = s
+    }
+    draw(90)
+    document.getElementById('slider').oninput = e => draw(+e.target.value)
+  </script>
+</body>
+</html>

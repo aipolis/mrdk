@@ -1,0 +1,337 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+  <meta charset="UTF-8"/>
+  <meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1"/>
+  <title>首页仪表盘 · 显示效果预览</title>
+  <style>
+    * { box-sizing: border-box; margin: 0; padding: 0; }
+    body {
+      background: #0a0e1a;
+      color: #e5e7eb;
+      font-family: -apple-system, BlinkMacSystemFont, "PingFang SC", "Helvetica Neue", sans-serif;
+      padding: 24px 16px 48px;
+      min-height: 100vh;
+    }
+    .page { max-width: 390px; margin: 0 auto; }
+    .hint-top {
+      text-align: center;
+      font-size: 13px;
+      color: #6b7280;
+      margin-bottom: 16px;
+      line-height: 1.5;
+    }
+  /* 对齐 pages/index/index.wxss + mr-card */
+    .gauge-card {
+      background: #151b2e;
+      border: 1px solid rgba(255,255,255,.06);
+      border-radius: 16px;
+      padding: 12px;
+      margin-bottom: 20px;
+      box-shadow: 0 4px 24px rgba(0,0,0,.25);
+    }
+    .gauge-head {
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      margin-bottom: 4px;
+    }
+    .gauge-title { font-size: 16px; font-weight: 600; color: #f3f4f6; }
+    .gauge-time { font-size: 12px; color: #6b7280; }
+    .gauge-level-row { text-align: center; padding: 4px 0 6px; }
+    .gauge-level {
+      display: block;
+      font-size: 16px;
+      font-weight: 700;
+      line-height: 1.3;
+    }
+    .gauge-level.optimistic { color: #ff4d4f; }
+    .gauge-level.climax { color: #ff4d4f; }
+    .gauge-level.frenzy { color: #cf1322; }
+    .gauge-level.neutral { color: #faad14; }
+    .gauge-level.caution { color: #52c41a; }
+    .gauge-level.cold { color: #1890ff; }
+    /* 30rpx ≈ 15px @375 */
+    .gauge-baseline-row {
+      display: flex;
+      flex-wrap: wrap;
+      align-items: baseline;
+      justify-content: center;
+      margin-bottom: 4px;
+    }
+    .gauge-baseline {
+      font-size: 13px;
+      font-weight: 600;
+      color: #9ca3af;
+      letter-spacing: 0.25px;
+    }
+    .gauge-baseline-hint {
+      font-size: 11px;
+      font-weight: 400;
+      color: #6b7280;
+    }
+    .gauge-foot {
+      text-align: center;
+      padding: 4px 4px 0;
+    }
+    .gauge-desc {
+      display: block;
+      font-size: 14px;
+      font-weight: 400;
+      color: #9ca3af;
+      margin-top: 4px;
+      line-height: 1.5;
+      padding: 0 4px;
+    }
+    .gauge-body { position: relative; height: 150px; }
+    canvas { width: 100%; height: 150px; display: block; }
+    .gauge-hub {
+      position: absolute;
+      left: 0; right: 0;
+      top: 58%;
+      transform: translateY(-50%);
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      pointer-events: none;
+      z-index: 2;
+    }
+    /* 88rpx ≈ 44px */
+    .gauge-score {
+      font-size: 44px;
+      font-weight: 700;
+      line-height: 1;
+      font-variant-numeric: tabular-nums;
+    }
+    .gauge-score.optimistic { color: #ff4d4f; }
+    .gauge-score.climax { color: #ff4d4f; }
+    .gauge-score.frenzy { color: #cf1322; }
+    .gauge-score.neutral { color: #faad14; }
+    .gauge-score.caution { color: #52c41a; }
+    .gauge-score.cold { color: #1890ff; }
+  /* 24rpx ≈ 12px */
+    .gauge-score-label {
+      font-size: 12px;
+      font-weight: 500;
+      color: #6b7280;
+      margin-top: 4px;
+    }
+    .controls {
+      background: #151b2e;
+      border: 1px solid #1f2937;
+      border-radius: 16px;
+      padding: 16px;
+    }
+    .controls h2 { font-size: 14px; color: #9ca3af; font-weight: 500; margin-bottom: 12px; }
+    .ctrl-row { margin-bottom: 12px; }
+    .ctrl-row label { display: block; font-size: 12px; color: #9ca3af; margin-bottom: 4px; }
+    .ctrl-row input[type=range] { width: 100%; accent-color: #ff4d4f; }
+    .ctrl-val { font-size: 11px; color: #6b7280; text-align: right; margin-top: 2px; }
+    .timeline { display: flex; flex-wrap: wrap; gap: 6px; margin-top: 8px; }
+    .timeline button {
+      flex: 1 1 28%;
+      min-width: 72px;
+      padding: 8px 4px;
+      border-radius: 8px;
+      border: 1px solid #374151;
+      background: #0f1424;
+      color: #d1d5db;
+      font-size: 11px;
+      cursor: pointer;
+    }
+    .timeline button.active {
+      border-color: #ff4d4f;
+      color: #ff4d4f;
+      background: rgba(255,77,79,.08);
+    }
+    .formula {
+      margin-top: 12px;
+      padding: 10px;
+      background: #0f1424;
+      border-radius: 10px;
+      font-size: 12px;
+      text-align: center;
+      color: #d1d5db;
+      font-family: ui-monospace, monospace;
+      line-height: 1.6;
+    }
+    .formula strong { color: #ff4d4f; }
+  </style>
+</head>
+<body>
+  <div class="page">
+    <p class="hint-top">与小程序首页「市场情绪」卡片布局一致<br/>拖动下方滑块 / 切换时刻，即时看显示效果</p>
+
+    <div class="gauge-card">
+      <div class="gauge-head">
+        <span class="gauge-title">市场情绪</span>
+        <span class="gauge-time" id="genTime">盘中 14:02 更新</span>
+      </div>
+
+      <div class="gauge-level-row">
+        <span class="gauge-level neutral" id="levelLabel">中性</span>
+        <span class="gauge-desc" id="positionDesc">综合情绪中性偏暖，注意分化</span>
+      </div>
+
+      <div class="gauge-body">
+        <canvas id="gauge" width="366" height="150"></canvas>
+        <div class="gauge-hub">
+          <span class="gauge-score neutral" id="displayScore">44</span>
+          <span class="gauge-score-label">情绪分</span>
+        </div>
+      </div>
+
+      <div class="gauge-foot" id="baselineRow">
+        <div class="gauge-baseline-row">
+          <span class="gauge-baseline" id="baselineLine">基准分 70</span>
+          <span class="gauge-baseline-hint"> · 昨日+外围，盘中不变</span>
+        </div>
+      </div>
+    </div>
+
+    <div class="controls">
+      <h2>调参（模拟盘中）</h2>
+      <div class="ctrl-row">
+        <label>基准分（盘前固定，9:00 前口径）</label>
+        <input type="range" id="sBaseline" min="0" max="100" value="70"/>
+        <div class="ctrl-val" id="vBaseline">70</div>
+      </div>
+      <div class="ctrl-row">
+        <label>盘中分（含竞价 + 实时）</label>
+        <input type="range" id="sLive" min="0" max="100" value="35"/>
+        <div class="ctrl-val" id="vLive">35</div>
+      </div>
+      <label style="font-size:12px;color:#9ca3af">模拟时刻</label>
+      <div class="timeline" id="timeline"></div>
+      <div class="formula" id="formula"></div>
+    </div>
+  </div>
+
+  <script>
+    const START = Math.PI * 3 / 4, SW = Math.PI * 3 / 2
+    const SLOTS = [
+      { id: 'pre', label: '08:50 盘前', hm: 8 * 60 + 50, time: '今日 08:50 更新' },
+      { id: 'auc', label: '09:26 竞价', hm: 9 * 60 + 26, time: '竞价 09:26 更新' },
+      { id: 'open', label: '09:35 开盘', hm: 9 * 60 + 35, time: '盘中 09:35 更新' },
+      { id: 'mid', label: '10:30 上午', hm: 10 * 60 + 30, time: '盘中 10:30 更新' },
+      { id: 'late', label: '14:00 下午', hm: 14 * 60, time: '盘中 14:02 更新' },
+      { id: 'close', label: '15:05 收盘', hm: 15 * 60 + 5, time: '今日 15:05 更新' },
+    ]
+    let slot = SLOTS[4]
+
+    function displayBlendWeight(hm) {
+      if (hm < 9 * 60 || hm > 15 * 60) return 0
+      if (hm < 9 * 60 + 30) return 0.30
+      const start = 9 * 60 + 30, end = 15 * 60
+      const wStart = 0.30, wEnd = 0.85
+      if (hm >= end) return wEnd
+      return wStart + (hm - start) / (end - start) * (wEnd - wStart)
+    }
+
+    function colorAt(t, stops) {
+      t = Math.max(0, Math.min(1, t))
+      let i = 0
+      while (i < stops.length - 1 && t > stops[i + 1].pos) i++
+      const a = stops[i], b = stops[Math.min(i + 1, stops.length - 1)]
+      if (a.pos === b.pos) return a.color
+      const f = (t - a.pos) / (b.pos - a.pos)
+      const parse = c => { const h = c.replace('#', ''); return [parseInt(h.slice(0,2),16), parseInt(h.slice(2,4),16), parseInt(h.slice(4,6),16)] }
+      const [r1,g1,b1] = parse(a.color), [r2,g2,b2] = parse(b.color)
+      return `rgb(${Math.round(r1+(r2-r1)*f)},${Math.round(g1+(g2-g1)*f)},${Math.round(b1+(b2-b1)*f)})`
+    }
+    function segColor(v, on) {
+      if (!on) return v < 40 ? '#3d4659' : '#2a3348'
+      if (v < 40) return '#8b95a5'
+      if (v <= 80) return colorAt((v-40)/40, [
+        {pos:0,color:'#52c41a'},{pos:0.4,color:'#a0d911'},{pos:0.7,color:'#faad14'},{pos:1,color:'#ff7a45'}
+      ])
+      return colorAt((v-80)/20, [{pos:0,color:'#ff7a45'},{pos:0.5,color:'#ff4d4f'},{pos:1,color:'#cf1322'}])
+    }
+    function levelMeta(s) {
+      if (s >= 90) return { label: '狂热', cls: 'frenzy' }
+      if (s >= 80) return { label: '高潮', cls: 'climax' }
+      if (s >= 60) return { label: '偏乐观', cls: 'optimistic' }
+      if (s >= 40) return { label: '中性', cls: 'neutral' }
+      if (s >= 20) return { label: '偏谨慎', cls: 'caution' }
+      return { label: '冰点', cls: 'cold' }
+    }
+    function positionDesc(s, empty) {
+      if (empty) return '综合情绪走弱，展示分低于50，宜控节奏'
+      if (s >= 61) return '综合情绪偏强，接力结构尚可'
+      if (s >= 41) return '综合情绪中性偏暖，注意分化'
+      if (s >= 21) return '综合情绪偏谨慎，短线结构一般'
+      return '综合情绪偏弱，宜控节奏'
+    }
+    function calcDisplay(b, l, w) {
+      w = Math.max(0, Math.min(1, w))
+      return w <= 0 ? b : Math.round(b * (1 - w) + l * w)
+    }
+    function drawGauge(score) {
+      const c = document.getElementById('gauge'), ctx = c.getContext('2d')
+      const w = c.width, h = c.height, cx = w/2, cy = h*0.62, r = Math.min(w*0.4,h*0.46), bw = 16, s = score
+      ctx.clearRect(0,0,w,h)
+      const arc = (f,t,col,lw,cap) => { ctx.beginPath(); ctx.arc(cx,cy,r,f,t,false); ctx.lineWidth=lw; ctx.lineCap=cap||'butt'; ctx.strokeStyle=col; ctx.stroke() }
+      arc(START, START+SW, '#232b3e', bw+8, 'round')
+      for (let i=0;i<40;i++) {
+        const a0=START+(i/40)*SW+0.012, a1=START+((i+1)/40)*SW-0.012, v=((i+0.5)/40)*100
+        arc(a0,a1, segColor(v, v<=s), bw)
+      }
+      const pa = START + (s/100)*SW
+      const tipR = r+bw/2+1, tipX = cx+tipR*Math.cos(pa), tipY = cy+tipR*Math.sin(pa)
+      const baseR = r-bw/2-8, baseX = cx+baseR*Math.cos(pa), baseY = cy+baseR*Math.sin(pa)
+      const col = segColor(s, true), px = Math.cos(pa), py = Math.sin(pa), nx = -py, ny = px
+      ctx.beginPath(); ctx.moveTo(tipX,tipY); ctx.lineTo(baseX+nx*6-px*9,baseY+ny*6-py*9); ctx.lineTo(baseX-nx*6-px*9,baseY-ny*6-py*9); ctx.closePath(); ctx.fillStyle=col; ctx.fill()
+      ctx.beginPath(); ctx.arc(tipX,tipY,5,0,7); ctx.fillStyle='#fff'; ctx.fill()
+      ctx.beginPath(); ctx.arc(tipX,tipY,3,0,7); ctx.fillStyle=col; ctx.fill()
+    }
+    function renderTimeline() {
+      const box = document.getElementById('timeline')
+      box.innerHTML = SLOTS.map(s => `<button type="button" class="${s.id===slot.id?'active':''}" data-id="${s.id}">${s.label}</button>`).join('')
+      box.querySelectorAll('button').forEach(btn => {
+        btn.onclick = () => { slot = SLOTS.find(x => x.id === btn.dataset.id); renderTimeline(); update() }
+      })
+    }
+    function update() {
+      const b = +document.getElementById('sBaseline').value
+      const l = +document.getElementById('sLive').value
+      const w = displayBlendWeight(slot.hm)
+      const d = calcDisplay(b, l, w)
+      const liveMode = w > 0
+      const meta = levelMeta(d)
+
+      document.getElementById('vBaseline').textContent = b
+      document.getElementById('vLive').textContent = l
+      document.getElementById('genTime').textContent = slot.time
+
+      const levelEl = document.getElementById('levelLabel')
+      levelEl.textContent = meta.label
+      levelEl.className = 'gauge-level ' + meta.cls
+
+      const baseRow = document.getElementById('baselineRow')
+      if (liveMode) {
+        document.getElementById('baselineLine').textContent = '基准分 ' + b
+        baseRow.style.display = 'block'
+      } else {
+        baseRow.style.display = 'none'
+      }
+
+      document.getElementById('positionDesc').textContent = positionDesc(d, d < 50)
+
+      const scoreEl = document.getElementById('displayScore')
+      scoreEl.textContent = d
+      scoreEl.className = 'gauge-score ' + meta.cls
+
+      const pctB = Math.round((1-w)*100), pctL = Math.round(w*100)
+      document.getElementById('formula').innerHTML = liveMode
+        ? `展示分 = ${b} × ${pctB}% + ${l} × ${pctL}% = <strong>${d}</strong>`
+        : `展示分 = 基准分 = <strong>${d}</strong>（${slot.label}，无融合）`
+
+      drawGauge(liveMode ? d : b)
+    }
+    document.getElementById('sBaseline').oninput = update
+    document.getElementById('sLive').oninput = update
+    renderTimeline()
+    update()
+  </script>
+</body>
+</html>
