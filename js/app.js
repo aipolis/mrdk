@@ -161,7 +161,7 @@ function renderGridSection(section) {
       html += `
         <article class="grid9-cell">
           <span class="grid9-value-row">
-            <span class="grid9-value">${esc(cell.displayValue || cell.value || '--')}</span>
+            <span class="grid9-value ${esc(cell.valueClass || '')}">${esc(cell.displayValue || cell.value || '--')}</span>
             ${arrow ? `<span class="trend-arrow ${good ? 'trend-good' : 'trend-bad'}">${arrow}</span>` : ''}
           </span>
           <span class="grid9-label">${esc(cell.label)}</span>

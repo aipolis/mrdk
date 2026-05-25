@@ -51,10 +51,7 @@ const INTRADAY_DEFS = [
 const ZERO_PCT = new Set(['+0.00%', '-0.00%', '0.00%', '0%', '0', '0.0'])
 
 function shouldShowAuctionTodayValues() {
-  const now = new Date()
-  const wd = now.getDay()
-  if (wd === 0 || wd === 6) return false
-  return now.getHours() * 60 + now.getMinutes() >= 9 * 60 + 15
+  return true
 }
 
 
@@ -187,7 +184,14 @@ function buildAuctionPrevMap(data) {
 
 function mergeAuctionItems(rawItems, data) {
   const prevMap = buildAuctionPrevMap(data)
+  const hasServerValue = (list) => (list || []).some((it) => {
+    const v = String(it?.displayValue ?? it?.value ?? '').trim()
+    return v && v !== '--' && !ZERO_PCT.has(v)
+  })
   const showToday = shouldShowAuctionTodayValues()
+    || data?.isReportReady !== false
+    || hasServerValue(data?.auction)
+    || hasServerValue(rawItems)
   const byKey = {}
   ;(data?.auction || []).forEach((it) => { if (it?.key) byKey[it.key] = it })
   ;(rawItems || []).forEach((it) => { if (it?.key) byKey[it.key] = it })
@@ -547,6 +551,10 @@ function normalizeCell(item) {
     trendGood: item.trendGood != null ? item.trendGood : meta.good,
 
     trendArrow: meta.text,
+
+    valueClass: (item.trendGood != null ? item.trendGood : meta.good) === true
+      ? 'value-hot'
+      : ((item.trendGood != null ? item.trendGood : meta.good) === false ? 'value-cold' : ''),
 
   }
 

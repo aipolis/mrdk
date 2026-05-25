@@ -354,6 +354,9 @@ a {
   color: var(--text);
 }
 
+.grid9-value.value-hot { color: #ff4d4f; }
+.grid9-value.value-cold { color: #52c41a; }
+
 .grid9-label {
   display: block;
   font-size: 10px;
@@ -374,8 +377,8 @@ a {
   color: #6b7280;
 }
 
-.trend-arrow.trend-good { color: #52c41a; }
-.trend-arrow.trend-bad { color: #ff4d4f; }
+.trend-arrow.trend-good { color: #ff4d4f; }
+.trend-arrow.trend-bad { color: #52c41a; }
 
 .peripheral-row {
   display: grid;
