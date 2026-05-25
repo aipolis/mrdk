@@ -522,6 +522,45 @@ function trendMeta(cell) {
 
 }
 
+function parseFirstNumber(v) {
+  const s = String(v ?? '').trim()
+  const m = s.match(/[+-]?\d+(?:\.\d+)?/)
+  return m ? Number(m[0]) : null
+}
+
+function parseSignedPercent(v) {
+  const s = String(v ?? '').trim()
+  const m = s.match(/[+-]\d+(?:\.\d+)?\s*%/)
+  return m ? Number(m[0].replace('%', '')) : null
+}
+
+function inferValueGood(item) {
+  const key = item.key || ''
+  const value = String(item.displayValue || item.value || '').trim()
+  if (!value || value === '--') return null
+
+  const signedPct = parseSignedPercent(value)
+  if (signedPct != null) {
+    if (signedPct === 0) return null
+    return INVERSE_KEYS.has(key) ? signedPct < 0 : signedPct > 0
+  }
+
+  const n = parseFirstNumber(value)
+  if (n == null) return null
+
+  if (key === 'upRatio') return n >= 50
+  if (key === 'advance' || key === 'advanceLive') return n >= 2500
+  if (key === 'height') return n >= 3
+  if (key === 'limitUp' || key === 'limitUpLive') return n >= 50
+  if (key === 'limitDown' || key === 'limitDownLive') return n <= 10
+  if (key === 'seal') return n >= 60
+  if (key === 'promote' || key === 'promoteLive') return n >= 25
+  if (key === 'break' || key === 'breakLive') return n <= 30
+  if (key === 'oneWord' || key === 'auctionOneWord' || key === 'high10Live') return n > 0
+  if (key === 'volume' || key === 'marketVolumeLive' || key === 'auctionVolume') return n > 0
+  return null
+}
+
 
 
 function normalizeCell(item) {
@@ -539,6 +578,7 @@ function normalizeCell(item) {
   if (prev === '0' || prev === '-') prev = '--'
 
   const meta = trendMeta(item)
+  const valueGood = item.trendGood != null ? item.trendGood : (meta.good != null ? meta.good : inferValueGood(item))
 
   return {
 
@@ -548,13 +588,13 @@ function normalizeCell(item) {
 
     prev,
 
-    trendGood: item.trendGood != null ? item.trendGood : meta.good,
+    trendGood: valueGood,
 
     trendArrow: meta.text,
 
-    valueClass: (item.trendGood != null ? item.trendGood : meta.good) === true
+    valueClass: valueGood === true
       ? 'value-hot'
-      : ((item.trendGood != null ? item.trendGood : meta.good) === false ? 'value-cold' : ''),
+      : (valueGood === false ? 'value-cold' : ''),
 
   }
 
