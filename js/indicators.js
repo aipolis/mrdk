@@ -203,7 +203,6 @@ function mergeAuctionItems(rawItems, data) {
     if (showToday && it) {
       value = it.displayValue ?? it.value
       value = value != null && String(value).trim() !== '' ? String(value) : '--'
-      if (ZERO_PCT.has(value)) value = '--'
       if (key === 'auctionOneWord' && value === '0') value = '--'
     }
     return {
