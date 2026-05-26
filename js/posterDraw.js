@@ -100,8 +100,7 @@ function cellValueColor(key) {
 function cellPrevText(cell, sectionId) {
   const prev = cell.prev != null ? String(cell.prev) : ''
   if (!prev || prev === '--') return ''
-  const prefix = sectionId === 'yesterday' ? '前 ' : '昨 '
-  return `${prefix}${prev}`
+  return `昨 ${prev}`
 }
 
 function drawPageBackground(ctx, w, h) {

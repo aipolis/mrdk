@@ -146,7 +146,7 @@ function renderGridSection(section) {
     return '<p class="grid-empty">暂无数据</p>'
   }
 
-  const prefix = section.id === 'yesterday' ? '前 ' : '昨 '
+  const prefix = '昨 '
   let html = '<section class="grid9">'
   for (const row of rows) {
     html += '<section class="grid9-row">'

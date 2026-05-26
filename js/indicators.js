@@ -275,9 +275,21 @@ function parseAdvanceFromCell(cell) {
 
 
 
+function dateKey(raw) {
+  return String(raw || '').replace(/\D/g, '').slice(0, 8)
+}
+
+function getIntradayCompareMetrics(data) {
+  const ref = dateKey(data?.refDate)
+  const advice = dateKey(data?.adviceDate || data?.date)
+  const prev = data?.prevMetrics
+  if (ref && advice && ref === advice && prev && Object.keys(prev).length) return prev
+  return data?.metrics || {}
+}
+
 function buildIntradayPrevMap(data) {
 
-  const m = data?.metrics || {}
+  const m = getIntradayCompareMetrics(data)
 
   const grid = data?.grid9 || []
 
@@ -301,9 +313,11 @@ function buildIntradayPrevMap(data) {
 
   if (prevAdv != null && prevDec != null) {
 
-    const total = Number(prevAdv) + Number(prevDec)
+    const advN = Number(prevAdv)
+    const decN = Number(prevDec)
+    const total = advN + decN
 
-    if (total >= 50) prevRatio = `${(Number(prevAdv) / total * 100).toFixed(1)}%`
+    if (advN > 0 && decN > 0 && total >= 500) prevRatio = `${(advN / total * 100).toFixed(1)}%`
 
   }
 
@@ -378,6 +392,9 @@ function mergeIntradayItems(rawItems, data) {
     if (it) {
 
       const prev = pickPrev(it.prev ?? it.yesterday, prevMap[key])
+      let value = it.value != null ? String(it.value) : '--'
+      const m = data?.metrics || {}
+      if (key === 'upRatio' && Number(m.decline_count || 0) <= 0) value = '--'
 
       return {
 
@@ -387,7 +404,7 @@ function mergeIntradayItems(rawItems, data) {
 
         label: it.label || label,
 
-        value: it.value != null ? String(it.value) : '--',
+        value,
 
         prev,
 
@@ -630,5 +647,3 @@ export function normalizeSections(sections, data = null) {
   })
 
 }
-
-
