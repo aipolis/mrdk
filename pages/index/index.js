@@ -1,5 +1,5 @@
-const { orderIndicatorSections } = require('../../utils/indicators')
-const { fetchHomeFromNetwork, applyHomeData, getHomeCache, isSameHomeSnapshot } = require('../../utils/store')
+const { orderIndicatorSections, normalizeIndicatorSections } = require('../../utils/indicators')
+const { fetchHomeFromNetwork, applyHomeData, getHomeCache, isSameHomeSnapshot, fetchHistory } = require('../../utils/store')
 const { withPreviewScore } = require('../../utils/preview')
 const { homeData } = require('../../utils/data')
 const { getDisplayLevel, dailyQuote, normalizeQuote, formatQuoteText } = require('../../utils/theme')
@@ -11,6 +11,12 @@ const { createSharePoster, savePosterToAlbum, forwardPosterImage } = require('..
 const { formatHeaderDate, formatGaugeUpdatedAt } = require('../../utils/dateDisplay')
 
 const LOADING_DESC = '正在汇总昨日收盘数据…'
+
+const TREND_PERIODS = [
+  { days: 5, label: '近5日' },
+  { days: 10, label: '近10日' },
+  { days: 20, label: '近20日' },
+]
 
 function barColorForScore(score) {
   const s = Number(score) || 0
@@ -43,6 +49,9 @@ Page({
     emptyReasons: [],
     quoteFontReady: false,
     trend: [],
+    trendDays: 10,
+    trendPeriods: TREND_PERIODS,
+    historyList: [],
     navCapSafeHeight: 88,
     navSpacerHeight: 140,
     sharePosterVisible: false,
@@ -92,7 +101,7 @@ Page({
     if (this._gaugeCtrl && this._gaugeCtrl.ctx && !this.data.scoreCalculating && this.data.score) {
       this._gaugeCtrl.drawFinal(this.data.score)
     }
-    if (this.data.trend && this.data.trend.length) {
+    if ((this.data.historyList && this.data.historyList.length) || (this.data.trend && this.data.trend.length)) {
       this.drawTrend()
     }
   },
@@ -132,6 +141,10 @@ Page({
   applyPageData(data, options = {}) {
     const { fromCache = false, silent = false } = options
     data = withPreviewScore(data)
+    data = {
+      ...data,
+      indicatorSections: normalizeIndicatorSections(data),
+    }
     const gaugeScore = data.displayScore != null ? data.displayScore : data.score
     const level = getDisplayLevel(gaugeScore)
     const finalScore = gaugeScore
@@ -169,6 +182,8 @@ Page({
       emptyReasons: data.emptyReasons || [],
       indicatorSections: data.indicatorSections || [],
       trend: data.trend || [],
+      historyList: data.historyList || [],
+      trendDays: this.data.trendDays || 10,
       positionDesc: skipAnim ? this._pendingGaugeMeta.positionDesc : LOADING_DESC,
       levelLabel: skipAnim ? this._pendingGaugeMeta.levelLabel : '',
       levelClass: skipAnim ? this._pendingGaugeMeta.levelClass : '',
@@ -294,10 +309,19 @@ Page({
       })
     }
 
-    return fetchHomeFromNetwork({ reuseInflight: !forceRefresh, force: forceRefresh })
-      .then(data => {
+    return Promise.all([
+      fetchHomeFromNetwork({ reuseInflight: !forceRefresh, force: forceRefresh }),
+      fetchHistory(20, { force: forceRefresh }).catch(() => ({ list: [] })),
+    ])
+      .then(([data, histData]) => {
+        const histList = (histData && histData.list) || data.historyList || []
         if (!cached || !isSameHomeSnapshot(cached, data)) {
-          this.applyPageData(data, { silent: !!cached })
+          this.applyPageData({ ...data, historyList: histList }, { silent: !!cached })
+        } else {
+          this.setData({
+            historyList: histList,
+            indicatorSections: data.indicatorSections || this.data.indicatorSections,
+          }, () => this.drawTrend())
         }
       })
       .catch(err => {
@@ -329,10 +353,23 @@ Page({
     })
   },
 
+  onTrendPeriodTap(e) {
+    const days = Number(e.currentTarget.dataset.days) || 10
+    if (days === this.data.trendDays) return
+    this.setData({ trendDays: days }, () => this.drawTrend())
+  },
+
   drawTrend() {
     const colors = getChartColors(this.data.uiTheme)
     this.drawCanvas('#trendCanvas', (ctx, w, h) => {
-      const trend = this.data.trend
+      const days = this.data.trendDays || 10
+      const hist = this.data.historyList || []
+      let trend = hist.length
+        ? hist.slice(0, days).slice().reverse().map(item => ({
+          date: item.date,
+          score: Number(item.score) || 0,
+        }))
+        : (this.data.trend || []).slice(-days)
       const snap = v => Math.round(v * 2) / 2
       const font = '-apple-system, BlinkMacSystemFont, PingFang SC, sans-serif'
       ctx.clearRect(0, 0, w, h)
@@ -398,9 +435,6 @@ Page({
         ctx.font = `9px ${font}`
         ctx.textBaseline = 'top'
         ctx.fillText(dateLabel, barX + barW / 2, padT + chartH + 6)
-      })
-    })
-  },
       })
     })
   },

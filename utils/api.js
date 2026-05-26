@@ -249,6 +249,12 @@ function getHistory(days = 30, options = {}) {
   return request(`/api/sentiment/history?days=${days}&tab=day`, { timeout })
 }
 
+function getDaySentiment(date) {
+  const d = String(date || '').replace(/-/g, '').slice(0, 8)
+  if (!d) return Promise.reject(new Error('invalid_date'))
+  return request(`/api/sentiment/day?date=${d}`)
+}
+
 function checkHealth() {
   return request('/api/health').catch(() => null)
 }
@@ -287,6 +293,7 @@ module.exports = {
   getTodaySentimentWithRetry,
   getAdvice,
   getHistory,
+  getDaySentiment,
   checkHealth,
   loginUser,
   registerSubscribe,

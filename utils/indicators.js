@@ -156,7 +156,7 @@ function sanitizeAuctionList(items) {
     const out = { ...item }
     let val = displayText(out.value)
     if (pctKeys.has(out.key) && zeroPct.has(val)) val = '--'
-    if (out.key === 'auctionOneWord' && volMissing) val = '--'
+    if (out.key === 'auctionOneWord' && volMissing && (val === '0' || val === '0.0')) val = '--'
     let prev = displayText(out.prev != null ? out.prev : out.yesterday)
     if (zeroPct.has(prev) || prev === '+0.00%' || prev === '-0.00%') prev = '--'
     out.value = val
@@ -169,6 +169,130 @@ function sanitizeAuctionList(items) {
     }
     return out
   })
+}
+
+const ZERO_PCT = new Set(['+0.00%', '-0.00%', '0.00%', '0%', '0', '0.0'])
+
+function shouldShowAuctionTodayValues() {
+  const now = new Date()
+  const wd = now.getDay()
+  if (wd === 0 || wd === 6) return false
+  return now.getHours() * 60 + now.getMinutes() >= 9 * 60 + 15
+}
+
+function pickPrevMany(...candidates) {
+  for (const c of candidates) {
+    const p = c != null ? String(c).trim().replace(/^昨\s*/, '').replace(/^前日\s*/, '') : ''
+    if (p && p !== '--' && !ZERO_PCT.has(p)) return p
+  }
+  return '--'
+}
+
+function auctionArchiveVal(item) {
+  if (!item) return null
+  const val = String(item.displayValue != null ? item.displayValue : (item.value != null ? item.value : '')).trim()
+  if (!val || val === '--' || ZERO_PCT.has(val)) return null
+  return val
+}
+
+function archiveByKey(list) {
+  const map = {}
+  ;(list || []).forEach(it => {
+    if (it && it.key) map[it.key] = it
+  })
+  return map
+}
+
+function ingestAuctionPrev(map, items) {
+  ;(items || []).forEach(it => {
+    if (!it || !it.key) return
+    const p = it.prev != null ? it.prev : it.yesterday
+    if (p != null && String(p).trim() && String(p).trim() !== '--') {
+      map[it.key] = String(p).replace(/^昨\s*/, '').replace(/^前日\s*/, '')
+    }
+  })
+}
+
+function buildAuctionPrevMap(data) {
+  const map = {}
+  ingestAuctionPrev(map, data && data.auction)
+  const sec = ((data && data.indicatorSections) || []).find(s => s && s.id === 'auction')
+  ingestAuctionPrev(map, sec && sec.items)
+
+  const refMap = archiveByKey(data && data.refAuctionArchive)
+  const prevMap = archiveByKey(data && data.prevAuctionArchive)
+  const m = (data && data.metrics) || {}
+
+  AUCTION_DEFS.forEach(({ key }) => {
+    if (map[key] && map[key] !== '--') return
+    const picked = pickPrevMany(
+      prevMap[key] && prevMap[key].prev,
+      prevMap[key] && prevMap[key].yesterday,
+      auctionArchiveVal(prevMap[key]),
+      refMap[key] && refMap[key].prev,
+      refMap[key] && refMap[key].yesterday,
+      auctionArchiveVal(refMap[key]),
+      key === 'auctionOneWord' ? m.auction_one_word_count : null,
+      key === 'auctionOneWord' ? m.auction_one_word : null,
+      key === 'auctionVolume' ? (m.auction_volume_yi != null ? `${Math.round(Number(m.auction_volume_yi))}亿` : null) : null,
+      key === 'yesterdayFirst' && m.first_board_auction_chg != null ? formatPct(m.first_board_auction_chg) : null,
+      key === 'yesterdayMulti' && m.multi_board_auction_chg != null ? formatPct(m.multi_board_auction_chg) : null,
+      key === 'recentMulti' && m.max_board_auction_chg != null ? formatPct(m.max_board_auction_chg) : null,
+      key === 'top10AuctionChg' && m.auction_median != null ? formatPct(m.auction_median) : null,
+      key === 'top10AuctionChg' && m.top10_avg_chg != null ? formatPct(m.top10_avg_chg) : null
+    )
+    if (picked !== '--') map[key] = picked
+  })
+  return map
+}
+
+function mergeAuctionItems(rawItems, data) {
+  const prevMap = buildAuctionPrevMap(data)
+  const showToday = shouldShowAuctionTodayValues()
+  const byKey = {}
+  ;((data && data.auction) || []).forEach(it => { if (it && it.key) byKey[it.key] = it })
+  ;(rawItems || []).forEach(it => { if (it && it.key) byKey[it.key] = it })
+
+  return AUCTION_DEFS.map(({ key, label }) => {
+    const it = byKey[key]
+    const prev = pickPrev(showToday && it ? (it.prev != null ? it.prev : it.yesterday) : null, prevMap[key])
+    let value = '--'
+    if (showToday && it) {
+      value = it.displayValue != null ? it.displayValue : it.value
+      value = value != null && String(value).trim() !== '' ? String(value) : '--'
+      if (ZERO_PCT.has(value)) value = '--'
+      if (key === 'auctionOneWord' && value === '0') value = '--'
+    }
+    return mapItem({
+      key,
+      label: (it && it.label) || label,
+      value,
+      prev,
+      yesterday: prev,
+      trend: (it && it.trend) || 'flat',
+      up: it && it.up
+    })
+  }).filter(Boolean)
+}
+
+function ensureAuctionSection(sections, data) {
+  const list = Array.isArray(sections) ? sections.slice() : []
+  const idx = list.findIndex(s => s && s.id === 'auction')
+  const rawItems = idx >= 0 ? list[idx].items : []
+  const items = sanitizeAuctionList(mergeAuctionItems(rawItems, data))
+  const def = SECTION_DEFS.find(d => d.id === 'auction') || {}
+  const patch = {
+    id: 'auction',
+    title: (idx >= 0 && list[idx].title) || def.title || '今日竞价情绪',
+    meta: (idx >= 0 && list[idx].meta) || def.meta || '',
+    layout: (idx >= 0 && list[idx].layout) || def.layout || 'grid3',
+    cols: (idx >= 0 && list[idx].cols) || def.cols || 3,
+    items,
+    pending: items.every(it => it.value === '--')
+  }
+  if (idx >= 0) list[idx] = { ...list[idx], ...patch }
+  else list.push(patch)
+  return list
 }
 
 
@@ -197,7 +321,7 @@ function normalizeAuction(data) {
 
     if (key === 'auctionOneWord') {
 
-      const v = m.auction_one_word != null ? m.auction_one_word : (m.auction_up != null ? m.auction_up : auctionUp)
+      const v = m.auction_one_word != null ? m.auction_one_word : m.auction_one_word_count
 
       if (v == null) return { key, label, value: '--', trend: 'flat' }
 
@@ -480,10 +604,7 @@ function normalizeIndicatorSections(data) {
 
       let items = (sec.items || []).map(mapItem).filter(Boolean)
       if (sec.id === 'auction') {
-        items = sanitizeAuctionList(items)
-        if (!items.length) {
-          items = normalizeAuction(data)
-        }
+        items = sanitizeAuctionList(mergeAuctionItems(sec.items || [], data))
       }
 
       return {
@@ -524,7 +645,7 @@ function normalizeIndicatorSections(data) {
 
       else if (def.id === 'peripheral') items = normalizePeripheral(data)
 
-      else if (def.id === 'auction') items = normalizeAuction(data)
+      else if (def.id === 'auction') items = sanitizeAuctionList(mergeAuctionItems([], data))
 
       else if (def.id === 'intraday') items = normalizeIntradayItems(data.intraday || [], data)
 
@@ -535,6 +656,8 @@ function normalizeIndicatorSections(data) {
   }
 
 
+
+  sections = ensureAuctionSection(sections, data)
 
   sections = ensureIntradaySection(sections, data)
 

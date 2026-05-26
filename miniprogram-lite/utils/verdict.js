@@ -1,5 +1,7 @@
 /** 龙 / 中 / 空 → 天气文案（前端映射，后端逻辑不变） */
 
+const { formatGaugeUpdatedAt, formatHeaderDate } = require('./dateDisplay')
+
 const LONG = {
   key: 'long',
   char: '龙',
@@ -47,34 +49,33 @@ function scoreOf(data) {
   return Number(v) || 0
 }
 
-function calcVerdictFromScore(score, emptyWarning) {
-  if (emptyWarning || score < 30) return EMPTY
+/** 龙 >70 · 空 <30 · 其余为中 */
+function calcVerdictFromScore(score) {
+  if (score < 30) return EMPTY
   if (score > 70) return LONG
   return MID
 }
 
 function calcVerdict(data) {
-  return calcVerdictFromScore(scoreOf(data), !!data.emptyWarning)
+  return calcVerdictFromScore(scoreOf(data))
 }
 
 function calcHistoryVerdict(item) {
   const score = Number(item && item.score) || 0
-  const level = String(item && item.levelClass || '')
-  if (score <= 14 || level === 'cold' || level === 'frenzy' && score < 20) {
-    return calcVerdictFromScore(score, score <= 14)
-  }
-  return calcVerdictFromScore(score, false)
+  return calcVerdictFromScore(score)
+}
+
+/** 列表/走势日期：不显示年份（MM-DD 或 MM/DD） */
+function formatShortDate(date) {
+  const s = String(date || '')
+  if (/^\d{4}-\d{2}-\d{2}$/.test(s)) return s.slice(5)
+  if (s.length === 8) return `${s.slice(4, 6)}-${s.slice(6, 8)}`
+  return s
 }
 
 function formatRefDate(data) {
   const d = (data && (data.refDate || data.adviceDate || data.date)) || ''
   return String(d).replace(/^(\d{4})(\d{2})(\d{2})$/, '$1-$2-$3')
-}
-
-function formatHeaderDate() {
-  const d = new Date()
-  const w = ['周日', '周一', '周二', '周三', '周四', '周五', '周六'][d.getDay()]
-  return `${d.getMonth() + 1}月${d.getDate()}日 ${w}`
 }
 
 function mapToday(raw) {
@@ -99,26 +100,30 @@ function mapToday(raw) {
   }
 }
 
+/** 展示分最后一次形成时间（用接口 generatedAt* / generatedAtTime，不用本地时钟） */
 function formatUpdateBadge(raw) {
-  const label = raw.generatedAtLabel || raw.generatedAt || ''
-  if (!label) return ''
+  if (!raw) return ''
+  const label = formatGaugeUpdatedAt(raw)
   return label.includes('更新') ? `● ${label}` : `● ${label} 更新`
 }
 
 function mapHistoryList(list) {
-  return (list || []).map(item => {
-    const verdict = calcHistoryVerdict(item)
+  const seen = new Set()
+  const rows = []
+  for (const item of list || []) {
     const date = String(item.date || '')
-    const label = date.length === 8
-      ? `${date.slice(4, 6)}-${date.slice(6, 8)}`
-      : date
-    return {
-      date: label,
+    const dateKey = date.replace(/-/g, '').slice(0, 8)
+    if (!dateKey || seen.has(dateKey)) continue
+    seen.add(dateKey)
+    const verdict = calcHistoryVerdict(item)
+    rows.push({
+      date: formatShortDate(date),
       fullDate: date,
       verdict,
       weatherLine: `${verdict.weather} · ${verdict.action}`,
-    }
-  })
+    })
+  }
+  return rows
 }
 
 function subscribePreviewText(verdict) {
@@ -138,4 +143,5 @@ module.exports = {
   subscribePreviewText,
   formatHeaderDate,
   formatUpdateBadge,
+  formatShortDate,
 }

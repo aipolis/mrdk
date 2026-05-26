@@ -51,6 +51,29 @@ function shouldSkipHomeNetwork(options = {}) {
   return hasFreshHomeCache()
 }
 
+function tradeDateKey(raw) {
+  return String(raw || '').replace(/-/g, '').slice(0, 8)
+}
+
+function attachAuctionArchives(raw, histList) {
+  const data = raw || {}
+  const refD = tradeDateKey(data.refDate || data.adviceDate || data.date)
+  if (!refD) return Promise.resolve(data)
+
+  const rows = Array.isArray(histList) ? histList : []
+  const refIdx = rows.findIndex(item => tradeDateKey(item.date) === refD)
+  const prevD = refIdx >= 0 ? tradeDateKey(rows[refIdx + 1] && rows[refIdx + 1].date) : ''
+
+  const tasks = [api.getDaySentiment(refD).catch(() => null)]
+  if (prevD && prevD !== refD) tasks.push(api.getDaySentiment(prevD).catch(() => null))
+
+  return Promise.all(tasks).then(([refDetail, prevDetail]) => ({
+    ...data,
+    refAuctionArchive: (refDetail && refDetail.auction) || [],
+    prevAuctionArchive: (prevDetail && prevDetail.auction) || [],
+  }))
+}
+
 
 
 function applyHomeData(data) {
@@ -141,6 +164,14 @@ function applyHomeData(data) {
 
     trend: data.trend || [],
 
+    historyList: data.historyList || [],
+
+    metrics: data.metrics || {},
+
+    refAuctionArchive: data.refAuctionArchive || [],
+
+    prevAuctionArchive: data.prevAuctionArchive || [],
+
     subscribePreview: data.subscribePreview || null
 
   }
@@ -160,11 +191,18 @@ function fetchHomeFromNetwork(options = {}) {
   if (options.reuseInflight !== false && homeFetchInflight) {
     return homeFetchInflight
   }
-  homeFetchInflight = api.getTodaySentimentWithRetry(reqOptions)
-    .then(raw => {
-      const data = applyHomeData(raw)
-      saveHomeCache(data)
-      return data
+  homeFetchInflight = Promise.all([
+    api.getTodaySentimentWithRetry(reqOptions),
+    api.getHistory(20, { timeout: reqOptions.timeout, httpOnly: true }).catch(() => ({ list: [] })),
+  ])
+    .then(([raw, histData]) => {
+      const histList = (histData && histData.list) || []
+      return attachAuctionArchives(raw, histList).then(enriched => {
+        const data = applyHomeData(enriched)
+        data.historyList = histList
+        saveHomeCache(data)
+        return data
+      })
     })
     .catch(err => {
       homeFetchInflight = null

@@ -55,7 +55,7 @@ from home_cache import (
     stop_background_refresh,
     trigger_async_build,
 )
-from history_store import fetch_daily_detail, fetch_history_list, build_history_item
+from history_store import fetch_daily_detail, fetch_history_list, build_history_item, dedupe_daily_market_records
 from history_sync import (
     persist_auction_snapshot,
     persist_day,
@@ -815,6 +815,15 @@ def sync_history_cache(
     if err := _cron_auth_error(x_cron_secret):
         return err
     info = trigger_sync_history_days(days)
+    return {"code": 0, "data": info}
+
+
+@app.post("/api/cache/dedupe-history")
+def dedupe_history_cache(x_cron_secret: str = Header(default="")):
+    """删除 daily_market 中展示日期重复的行"""
+    if err := _cron_auth_error(x_cron_secret):
+        return err
+    info = dedupe_daily_market_records()
     return {"code": 0, "data": info}
 
 

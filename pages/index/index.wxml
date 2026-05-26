@@ -186,21 +186,24 @@
 
 
     <view class="section section-trend">
-
       <view class="mr-section-head">
-
         <text class="mr-section-title">情绪趋势</text>
-
-        <text class="mr-section-meta">近10日</text>
-
+        <text class="mr-section-meta">近{{trendDays}}日</text>
       </view>
-
       <view class="section-card mr-card trend-card">
-
         <canvas type="2d" id="trendCanvas" class="trend-canvas"></canvas>
-
+        <view class="period-tabs">
+          <view
+            wx:for="{{trendPeriods}}"
+            wx:key="days"
+            class="period-tab {{trendDays === item.days ? 'period-tab--active' : ''}}"
+            data-days="{{item.days}}"
+            bindtap="onTrendPeriodTap"
+          >
+            <text>{{item.label}}</text>
+          </view>
+        </view>
       </view>
-
     </view>
 
 

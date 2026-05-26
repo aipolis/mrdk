@@ -1,13 +1,18 @@
 const api = require('./api')
-const { mapToday, mapHistoryList } = require('./verdict')
+const { mapToday, mapHistoryList, formatUpdateBadge, formatHeaderDate } = require('./verdict')
 const { mapTrendBars } = require('./trend')
 
 const CACHE_KEY = 'lite_today_v1'
 
 function loadCachedToday() {
   try {
-    const raw = wx.getStorageSync(CACHE_KEY)
-    if (raw && raw.verdict) return raw
+    const cached = wx.getStorageSync(CACHE_KEY)
+    if (!cached || !cached.verdict) return null
+    return {
+      ...cached,
+      headerDate: formatHeaderDate(),
+      updateBadge: cached.raw ? formatUpdateBadge(cached.raw) : (cached.updateBadge || ''),
+    }
   } catch (e) { /* ignore */ }
   return null
 }
@@ -19,7 +24,7 @@ function saveCachedToday(mapped) {
 }
 
 function fetchToday(options = {}) {
-  return api.getTodaySentimentWithRetry(options).then(raw => {
+  return api.getTodaySentimentWithRetry({ ...options, maxAttempts: options.maxAttempts || 3 }).then(raw => {
     const mapped = mapToday(raw)
     saveCachedToday(mapped)
     return mapped

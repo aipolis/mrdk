@@ -160,6 +160,97 @@ def save_daily_record(
         return False
 
 
+def _display_date_key(row: dict) -> str:
+    """history 列表展示用日期（YYYY-MM-DD 或 YYYYMMDD）→ YYYYMMDD"""
+    try:
+        blob = json.loads(row.get("history_json") or "{}")
+        if blob.get("date"):
+            return str(blob["date"]).replace("-", "")[:8]
+    except Exception:
+        pass
+    raw = row.get("date_display") or row.get("trade_date") or ""
+    return str(raw).replace("-", "")[:8]
+
+
+def _dedupe_history_items(items: list[dict]) -> list[dict]:
+    """同一展示日只保留一条（按 API date 字段）。"""
+    seen: set[str] = set()
+    out: list[dict] = []
+    for item in items:
+        key = str(item.get("date") or "").replace("-", "")[:8]
+        if not key or key in seen:
+            continue
+        seen.add(key)
+        out.append(item)
+    return out
+
+
+def dedupe_daily_market_records() -> dict:
+    """
+    删除 daily_market 中展示日期重复的行。
+    同一 date 保留 trade_date 与展示日一致者，否则保留 updated_at 最新者。
+    """
+    if not mysql_enabled() or not ensure_schema():
+        return {"deleted": 0, "skipped": True, "reason": "mysql_disabled"}
+
+    def _run(conn):
+        with conn.cursor() as cur:
+            cur.execute(
+                f"""
+                SELECT trade_date, date_display, history_json, updated_at
+                FROM `{TABLE_DAILY}`
+                ORDER BY trade_date DESC
+                """
+            )
+            rows = cur.fetchall() or []
+
+        groups: dict[str, list[dict]] = {}
+        for row in rows:
+            key = _display_date_key(row)
+            if len(key) != 8:
+                key = str(row.get("trade_date") or "")
+            groups.setdefault(key, []).append(row)
+
+        to_delete: list[str] = []
+        for key, items in groups.items():
+            if len(items) <= 1:
+                continue
+
+            def _rank(r: dict) -> tuple:
+                trade = str(r.get("trade_date") or "")
+                match = 1 if trade == key else 0
+                updated = r.get("updated_at") or ""
+                return (match, updated)
+
+            items.sort(key=_rank, reverse=True)
+            to_delete.extend(str(r["trade_date"]) for r in items[1:])
+
+        if to_delete:
+            with conn.cursor() as cur:
+                for trade_d in to_delete:
+                    cur.execute(
+                        f"DELETE FROM `{TABLE_DAILY}` WHERE trade_date=%s",
+                        (trade_d,),
+                    )
+            conn.commit()
+
+        with conn.cursor() as cur:
+            cur.execute(f"SELECT COUNT(*) AS c FROM `{TABLE_DAILY}`")
+            remaining = int((cur.fetchone() or {}).get("c") or 0)
+
+        return {
+            "deleted": len(to_delete),
+            "tradeDates": to_delete,
+            "remaining": remaining,
+        }
+
+    try:
+        return with_retry(_run) or {"deleted": 0}
+    except Exception:
+        log.exception("dedupe daily_market failed")
+        return {"deleted": 0, "error": "dedupe_failed"}
+
+
 def fetch_history_list(days: int) -> list[dict]:
     """按交易日倒序取最近 days 条历史列表项。"""
     if not mysql_enabled() or not ensure_schema():
@@ -176,7 +267,8 @@ def fetch_history_list(days: int) -> list[dict]:
                 (max(1, min(days, 120)),),
             )
             rows = cur.fetchall() or []
-        return [_row_to_history_item(r) for r in rows]
+        items = [_row_to_history_item(r) for r in rows]
+        return _dedupe_history_items(items)
 
     try:
         return with_retry(_run) or []

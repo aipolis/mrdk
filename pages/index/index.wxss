@@ -439,6 +439,28 @@
   display: block;
 }
 
+.period-tabs {
+  display: flex;
+  justify-content: center;
+  gap: 12rpx;
+  margin-top: 16rpx;
+  padding-top: 16rpx;
+  border-top: 1rpx solid var(--mr-table-border);
+}
+
+.period-tab {
+  padding: 8rpx 28rpx;
+  border-radius: 20rpx;
+  background: var(--mr-day-pill-bg);
+  font-size: 24rpx;
+  color: var(--mr-text-muted);
+}
+
+.period-tab--active {
+  background: #ff4d4f;
+  color: #fff;
+}
+
 .grid-empty {
   text-align: center;
   padding: 48rpx 0;
