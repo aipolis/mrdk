@@ -3,9 +3,9 @@
 <head>
   <meta charset="UTF-8"/>
   <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover"/>
-  <meta name="description" content="明日当空 · A股短线情绪量化参考工具，龙空龙复盘辅助，数据仅供参考，不构成投资建议。"/>
+  <meta name="description" content="明日当空｜每天收盘，看清明天的市场温度。不怕错过，就怕做错。帮你识别下雨天。"/>
   <title>明日当空 · 市场情绪</title>
-  <link rel="stylesheet" href="/css/app.css"/>
+  <link rel="stylesheet" href="/css/app.css?v=20260527c"/>
 </head>
 <body>
   <section class="page">
@@ -23,6 +23,11 @@
       </section>
     </header>
 
+    <section class="hero-intro" aria-label="明日当空定位">
+      <p class="hero-kicker">明日当空｜每天收盘，看清明天的市场温度</p>
+      <p class="hero-copy">不怕错过，就怕做错。帮你识别下雨天。</p>
+    </section>
+
     <p class="status-bar" id="statusBar">正在加载…</p>
 
     <section id="loadingSkeleton">
@@ -35,6 +40,7 @@
       <article class="card quote-bar">
         <span class="pill">与君共勉</span>
         <p class="quote-text" id="quoteText">买在分歧，卖在一致。</p>
+        <p class="quote-author">—— 养家心法</p>
       </article>
 
       <article class="card gauge-card">
@@ -87,7 +93,7 @@
   </section>
 
   <script type="module">
-    import { initHomePage } from '/js/app.js'
+    import { initHomePage } from '/js/app.js?v=20260527c'
     initHomePage()
   </script>
 </body>

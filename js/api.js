@@ -9,9 +9,12 @@ async function fetchJson(path) {
       headers: { Accept: 'application/json' },
     })
     const json = await res.json()
-    if (json.code === 2 && /预热/.test(json.message || '')) {
-      const err = new Error(json.message || '缓存预热中')
+    if (json.code === 2) {
+      const err = new Error(json.message || '缓存更新中')
       err.warming = true
+      err.retryAfterSec = Number(json.retryAfterSec || 5)
+      err.code = 2
+      err.staleContext = json.staleContext || null
       throw err
     }
     if (json.code !== 0) throw new Error(json.message || `请求失败 ${res.status}`)

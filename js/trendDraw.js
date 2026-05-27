@@ -25,10 +25,12 @@ export function historyToTrend(list, days) {
 }
 
 function barColor(score) {
+  if (score >= 90) return '#cf1322'
   if (score >= 80) return '#cf1322'
   if (score >= 60) return '#ff4d4f'
-  if (score >= 40) return '#faad14'
-  if (score >= 20) return '#52c41a'
+  if (score >= 50) return '#faad14'
+  if (score >= 40) return '#52c41a'
+  if (score >= 30) return '#38bdf8'
   return '#1890ff'
 }
 

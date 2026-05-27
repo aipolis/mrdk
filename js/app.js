@@ -1,13 +1,14 @@
-import { AUTO_REFRESH_MS } from './config.js'
-import { getDisplayLevel, dailyQuote, formatHeaderDate } from './theme.js'
-import { normalizeSections } from './indicators.js'
-import { fetchToday, fetchHistory, fetchDay } from './api.js'
-import { createTrendController } from './trendDraw.js'
-import { createGaugeController, IDLE_MIN_MS } from './gaugeAnim.js'
+import { AUTO_REFRESH_MS } from './config.js?v=20260527c'
+import { getDisplayLevel, dailyQuote, formatHeaderDate } from './theme.js?v=20260527c'
+import { normalizeSections } from './indicators.js?v=20260527c'
+import { fetchToday, fetchHistory, fetchDay } from './api.js?v=20260527c'
+import { createTrendController } from './trendDraw.js?v=20260527c'
+import { createGaugeController, IDLE_MIN_MS } from './gaugeAnim.js?v=20260527c'
 
 export { fetchToday, fetchHistory }
 
 const LOADING_DESC = '正在汇总昨日收盘数据…'
+const HOME_QUOTE = '不怕错过，就怕做错。不出门的时候，就在家修炼。'
 
 const $ = (sel) => document.querySelector(sel)
 
@@ -56,11 +57,34 @@ function setGaugeCalculating(on) {
   }
 }
 
+function normalizeRiskReason(reason) {
+  const raw = String(reason || '').trim()
+  if (!raw) return '接力环境偏谨慎'
+
+  const promote = raw.match(/晋级率(?:仅|只有)?\s*(\d+(?:\.\d+)?)%/)
+  if (promote) return `昨日涨停股今日晋级率仅 ${promote[1]}%，也就是昨日涨停股中今天继续涨停的比例偏低`
+
+  const breakRate = raw.match(/炸板率(?:高达|达到|为)?\s*(\d+(?:\.\d+)?)%/)
+  if (breakRate) return `炸板率 ${breakRate[1]}%，封板稳定性不足`
+
+  return raw
+}
+
+function buildRiskCopy(data) {
+  if (!data?.emptyWarning) return null
+  const reason = normalizeRiskReason((data.emptyReasons && data.emptyReasons[0]) || '')
+  return {
+    desc: '分数中性，但接力晋级偏弱',
+    tip: `复盘提示：${reason}。打板少做、精选，等更强确认。`,
+  }
+}
+
 function applyGaugeMeta(data, displayScore, level) {
   const meta = gaugePendingMeta || {}
+  const riskCopy = buildRiskCopy(data)
   const levelLabel = data.levelLabel || data.displayLevel || meta.levelLabel || level.label
   const levelClass = data.levelClass || meta.levelClass || level.class
-  const positionDesc = data.positionDesc || meta.positionDesc || ''
+  const positionDesc = riskCopy?.desc || data.positionDesc || meta.positionDesc || ''
 
   $('#levelLabel').textContent = levelLabel
   $('#levelLabel').className = `gauge-level ${levelClass}`
@@ -154,7 +178,7 @@ function renderGridSection(section) {
       const arrow = cell.trendArrow || ''
       const good = cell.trendGood !== false
       const prevText = cell.prev && cell.prev !== '--' ? cell.prev : '--'
-      const showPrev = section.id === 'auction' || (cell.prev && cell.prev !== '--')
+      const showPrev = section.id === 'yesterday' || section.id === 'auction' || section.id === 'intraday'
       const prev = showPrev
         ? `<span class="grid9-sub"><span class="grid9-sub-prefix">${prefix}</span><span class="grid9-sub-val">${esc(prevText)}</span></span>`
         : '<span class="grid9-sub grid9-sub--empty"></span>'
@@ -197,8 +221,7 @@ function applyData(data, options = {}) {
   const { silent = false } = options
   const displayScore = data.displayScore != null ? data.displayScore : data.score
   const level = getDisplayLevel(displayScore)
-  const quote = dailyQuote(data.adviceDate || data.date)
-  const quoteText = String(data.dailyQuote || quote.text)
+  const quoteText = HOME_QUOTE
   const formattedQuote = /[。！？；…]$/.test(quoteText) ? quoteText : `${quoteText}。`
 
   $('#headerDate').textContent = formatHeaderDate()
@@ -226,16 +249,20 @@ function applyData(data, options = {}) {
   const emptyTip = $('#emptyTip')
   if (data.emptyWarning) {
     emptyTip.hidden = false
-    const reason = (data.emptyReasons && data.emptyReasons[0]) || '综合情绪偏弱'
-    emptyTip.textContent = `龙空风险提示 · ${reason}（本人复盘，非投资建议）`
+    emptyTip.textContent = buildRiskCopy(data)?.tip || '复盘提示：综合情绪偏弱，打板少做、精选，等更强确认。'
   } else {
     emptyTip.hidden = true
   }
 
   renderSections(normalizeSections(data.indicatorSections, data))
 
-  $('#statusBar').textContent = `参考日 ${data.refDate || data.adviceDate || '--'} · 数据已更新`
-  $('#statusBar').className = 'status-bar ok'
+  if (data.archiveFallback) {
+    $('#statusBar').textContent = `首页缓存更新中，暂显示 ${data.refDate || data.adviceDate || '--'} 归档数据`
+    $('#statusBar').className = 'status-bar err'
+  } else {
+    $('#statusBar').textContent = `参考日 ${data.refDate || data.adviceDate || '--'} · 数据已更新`
+    $('#statusBar').className = 'status-bar ok'
+  }
 
   if (silent) {
     stopGaugeAnimation()
@@ -248,7 +275,7 @@ function applyData(data, options = {}) {
 
 function showError(err) {
   const msg = err?.warming
-    ? '服务端正在预热缓存，约 5 秒后自动重试…'
+    ? `缓存更新中，约 ${err.retryAfterSec || 5} 秒后自动重试…`
     : (err?.message || '加载失败')
   $('#statusBar').textContent = msg
   $('#statusBar').className = 'status-bar err'
@@ -283,6 +310,108 @@ function initTrendController() {
 
 function tradeDateKey(raw) {
   return String(raw || '').replace(/-/g, '').slice(0, 8)
+}
+
+function formatTradeDate(raw) {
+  const d = tradeDateKey(raw)
+  if (d.length !== 8) return raw || '--'
+  return `${d.slice(0, 4)}-${d.slice(4, 6)}-${d.slice(6, 8)}`
+}
+
+function latestHistoryDate(histList) {
+  const rows = Array.isArray(histList) ? histList : []
+  for (const row of rows) {
+    const d = tradeDateKey(row?.date || row?.tradeDate)
+    if (d) return d
+  }
+  return ''
+}
+
+function buildArchiveSections(detail) {
+  if (Array.isArray(detail?.indicatorSections) && detail.indicatorSections.length) {
+    return detail.indicatorSections
+  }
+  return [
+    {
+      id: 'yesterday',
+      title: '今天情绪概览',
+      meta: detail?.tradeDate ? `归档 ${formatTradeDate(detail.tradeDate)}` : '归档数据',
+      layout: 'grid3',
+      cols: 3,
+      items: detail?.grid9 || [],
+    },
+    {
+      id: 'peripheral',
+      title: '今天外围情绪及指数',
+      meta: '归档数据',
+      layout: 'row3',
+      cols: 3,
+      items: detail?.peripheral || [],
+    },
+    {
+      id: 'auction',
+      title: '今天竞价情绪',
+      meta: '归档数据',
+      layout: 'grid3',
+      cols: 3,
+      items: detail?.auction || [],
+    },
+  ]
+}
+
+function archiveHomeData(detail, histList, err) {
+  const sentiment = detail?.sentiment || {}
+  const metrics = detail?.metrics || {}
+  const hist = (Array.isArray(histList) ? histList : []).find((i) => (
+    tradeDateKey(i?.date || i?.tradeDate) === tradeDateKey(detail?.tradeDate || metrics?.date || detail?.date)
+  )) || {}
+  const refDate = formatTradeDate(detail?.tradeDate || metrics?.date || detail?.date || hist?.date)
+  const score = Number(sentiment.displayScore ?? sentiment.score ?? hist.score ?? 0)
+  const level = getDisplayLevel(score)
+
+  return {
+    ...detail,
+    adviceDate: refDate,
+    refDate,
+    date: refDate,
+    generatedAt: `归档 ${refDate}`,
+    generatedAtLabel: `归档 ${refDate}`,
+    score,
+    displayScore: score,
+    baselineScore: score,
+    scoreMode: sentiment.scoreMode || 'archive',
+    levelLabel: hist.level || sentiment.level || level.label,
+    displayLevel: hist.level || sentiment.level || level.label,
+    levelClass: hist.levelClass || sentiment.levelClass || level.class,
+    levelColor: sentiment.levelColor || level.color,
+    positionDesc: '首页缓存更新中，暂显示最近归档数据',
+    emptyWarning: Boolean(sentiment.emptyWarning),
+    emptyReasons: sentiment.emptyReasons || [],
+    baselineEmptyWarning: Boolean(sentiment.emptyWarning),
+    baselineEmptyReasons: sentiment.emptyReasons || [],
+    grid9: detail?.grid9 || [],
+    peripheral: detail?.peripheral || [],
+    auction: detail?.auction || [],
+    intraday: [],
+    metrics,
+    prevMetrics: {},
+    indicatorSections: buildArchiveSections(detail),
+    archiveFallback: true,
+    archiveFallbackReason: err?.message || '缓存更新中',
+    staleContext: err?.staleContext || null,
+  }
+}
+
+async function loadArchiveFallback(err, histData) {
+  const histList = histData?.list || histData || []
+  const cachedDate = tradeDateKey(err?.staleContext?.cached?.ref_d)
+  const latestDate = cachedDate || latestHistoryDate(histList)
+  if (!latestDate) throw err
+  const detail = await fetchDay(latestDate)
+  return {
+    data: archiveHomeData(detail, histList, err),
+    histList,
+  }
 }
 
 async function attachAuctionArchives(data, histList) {
@@ -339,18 +468,39 @@ export async function loadHome(options = {}) {
       retryTimer = null
     }
   } catch (err) {
-    if (!silent) hideLoading()
-    if (silent) {
+    const contentHidden = $('#contentBlock')?.hidden !== false
+    let showedFallback = false
+    if (err?.warming) {
+      try {
+        const histData = await fetchHistory(20).catch(() => null)
+        const fallback = await loadArchiveFallback(err, histData)
+        if (!silent) {
+          hideLoading()
+          beginGaugeLoading()
+        }
+        await attachAuctionArchives(fallback.data, fallback.histList)
+        applyData(fallback.data, { silent })
+        if (Array.isArray(fallback.histList) && fallback.histList.length) {
+          initTrendController().setHistoryList(fallback.histList)
+        }
+        showedFallback = true
+      } catch (fallbackErr) {
+        if (!silent) hideLoading()
+        showError(fallbackErr)
+      }
+    } else if (silent) {
       const bar = $('#statusBar')
       if (bar) {
         bar.textContent = `自动刷新失败：${err?.message || '请稍后重试'}`
         bar.className = 'status-bar err'
       }
     } else {
+      hideLoading()
       showError(err)
     }
     if (err?.warming || /timeout|abort/i.test(String(err.message || err))) {
-      retryTimer = setTimeout(() => loadHome({ silent }), err?.warming ? 5000 : 8000)
+      const delay = err?.warming ? Math.max(2000, Number(err.retryAfterSec || 5) * 1000) : 8000
+      retryTimer = setTimeout(() => loadHome({ silent: showedFallback || (silent && !contentHidden) }), delay)
     }
   }
 }

@@ -115,6 +115,29 @@ a {
   cursor: pointer;
 }
 
+.hero-intro {
+  margin: 0 0 14px;
+  padding: 12px 14px;
+  border: 1px solid rgba(205, 215, 232, 0.09);
+  border-left: 3px solid rgba(248, 113, 113, 0.72);
+  border-radius: 10px;
+  background: linear-gradient(135deg, rgba(21, 27, 43, 0.86), rgba(16, 22, 37, 0.78));
+}
+
+.hero-kicker {
+  font-size: 15px;
+  font-weight: 700;
+  color: #eef2f8;
+  line-height: 1.45;
+}
+
+.hero-copy {
+  margin-top: 5px;
+  font-size: 13px;
+  color: var(--muted);
+  line-height: 1.6;
+}
+
 .card {
   background: var(--card);
   border: 1px solid var(--border);
@@ -142,6 +165,13 @@ a {
   font-size: 15px;
   color: #cfd5e0;
   line-height: 1.65;
+}
+
+.quote-author {
+  margin-top: 8px;
+  text-align: right;
+  font-size: 13px;
+  color: var(--muted);
 }
 
 .gauge-card {
@@ -182,6 +212,7 @@ a {
 .gauge-level.frenzy { color: #ef4444; }
 .gauge-level.neutral { color: var(--amber); }
 .gauge-level.caution { color: var(--green); }
+.gauge-level.weak { color: #38bdf8; }
 .gauge-level.cold { color: var(--blue); }
 
 .gauge-level.calculating {
@@ -262,6 +293,7 @@ a {
 .gauge-score.frenzy { color: #ef4444; }
 .gauge-score.neutral { color: var(--amber); }
 .gauge-score.caution { color: var(--green); }
+.gauge-score.weak { color: #38bdf8; }
 .gauge-score.cold { color: var(--blue); }
 
 .gauge-score-label {
@@ -289,13 +321,15 @@ a {
 
 .empty-tip {
   margin-top: 10px;
-  padding: 8px 10px;
+  padding: 9px 12px;
   border-radius: 10px;
   background: rgba(248, 113, 113, 0.075);
   border: 1px solid rgba(248, 113, 113, 0.18);
   font-size: 12px;
+  line-height: 1.55;
   color: #fca5a5;
-  text-align: center;
+  text-align: left;
+  overflow-wrap: anywhere;
 }
 
 .section {
@@ -553,6 +587,7 @@ a {
 .history-table .frenzy { color: #ef4444; }
 .history-table .neutral { color: var(--amber); }
 .history-table .caution { color: var(--green); }
+.history-table .weak { color: #38bdf8; }
 .history-table .cold { color: var(--blue); }
 
 .history-table .index-chg.index-up { color: var(--red); }

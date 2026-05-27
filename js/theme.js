@@ -1,5 +1,5 @@
 const QUOTES = [
-  { text: '买在分歧，卖在一致' },
+  { text: '不怕错过，就怕做错。不出门的时候，就在家修炼。' },
   { text: '不必求每天都有机会，而是识别不该出手的日子' },
   { text: '龙空龙：等待识别不该出手的日子' },
   { text: '弱水三千，只取一瓢' },
@@ -13,8 +13,9 @@ export function getDisplayLevel(score) {
   if (s >= 90) return { label: '狂热', class: 'frenzy', color: '#cf1322' }
   if (s >= 80) return { label: '高潮', class: 'climax', color: '#ff4d4f' }
   if (s >= 60) return { label: '偏乐观', class: 'optimistic', color: '#ff4d4f' }
-  if (s >= 40) return { label: '中性', class: 'neutral', color: '#faad14' }
-  if (s >= 20) return { label: '偏谨慎', class: 'caution', color: '#52c41a' }
+  if (s >= 50) return { label: '中性', class: 'neutral', color: '#faad14' }
+  if (s >= 40) return { label: '偏谨慎', class: 'caution', color: '#52c41a' }
+  if (s >= 30) return { label: '偏冷', class: 'weak', color: '#38bdf8' }
   return { label: '冰点', class: 'cold', color: '#1890ff' }
 }
 

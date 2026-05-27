@@ -1,8 +1,29 @@
 /** 指标板块：items → rows，对比字段标准化 */
 
-
+import { normalizeGrid9 } from './grid9.js'
 
 const INVERSE_KEYS = new Set(['limitDown', 'break', 'limitDownLive', 'breakLive'])
+
+const SECTION_DEFS = [
+  { id: 'yesterday', title: '昨日情绪概览', meta: '15:00 更新', layout: 'grid3', cols: 3 },
+  { id: 'peripheral', title: '外围情绪及指数', meta: '15:00 更新', layout: 'row3', cols: 3 },
+  { id: 'auction', title: '今日竞价情绪', meta: '09:15 更新', layout: 'grid3', cols: 3 },
+  { id: 'intraday', title: '盘中实时情绪', meta: '盘中更新', layout: 'grid3', cols: 3 },
+]
+
+function displayText(v, fallback = '--') {
+  if (v == null) return fallback
+  const s = String(v).trim()
+  if (!s || s === '-' || s.toLowerCase() === 'nan' || s.toLowerCase() === 'none' || s.toLowerCase() === 'null') {
+    return fallback
+  }
+  return s
+}
+
+const LABEL_OVERRIDES = {
+  promote: '晋级率',
+  promoteLive: '晋级率',
+}
 
 
 
@@ -40,7 +61,7 @@ const INTRADAY_DEFS = [
 
   { key: 'top10AvgChgLive', label: 'T-1成交额前10平均涨幅' },
 
-  { key: 'promoteLive', label: 'T-1日涨停晋级率' },
+  { key: 'promoteLive', label: '昨日涨停股今日晋级率' },
 
   { key: 'breakLive', label: '实时炸板率' },
 
@@ -182,11 +203,27 @@ function buildAuctionPrevMap(data) {
   return map
 }
 
+function auctionValueFromMetrics(key, metrics) {
+  const m = metrics || {}
+  if (key === 'auctionOneWord') {
+    const v = m.auction_one_word != null ? m.auction_one_word : m.auction_one_word_count
+    return v == null ? '--' : String(v)
+  }
+  if (key === 'auctionVolume') return formatYi(m.auction_volume_yi) || '--'
+  if (key === 'yesterdayFirst') return formatPct(m.first_board_auction_chg) || '--'
+  if (key === 'yesterdayMulti') return formatPct(m.multi_board_auction_chg) || '--'
+  if (key === 'recentMulti') return formatPct(m.max_board_auction_chg) || '--'
+  if (key === 'top10AuctionChg') {
+    return formatPct(m.auction_median) || formatPct(m.top10_avg_chg) || '--'
+  }
+  return '--'
+}
+
 function mergeAuctionItems(rawItems, data) {
   const prevMap = buildAuctionPrevMap(data)
   const hasServerValue = (list) => (list || []).some((it) => {
-    const v = String(it?.displayValue ?? it?.value ?? '').trim()
-    return v && v !== '--' && !ZERO_PCT.has(v)
+    const v = displayText(it?.displayValue ?? it?.value)
+    return v !== '--' && !ZERO_PCT.has(v)
   })
   const showToday = shouldShowAuctionTodayValues()
     || data?.isReportReady !== false
@@ -195,15 +232,19 @@ function mergeAuctionItems(rawItems, data) {
   const byKey = {}
   ;(data?.auction || []).forEach((it) => { if (it?.key) byKey[it.key] = it })
   ;(rawItems || []).forEach((it) => { if (it?.key) byKey[it.key] = it })
+  const metrics = data?.metrics || {}
 
   return AUCTION_DEFS.map(({ key, label }) => {
     const it = byKey[key]
     const prev = pickPrev(showToday && it ? (it.prev ?? it.yesterday) : null, prevMap[key])
     let value = '--'
     if (showToday && it) {
-      value = it.displayValue ?? it.value
-      value = value != null && String(value).trim() !== '' ? String(value) : '--'
+      value = displayText(it.displayValue ?? it.value)
       if (key === 'auctionOneWord' && value === '0') value = '--'
+    }
+    if (showToday && (value === '--' || ZERO_PCT.has(value))) {
+      const fromMetrics = auctionValueFromMetrics(key, metrics)
+      if (fromMetrics !== '--' && !ZERO_PCT.has(fromMetrics)) value = fromMetrics
     }
     return {
       key,
@@ -214,6 +255,43 @@ function mergeAuctionItems(rawItems, data) {
       trend: it?.trend || 'flat',
       up: it?.up,
     }
+  })
+}
+
+function normalizePeripheral(data) {
+  if (Array.isArray(data?.peripheral) && data.peripheral.length) {
+    return data.peripheral
+  }
+  const overview = data?.overview || []
+  if (overview.length) {
+    return overview.map((o) => ({
+      key: o.name || o.key,
+      label: o.name || o.label,
+      price: o.price || o.value,
+      chgText: o.chgText || o.value,
+      up: o.up,
+      trend: o.up ? 'up' : 'down',
+    }))
+  }
+  return [
+    { key: 'ftseA50', label: '富时A50指数', price: '--', chgText: '--', trend: 'flat', up: false },
+    { key: 'sp500', label: '标普500', price: '--', chgText: '--', trend: 'flat', up: false },
+    { key: 'cnh', label: '离岸人民币', price: '--', chgText: '--', trend: 'flat', up: true },
+  ]
+}
+
+function buildSectionsFromData(data) {
+  const yesterday = normalizeGrid9(data).map((item) => ({
+    ...item,
+    label: item.label === 'X板' ? '连板高度' : (item.label === '成交量能' ? '市场量能' : item.label),
+  }))
+  return SECTION_DEFS.map((def) => {
+    let items = []
+    if (def.id === 'yesterday') items = yesterday
+    else if (def.id === 'peripheral') items = normalizePeripheral(data)
+    else if (def.id === 'auction') items = mergeAuctionItems([], data)
+    else if (def.id === 'intraday') items = mergeIntradayItems(data?.intraday || [], data)
+    return { ...def, items }
   })
 }
 
@@ -544,6 +622,13 @@ function parseFirstNumber(v) {
   return m ? Number(m[0]) : null
 }
 
+function inferNumericTrend(item, prev) {
+  const now = parseFirstNumber(item?.displayValue ?? item?.value)
+  const old = parseFirstNumber(prev)
+  if (now == null || old == null || Math.abs(now - old) < 1e-9) return null
+  return now > old ? 'up' : 'down'
+}
+
 function parseSignedPercent(v) {
   const s = String(v ?? '').trim()
   const m = s.match(/[+-]\d+(?:\.\d+)?\s*%/)
@@ -579,71 +664,87 @@ function inferValueGood(item) {
 
 
 
-function normalizeCell(item) {
-
-  if (!item) return null
-
-  let prev = item.prev != null ? String(item.prev) : ''
-
-  if (!prev && item.yesterday != null) {
-
-    prev = String(item.yesterday).replace(/^前日\s*/, '').replace(/^昨\s*/, '')
-
+function enrichAdvance(item) {
+  if (item.key !== 'advance' && item.key !== 'advanceLive') return item
+  const up = item.advanceUp != null ? item.advanceUp : parseAdvanceFromCell(item)
+  let prevUp = item.prevAdvanceUp != null ? item.prevAdvanceUp : parseAdvanceFromCell({ value: item.yesterday || item.prev })
+  if (prevUp === '0' || prevUp === 0) prevUp = '--'
+  return {
+    ...item,
+    label: '上涨家数',
+    value: String(up),
+    prev: prevUp !== '--' ? String(prevUp) : '--',
+    yesterday: prevUp !== '--' ? String(prevUp) : '--',
   }
+}
 
+function enrichPeripheral(item) {
+  let chgText = displayText(item.chgText ?? item.chg, '--')
+  if (chgText === '--' && item.chg != null && !Number.isNaN(Number(item.chg))) {
+    const n = Number(item.chg)
+    chgText = `${n >= 0 ? '+' : ''}${n.toFixed(2)}%`
+  }
+  const price = displayText(item.price ?? item.value)
+  const hasChg = chgText !== '--' && chgText.includes('%')
+  return {
+    ...item,
+    price,
+    value: price,
+    chgText: hasChg ? chgText : '--',
+    displayValue: price,
+  }
+}
+
+function normalizeCell(item, sectionId) {
+  if (!item) return null
+  let cell = { ...item }
+  if (sectionId === 'peripheral') cell = enrichPeripheral(cell)
+  else cell = enrichAdvance(cell)
+
+  let prev = cell.prev != null ? String(cell.prev) : ''
+  if (!prev && cell.yesterday != null) {
+    prev = String(cell.yesterday).replace(/^前日\s*/, '').replace(/^昨\s*/, '')
+  }
   if (prev === '0' || prev === '-') prev = '--'
 
-  const meta = trendMeta(item)
-  const valueGood = item.trendGood != null ? item.trendGood : (meta.good != null ? meta.good : inferValueGood(item))
+  const value = displayText(cell.displayValue ?? cell.value)
+  const numericTrend = inferNumericTrend({ ...cell, value }, prev)
+  const meta = trendMeta({
+    ...cell,
+    trend: numericTrend || cell.trend,
+  })
+  const valueGood = cell.trendGood != null ? cell.trendGood : (meta.good != null ? meta.good : inferValueGood({ ...cell, value }))
 
   return {
-
-    ...item,
-
-    value: item.value != null ? String(item.value) : '--',
-
+    ...cell,
+    label: LABEL_OVERRIDES[cell.key] || cell.label,
+    value,
+    displayValue: value,
     prev,
-
     trendGood: valueGood,
-
     trendArrow: meta.text,
-
-    valueClass: valueGood === true
-      ? 'value-hot'
-      : (valueGood === false ? 'value-cold' : ''),
-
+    valueClass: valueGood === true ? 'value-hot' : (valueGood === false ? 'value-cold' : ''),
   }
-
 }
 
 
 
 export function normalizeSections(sections, data = null) {
-
   let list = sections || []
-
-  if (data) {
-
-    list = ensureAuctionSection(list, data)
-
-    list = ensureIntradaySection(list, data)
-
+  if (data && !list.length) {
+    list = buildSectionsFromData(data)
   }
-
+  if (data) {
+    list = ensureAuctionSection(list, data)
+    list = ensureIntradaySection(list, data)
+  }
   return list.map((sec) => {
-
     const cols = sec.cols || 3
-
-    const items = (sec.items || []).map(normalizeCell).filter(Boolean)
-
+    const sid = sec.id || ''
+    const items = (sec.items || []).map((it) => normalizeCell(it, sid)).filter(Boolean)
     const rows = sec.rows?.length
-
-      ? sec.rows.map((row) => row.map(normalizeCell).filter(Boolean))
-
-      : chunkToRows(items, cols)
-
+      ? sec.rows.map((row) => row.map((it) => normalizeCell(it, sid)).filter(Boolean))
+      : (sec.layout === 'row3' ? [items] : chunkToRows(items, cols))
     return { ...sec, items, rows }
-
   })
-
 }
