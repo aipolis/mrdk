@@ -1,9 +1,9 @@
-import { AUTO_REFRESH_MS } from './config.js?v=20260527c'
-import { getDisplayLevel, dailyQuote, formatHeaderDate } from './theme.js?v=20260527c'
-import { normalizeSections } from './indicators.js?v=20260527c'
-import { fetchToday, fetchHistory, fetchDay } from './api.js?v=20260527c'
-import { createTrendController } from './trendDraw.js?v=20260527c'
-import { createGaugeController, IDLE_MIN_MS } from './gaugeAnim.js?v=20260527c'
+import { AUTO_REFRESH_MS } from './config.js?v=20260527d'
+import { getDisplayLevel, dailyQuote, formatHeaderDate } from './theme.js?v=20260527d'
+import { normalizeSections } from './indicators.js?v=20260527d'
+import { fetchToday, fetchHistory, fetchDay } from './api.js?v=20260527d'
+import { createTrendController } from './trendDraw.js?v=20260527d'
+import { createGaugeController, IDLE_MIN_MS } from './gaugeAnim.js?v=20260527d'
 
 export { fetchToday, fetchHistory }
 

@@ -365,151 +365,140 @@ function getIntradayCompareMetrics(data) {
   return data?.metrics || {}
 }
 
-function buildIntradayPrevMap(data) {
+function resolveSsePrev(data) {
+  const pm = data?.prevMetrics || {}
+  if (pm.index_chg != null && !Number.isNaN(Number(pm.index_chg))) {
+    return formatPct(pm.index_chg)
+  }
+  const m = data?.metrics || {}
+  if (m.index_chg != null && !Number.isNaN(Number(m.index_chg))) {
+    return formatPct(m.index_chg)
+  }
+  return '--'
+}
 
+function resolveTop10Prev(data) {
+  const pm = data?.prevMetrics || {}
+  if (pm.top10_avg_chg != null && !Number.isNaN(Number(pm.top10_avg_chg))) {
+    return formatPct(pm.top10_avg_chg)
+  }
+  const fromIntraday = (data?.intraday || []).find((i) => i.key === 'top10AvgChgLive')
+  if (fromIntraday) {
+    const p = fromIntraday.prev ?? fromIntraday.yesterday
+    if (p != null && String(p).trim() && String(p).trim() !== '--') return String(p)
+  }
+  return '--'
+}
+
+function resolveVolPrev(data) {
+  const fromIntraday = (data?.intraday || []).find((i) => i.key === 'marketVolumeLive')
+  if (fromIntraday) {
+    const p = fromIntraday.prev ?? fromIntraday.yesterday
+    if (p != null && String(p).trim() && String(p).trim() !== '--') {
+      return String(p).replace(/\s*[+-]?\d+\.?\d*%.*/, '').trim() || String(p)
+    }
+  }
   const m = getIntradayCompareMetrics(data)
+  if (m.volume_amount && m.volume_amount !== '--') return String(m.volume_amount)
+  if (m.volume_raw > 0) return `${Math.round(Number(m.volume_raw))}亿`
+  return '--'
+}
 
+function resolveHigh10Prev(data) {
+  const m = getIntradayCompareMetrics(data)
+  if (m.high10_count != null && !Number.isNaN(Number(m.high10_count))) {
+    return String(m.high10_count)
+  }
+  const fromIntraday = (data?.intraday || []).find((i) => i.key === 'high10Live')
+  if (fromIntraday) {
+    const p = fromIntraday.prev ?? fromIntraday.yesterday
+    if (p != null && String(p).trim() && String(p).trim() !== '--') return String(p).split(/\s+/)[0]
+  }
+  return '--'
+}
+
+function buildIntradayPrevMap(data) {
   const grid = data?.grid9 || []
-
   const byKey = {}
-
   grid.forEach((c) => { byKey[c.key || c.name] = c })
-
-
-
+  const m = getIntradayCompareMetrics(data)
   const prevAdv = m.advance_count != null ? m.advance_count : parseAdvanceFromCell(byKey.advance)
-
   const prevDec = m.decline_count
-
   const prevLu = m.limit_up_count != null ? m.limit_up_count : byKey.limitUp?.value
-
   const prevLd = m.limit_down_count != null ? m.limit_down_count : byKey.limitDown?.value
-
-
-
   let prevRatio = '--'
-
   if (prevAdv != null && prevDec != null) {
-
     const advN = Number(prevAdv)
     const decN = Number(prevDec)
     const total = advN + decN
-
     if (advN > 0 && decN > 0 && total >= 500) prevRatio = `${(advN / total * 100).toFixed(1)}%`
-
   }
-
-
-
-  const idxChg = m.index_chg
-
-  const ssePrev = idxChg != null && !Number.isNaN(Number(idxChg))
-
-    ? `${Number(idxChg) >= 0 ? '+' : ''}${Number(idxChg).toFixed(2)}%`
-
-    : (byKey.index?.value || '--')
-
-
-
-  let volPrev = '--'
-
-  if (m.volume_amount && m.volume_amount !== '--') {
-
-    volPrev = String(m.volume_amount)
-
-  } else if (m.volume_raw > 0) {
-
-    volPrev = `${Math.round(Number(m.volume_raw))}亿`
-
-  }
-
-
-
   return {
-
-    sseIndex: ssePrev,
-
+    sseIndex: resolveSsePrev(data),
     upRatio: prevRatio,
-
     limitUpLive: prevLu != null ? String(prevLu).replace(/[^\d]/g, '') || String(prevLu) : '--',
-
     limitDownLive: prevLd != null ? String(prevLd).replace(/[^\d]/g, '') || String(prevLd) : '--',
-
-    marketVolumeLive: volPrev,
-
-    high10Live: m.high10_count != null ? String(m.high10_count) : '--',
-
-    top10AvgChgLive: m.top10_avg_chg != null ? `${Number(m.top10_avg_chg) >= 0 ? '+' : ''}${Number(m.top10_avg_chg).toFixed(2)}%` : '--',
-
+    marketVolumeLive: resolveVolPrev(data),
+    high10Live: resolveHigh10Prev(data),
+    top10AvgChgLive: resolveTop10Prev(data),
     promoteLive: m.promote_rate != null ? formatRate(m.promote_rate) : '--',
-
     breakLive: m.break_rate != null ? formatRate(m.break_rate) : '--',
-
   }
-
 }
 
+function enrichIntradayPrev(items, data) {
+  const prevMap = buildIntradayPrevMap(data)
+  return (items || []).map((it) => {
+    const fallback = prevMap[it.key]
+    const prev = pickPrev(it.prev ?? it.yesterday, fallback)
+    if (it.key === 'upRatio' && Number((data?.metrics || {}).decline_count || 0) <= 0) {
+      return { ...it, value: '--', prev, yesterday: prev }
+    }
+    return { ...it, prev, yesterday: prev }
+  })
+}
 
+function buildIntradayPlaceholder(data) {
+  const prevMap = buildIntradayPrevMap(data)
+  return INTRADAY_DEFS.map(({ key, label }) => ({
+    key,
+    label,
+    value: '--',
+    prev: prevMap[key] || '--',
+    yesterday: prevMap[key] || '--',
+    trend: 'flat',
+  }))
+}
 
 function mergeIntradayItems(rawItems, data) {
-
-  const prevMap = buildIntradayPrevMap(data)
-
+  const placeholder = buildIntradayPlaceholder(data)
   const byKey = {}
-
+  placeholder.forEach((it) => { byKey[it.key] = it })
   ;(data?.intraday || []).forEach((it) => { if (it?.key) byKey[it.key] = it })
-
   ;(rawItems || []).forEach((it) => { if (it?.key) byKey[it.key] = it })
-
-
-
-  return INTRADAY_DEFS.map(({ key, label }) => {
-
+  const merged = INTRADAY_DEFS.map(({ key, label }) => {
     const it = byKey[key]
-
     if (it) {
-
-      const prev = pickPrev(it.prev ?? it.yesterday, prevMap[key])
-      let value = it.value != null ? String(it.value) : '--'
+      const ph = placeholder.find((p) => p.key === key)
+      let value = displayText(it.displayValue ?? it.value)
       const m = data?.metrics || {}
       if (key === 'upRatio' && Number(m.decline_count || 0) <= 0) value = '--'
-
-      return {
-
-        ...it,
-
-        key,
-
-        label: it.label || label,
-
-        value,
-
-        prev,
-
-        yesterday: prev,
-
+      if (key === 'top10AvgChgLive' && value === '--' && m.top10_avg_chg != null) {
+        value = formatPct(m.top10_avg_chg) || '--'
       }
-
+      const prev = pickPrev(it.prev ?? it.yesterday, ph?.prev ?? ph?.yesterday)
+      return { ...it, key, label: it.label || label, value, prev, yesterday: prev }
     }
-
     return {
-
       key,
-
       label,
-
       value: '--',
-
-      prev: prevMap[key] || '--',
-
-      yesterday: prevMap[key] || '--',
-
+      prev: placeholder.find((p) => p.key === key)?.prev || '--',
+      yesterday: placeholder.find((p) => p.key === key)?.prev || '--',
       trend: 'flat',
-
     }
-
   })
-
+  return enrichIntradayPrev(merged, data)
 }
 
 

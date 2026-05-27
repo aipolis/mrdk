@@ -1,4 +1,4 @@
-import { drawSteeringGauge } from './gaugeDraw.js?v=20260527c'
+import { drawSteeringGauge } from './gaugeDraw.js?v=20260527d'
 
 export const SKIP_ANIM_MS = 300
 /** 指针摆动总时长（含渐大→渐小） */
