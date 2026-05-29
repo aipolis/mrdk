@@ -10,8 +10,8 @@ import {
 } from './longkongState.js?v=20260529k'
 import { fetchToday, fetchHistory, fetchDay } from './api.js?v=20260529i'
 import { createTrendController } from './trendDraw.js?v=20260529i'
-import { createGaugeController, IDLE_MIN_MS } from './gaugeAnim.js?v=20260529i'
-import { getHomeCache, saveHomeCache, isSameHomeSnapshot } from './homeCache.js?v=20260529i'
+import { createGaugeController, IDLE_MIN_MS, SKIP_ANIM_MS } from './gaugeAnim.js?v=20260529m'
+import { getHomeCache, saveHomeCache, isSameHomeSnapshot } from './homeCache.js?v=20260529m'
 
 export { fetchToday, fetchHistory }
 
@@ -275,7 +275,7 @@ function applyLongkongState(data) {
 }
 
 function applyData(data, options = {}) {
-  const { silent = false } = options
+  const { silent = false, skipAnim = false, fastReveal = false } = options
   const displayScore = data.displayScore != null ? data.displayScore : data.score
   const level = getDisplayLevel(displayScore)
   const quoteText = HOME_QUOTE
@@ -327,12 +327,12 @@ function applyData(data, options = {}) {
     $('#statusBar').className = 'status-bar ok'
   }
 
-  if (silent) {
+  if (silent || skipAnim) {
     stopGaugeAnimation()
     ensureGaugeCtrl().drawFinal(displayScore)
     applyGaugeMeta(data, displayScore, level)
   } else {
-    finishGaugeAnimation(displayScore, data, level)
+    finishGaugeAnimation(displayScore, data, level, { fastReveal })
   }
 }
 
@@ -494,6 +494,28 @@ async function attachAuctionArchives(data, histList) {
   return data
 }
 
+async function hydrateHomeExtras(data) {
+  const histData = await fetchHistory(20).catch(() => null)
+  const histList = histData?.list || histData || []
+  if (Array.isArray(histList) && histList.length) {
+    initTrendController().setHistoryList(histList)
+  } else if (Array.isArray(data.trend) && data.trend.length) {
+    initTrendController().setHistoryList(
+      data.trend.slice().reverse().map((item) => ({
+        date: item.date,
+        score: item.score,
+      }))
+    )
+  }
+
+  const enriched = await attachAuctionArchives({ ...data }, histList)
+  renderSections(normalizeSections(enriched.indicatorSections, enriched))
+  if (!isSameHomeSnapshot(data, enriched)) {
+    saveHomeCache(enriched)
+  }
+  return enriched
+}
+
 export async function loadHome(options = {}) {
   const { silent = false } = options
   if (!silent) {
@@ -507,25 +529,16 @@ export async function loadHome(options = {}) {
     }
   }
   try {
-    const [data, histData] = await Promise.all([
-      fetchToday(),
-      fetchHistory(20).catch(() => null),
-    ])
-    if (!silent) hideLoading()
-    const histList = histData?.list || histData || []
-    if (!silent) beginGaugeLoading()
-    await attachAuctionArchives(data, histList)
-    applyData(data, { silent })
-    if (Array.isArray(histList) && histList.length) {
-      initTrendController().setHistoryList(histList)
-    } else if (Array.isArray(data.trend) && data.trend.length) {
-      initTrendController().setHistoryList(
-        data.trend.slice().reverse().map((item) => ({
-          date: item.date,
-          score: item.score,
-        }))
-      )
+    const data = await fetchToday()
+    const elapsed = Date.now() - (gaugeFetchStartAt || Date.now())
+    const fastReveal = elapsed > 2000 || elapsed < SKIP_ANIM_MS
+    if (!silent) {
+      hideLoading()
+      beginGaugeLoading()
     }
+    applyData(data, { silent, skipAnim: silent, fastReveal: !silent && fastReveal })
+    saveHomeCache(data)
+    hydrateHomeExtras(data).catch(() => {})
     if (retryTimer) {
       clearTimeout(retryTimer)
       retryTimer = null
@@ -599,6 +612,23 @@ export function initHomePage() {
   document.addEventListener('visibilitychange', () => {
     if (!document.hidden) loadHome({ silent: true })
   })
-  loadHome()
+
+  const cached = getHomeCache()
+  if (cached) {
+    gaugeFetchStartAt = Date.now()
+    hideLoading()
+    applyData(cached, { silent: true })
+    if (Array.isArray(cached.trend) && cached.trend.length) {
+      initTrendController().setHistoryList(
+        cached.trend.slice().reverse().map((item) => ({
+          date: item.date,
+          score: item.score,
+        }))
+      )
+    }
+    loadHome({ silent: true })
+  } else {
+    loadHome()
+  }
   startAutoRefresh()
 }

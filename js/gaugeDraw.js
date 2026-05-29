@@ -65,7 +65,7 @@ export function drawSteeringGauge(ctx, width, height, score, theme = 'dark', opt
   const snap = (v) => Math.round(v * 2) / 2
   const cx = snap(width / 2)
   const cy = snap(height * 0.62)
-  const radius = snap(Math.min(width * 0.4, height * 0.46))
+  const radius = snap(Math.min(width * 0.44, height * 0.5))
   const bandW = options.bandWidth != null
     ? options.bandWidth
     : Math.max(14, Math.round(radius * 0.16))
