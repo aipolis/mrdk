@@ -1,9 +1,17 @@
-import { AUTO_REFRESH_MS } from './config.js?v=20260529a'
-import { getDisplayLevel, dailyQuote, formatHeaderDate } from './theme.js?v=20260529a'
-import { normalizeSections } from './indicators.js?v=20260529a'
-import { fetchToday, fetchHistory, fetchDay } from './api.js?v=20260529a'
-import { createTrendController } from './trendDraw.js?v=20260529a'
-import { createGaugeController, IDLE_MIN_MS } from './gaugeAnim.js?v=20260529a'
+import { AUTO_REFRESH_MS } from './config.js?v=20260529i'
+import { getDisplayLevel, dailyQuote, formatHeaderDate } from './theme.js?v=20260529i'
+import { normalizeSections } from './indicators.js?v=20260529i'
+import {
+  buildLongkongHeroText,
+  resolveLongkongState,
+  resolveLongkongTone,
+  renderLongkongLightsHtml,
+  setGaugeLevelClass,
+} from './longkongState.js?v=20260529k'
+import { fetchToday, fetchHistory, fetchDay } from './api.js?v=20260529i'
+import { createTrendController } from './trendDraw.js?v=20260529i'
+import { createGaugeController, IDLE_MIN_MS } from './gaugeAnim.js?v=20260529i'
+import { getHomeCache, saveHomeCache, isSameHomeSnapshot } from './homeCache.js?v=20260529i'
 
 export { fetchToday, fetchHistory }
 
@@ -86,9 +94,13 @@ function applyGaugeMeta(data, displayScore, level) {
   const levelClass = data.levelClass || meta.levelClass || level.class
   const positionDesc = riskCopy?.desc || data.positionDesc || meta.positionDesc || ''
 
-  $('#levelLabel').textContent = levelLabel
-  $('#levelLabel').className = `gauge-level ${levelClass}`
-  $('#positionDesc').textContent = positionDesc
+  applyLongkongState({
+    ...data,
+    displayScore,
+    levelLabel,
+    levelClass,
+    positionDesc,
+  })
   $('#displayScore').textContent = displayScore
   $('#displayScore').className = `gauge-score ${levelClass}`
   setGaugeCalculating(false)
@@ -106,7 +118,12 @@ function beginGaugeLoading() {
   gaugeFetchStartAt = Date.now()
   bindGaugeCanvas()
   setGaugeCalculating(true)
-  $('#positionDesc').textContent = LOADING_DESC
+  applyLongkongState({
+    displayScore: '--',
+    positionDesc: LOADING_DESC,
+    levelLabel: '计算中',
+    levelClass: 'calculating',
+  })
   ensureGaugeCtrl().startIdle(IDLE_MIN_MS)
 }
 
@@ -140,7 +157,9 @@ function finishGaugeAnimation(displayScore, data, level, options = {}) {
   }
 
   const elapsed = Date.now() - (gaugeFetchStartAt || Date.now())
-  const remain = Math.max(600, IDLE_MIN_MS - elapsed)
+  const remain = options.fastReveal
+    ? 120
+    : Math.max(600, IDLE_MIN_MS - elapsed)
 
   gaugeIdleTimer = setTimeout(() => {
     gaugeIdleTimer = null
@@ -217,6 +236,44 @@ function renderSections(sections) {
   `).join('')
 }
 
+function applyLongkongState(data) {
+  const lk = resolveLongkongState(data)
+  const tone = resolveLongkongTone(data)
+  const hero = buildLongkongHeroText(data, lk)
+  const root = $('#longkongState')
+  if (!root) return
+  root.hidden = false
+  root.dataset.state = lk.state
+  setGaugeLevelClass(root, tone.class)
+  const heroEl = $('#longkongStateHero')
+  const labelEl = $('#longkongStateLabel')
+  const levelEl = $('#longkongStateLevel')
+  const lightsEl = $('#longkongLights')
+  const descEl = $('#longkongStateDesc')
+  setGaugeLevelClass(heroEl, tone.class)
+  if (labelEl) {
+    labelEl.textContent = lk.label
+    labelEl.className = `longkong-state-active ${tone.class}`
+  }
+  if (levelEl) {
+    const levelClass = data?.levelClass === 'calculating' ? 'calculating' : tone.class
+    if (hero.levelLabel) {
+      levelEl.hidden = false
+      levelEl.textContent = hero.levelLabel
+      levelEl.className = `longkong-state-level ${levelClass}`
+    } else {
+      levelEl.hidden = true
+      levelEl.textContent = ''
+    }
+  }
+  if (descEl) {
+    descEl.textContent = hero.desc || lk.desc || ''
+    descEl.className = `longkong-state-desc ${tone.class}`
+    descEl.hidden = !descEl.textContent
+  }
+  if (lightsEl) lightsEl.innerHTML = renderLongkongLightsHtml(lk.state, tone.class)
+}
+
 function applyData(data, options = {}) {
   const { silent = false } = options
   const displayScore = data.displayScore != null ? data.displayScore : data.score
@@ -235,7 +292,13 @@ function applyData(data, options = {}) {
   }
 
   if (!silent) {
-    $('#positionDesc').textContent = LOADING_DESC
+    applyLongkongState({
+      ...data,
+      displayScore,
+      positionDesc: LOADING_DESC,
+      levelLabel: '计算中',
+      levelClass: 'calculating',
+    })
   }
 
   const foot = $('#baselineFoot')

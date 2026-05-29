@@ -20,7 +20,6 @@ const SECTION_DEFS = [
   { id: 'intraday', title: '盘中实时情绪', meta: '盘中更新', layout: 'grid3', cols: 3 },
   { id: 'longkongRisk', title: '龙空龙专属风控', meta: '盘中更新', layout: 'grid3', cols: 3 },
 ]
-
 function displayText(v, fallback = '--') {
   if (v == null) return fallback
   const s = String(v).trim()
@@ -768,6 +767,45 @@ function normalizeCell(item, sectionId) {
 
 
 
+function isIntradayPinnedWindow() {
+  const now = new Date()
+  const wd = now.getDay()
+  if (wd === 0 || wd === 6) return false
+  const hm = now.getHours() * 60 + now.getMinutes()
+  return hm >= 9 * 60 && hm <= 15 * 60 + 30
+}
+
+const TRADING_SECTION_ORDER = [
+  'intraday',
+  'longkongRisk',
+  'auction',
+  'yesterday',
+  'peripheral',
+]
+
+function pinLiveSections(sections) {
+  const list = Array.isArray(sections) ? [...sections] : []
+  if (!list.length) return list
+  if (isIntradayPinnedWindow()) {
+    const byId = new Map()
+    list.forEach((sec) => {
+      if (sec?.id) byId.set(sec.id, sec)
+    })
+    const ordered = TRADING_SECTION_ORDER
+      .filter((id) => byId.has(id))
+      .map((id) => byId.get(id))
+    const known = new Set(TRADING_SECTION_ORDER)
+    list.forEach((sec) => {
+      if (sec?.id && !known.has(sec.id)) ordered.push(sec)
+    })
+    return ordered.length ? ordered : list
+  }
+  const intraday = list.find((s) => s?.id === 'intraday')
+  if (!intraday) return list
+  const rest = list.filter((s) => s?.id !== 'intraday')
+  return [...rest, intraday]
+}
+
 export function normalizeSections(sections, data = null) {
   let list = sections || []
   if (data && !list.length) {
@@ -778,6 +816,7 @@ export function normalizeSections(sections, data = null) {
     list = ensureLongkongRiskSection(list, data)
     list = ensureIntradaySection(list, data)
   }
+  list = pinLiveSections(list)
   return list.map((sec) => {
     const cols = sec.cols || 3
     const sid = sec.id || ''
