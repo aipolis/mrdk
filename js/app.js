@@ -1,9 +1,9 @@
-import { AUTO_REFRESH_MS } from './config.js?v=20260527d'
-import { getDisplayLevel, dailyQuote, formatHeaderDate } from './theme.js?v=20260527d'
-import { normalizeSections } from './indicators.js?v=20260527d'
-import { fetchToday, fetchHistory, fetchDay } from './api.js?v=20260527d'
-import { createTrendController } from './trendDraw.js?v=20260527d'
-import { createGaugeController, IDLE_MIN_MS } from './gaugeAnim.js?v=20260527d'
+import { AUTO_REFRESH_MS } from './config.js?v=20260529a'
+import { getDisplayLevel, dailyQuote, formatHeaderDate } from './theme.js?v=20260529a'
+import { normalizeSections } from './indicators.js?v=20260529a'
+import { fetchToday, fetchHistory, fetchDay } from './api.js?v=20260529a'
+import { createTrendController } from './trendDraw.js?v=20260529a'
+import { createGaugeController, IDLE_MIN_MS } from './gaugeAnim.js?v=20260529a'
 
 export { fetchToday, fetchHistory }
 
@@ -178,7 +178,7 @@ function renderGridSection(section) {
       const arrow = cell.trendArrow || ''
       const good = cell.trendGood !== false
       const prevText = cell.prev && cell.prev !== '--' ? cell.prev : '--'
-      const showPrev = section.id === 'yesterday' || section.id === 'auction' || section.id === 'intraday'
+      const showPrev = section.id === 'yesterday' || section.id === 'auction' || section.id === 'intraday' || section.id === 'longkongRisk'
       const prev = showPrev
         ? `<span class="grid9-sub"><span class="grid9-sub-prefix">${prefix}</span><span class="grid9-sub-val">${esc(prevText)}</span></span>`
         : '<span class="grid9-sub grid9-sub--empty"></span>'

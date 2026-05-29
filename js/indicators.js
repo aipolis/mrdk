@@ -582,7 +582,40 @@ function ensureIntradaySection(sections, data) {
 
 }
 
+function resolveLongkongRiskItems(rawItems, data) {
+  if (rawItems?.length) return rawItems
+  if (data?.longkongRisk?.length) return data.longkongRisk
+  const fromSec = (data?.indicatorSections || []).find((s) => s?.id === 'longkongRisk')
+  if (fromSec?.items?.length) return fromSec.items
+  return []
+}
 
+function ensureLongkongRiskSection(sections, data) {
+  const list = Array.isArray(sections) ? [...sections] : []
+  const idx = list.findIndex((s) => s?.id === 'longkongRisk')
+  const rawItems = idx >= 0 ? list[idx].items : []
+  const items = resolveLongkongRiskItems(rawItems, data)
+  if (!items.length) return list
+
+  const def = SECTION_DEFS.find((d) => d.id === 'longkongRisk') || {}
+  const patch = {
+    id: 'longkongRisk',
+    title: (idx >= 0 && list[idx].title) || def.title || '龙空龙专属风控',
+    meta: (idx >= 0 && list[idx].meta) || def.meta || '盘中更新',
+    layout: (idx >= 0 && list[idx].layout) || def.layout || 'grid3',
+    cols: (idx >= 0 && list[idx].cols) || def.cols || 3,
+    items,
+    pending: items.every((it) => displayText(it?.displayValue ?? it?.value) === '--'),
+  }
+  if (idx >= 0) {
+    list[idx] = { ...list[idx], ...patch }
+    return list
+  }
+  const intraIdx = list.findIndex((s) => s?.id === 'intraday')
+  if (intraIdx >= 0) list.splice(intraIdx, 0, patch)
+  else list.push(patch)
+  return list
+}
 
 export function chunkToRows(list, cols = 3) {
 
@@ -742,6 +775,7 @@ export function normalizeSections(sections, data = null) {
   }
   if (data) {
     list = ensureAuctionSection(list, data)
+    list = ensureLongkongRiskSection(list, data)
     list = ensureIntradaySection(list, data)
   }
   return list.map((sec) => {

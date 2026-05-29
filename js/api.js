@@ -1,10 +1,26 @@
-import { API_BASE, FETCH_TIMEOUT_MS } from './config.js'
+import { FETCH_TIMEOUT_MS } from './config.js'
+
+// 动态解析API_BASE，支持运行时切换（开发调试用）
+function resolveApiBase() {
+  if (typeof window !== 'undefined' && window.__API_BASE__) {
+    return window.__API_BASE__
+  }
+  if (typeof localStorage !== 'undefined') {
+    const stored = localStorage.getItem('mrdk_api_base')
+    if (stored && stored.trim()) return stored.trim()
+  }
+  if (typeof process !== 'undefined' && process.env && process.env.VITE_API_BASE) {
+    return process.env.VITE_API_BASE
+  }
+  return 'https://mingri-api-260693-8-1435576840.sh.run.tcloudbase.com'
+}
 
 async function fetchJson(path) {
   const ctrl = new AbortController()
   const timer = setTimeout(() => ctrl.abort(), FETCH_TIMEOUT_MS)
+  const apiBase = resolveApiBase()
   try {
-    const res = await fetch(`${API_BASE.replace(/\/$/, '')}${path}`, {
+    const res = await fetch(`${apiBase.replace(/\/$/, '')}${path}`, {
       signal: ctrl.signal,
       headers: { Accept: 'application/json' },
     })
