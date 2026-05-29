@@ -2,13 +2,23 @@
 
 import { normalizeGrid9 } from './grid9.js'
 
-const INVERSE_KEYS = new Set(['limitDown', 'break', 'limitDownLive', 'breakLive'])
+const INVERSE_KEYS = new Set([
+  'limitDown',
+  'break',
+  'limitDownLive',
+  'breakLive',
+  'highBreakFeedback',
+  'multiFailRate',
+  'limitDownRisk',
+  'bigLossCount',
+])
 
 const SECTION_DEFS = [
   { id: 'yesterday', title: '昨日情绪概览', meta: '15:00 更新', layout: 'grid3', cols: 3 },
   { id: 'peripheral', title: '外围情绪及指数', meta: '15:00 更新', layout: 'row3', cols: 3 },
   { id: 'auction', title: '今日竞价情绪', meta: '09:15 更新', layout: 'grid3', cols: 3 },
   { id: 'intraday', title: '盘中实时情绪', meta: '盘中更新', layout: 'grid3', cols: 3 },
+  { id: 'longkongRisk', title: '龙空龙专属风控', meta: '盘中更新', layout: 'grid3', cols: 3 },
 ]
 
 function displayText(v, fallback = '--') {
@@ -291,6 +301,7 @@ function buildSectionsFromData(data) {
     else if (def.id === 'peripheral') items = normalizePeripheral(data)
     else if (def.id === 'auction') items = mergeAuctionItems([], data)
     else if (def.id === 'intraday') items = mergeIntradayItems(data?.intraday || [], data)
+    else if (def.id === 'longkongRisk') items = data?.longkongRisk || []
     return { ...def, items }
   })
 }
@@ -646,6 +657,12 @@ function inferValueGood(item) {
   if (key === 'seal') return n >= 60
   if (key === 'promote' || key === 'promoteLive') return n >= 25
   if (key === 'break' || key === 'breakLive') return n <= 30
+  if (key === 'highBreakFeedback') return n <= 0
+  if (key === 'limitUpPremium') return n >= 0
+  if (key === 'multiFailRate') return n <= 60
+  if (key === 'resealRate') return n >= 70
+  if (key === 'limitDownRisk') return n <= 10
+  if (key === 'bigLossCount') return n <= 20
   if (key === 'oneWord' || key === 'auctionOneWord' || key === 'high10Live') return n > 0
   if (key === 'volume' || key === 'marketVolumeLive' || key === 'auctionVolume') return n > 0
   return null
