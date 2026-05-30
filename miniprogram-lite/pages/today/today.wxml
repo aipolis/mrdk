@@ -20,7 +20,7 @@
   </view>
 
   <block wx:else>
-    <!-- 今日天气卡片 358×192 -->
+    <!-- 今日天气卡片 -->
     <view class="hero-card">
       <view class="hero-top">
         <text class="hero-title">今日天气</text>
@@ -35,8 +35,18 @@
           <text class="hero-score-degree">°</text>
         </view>
         <text class="hero-verdict">{{verdictChar}}·{{weatherShort}}</text>
+        <!-- 连续天数 -->
+        <view class="streak-badge" wx:if="{{streakText}}">
+          <text class="streak-text">{{streakText}}</text>
+        </view>
         <view class="hero-divider"/>
         <text class="hero-desc">{{weatherText}}，{{actionText}}</text>
+      </view>
+
+      <!-- 今日解读 -->
+      <view class="insight-row" wx:if="{{insight}}">
+        <text class="insight-label">今日解读</text>
+        <text class="insight-text" selectable>{{insight}}</text>
       </view>
 
       <view class="hero-pills">
@@ -52,7 +62,7 @@
       </view>
     </view>
 
-    <!-- 近10日走势 358×186 -->
+    <!-- 近10日走势 -->
     <view class="trend-card" wx:if="{{trendBars.length}}">
       <view class="trend-head">
         <text class="trend-title">近10日天气走势</text>
@@ -73,6 +83,12 @@
       </view>
       <view class="trend-bars">
         <view wx:for="{{trendBars}}" wx:key="fullDate" class="trend-col">
+          <!-- 分数标注：今日 或 最近3根，颜色跟随得分区间 -->
+          <text
+            class="bar-score-label {{item.isToday ? 'bar-score-label--today' : ''}}"
+            style="color: {{item.color}};"
+            wx:if="{{item.isToday || index >= trendBars.length - 3}}"
+          >{{item.score}}</text>
           <view class="trend-bar-wrap">
             <view
               class="trend-bar {{item.isToday ? 'trend-bar--today' : ''}}"
@@ -84,34 +100,43 @@
       </view>
     </view>
 
-    <!-- 游资语录 358×222 -->
+    <!-- 每日语录（按日期轮换） -->
     <view class="quote-card">
       <view class="quote-card-head">
-        <text class="quote-card-title">{{quoteSection.title}}</text>
-        <text class="quote-card-more">{{quoteSection.moreLabel}}</text>
+        <text class="quote-card-title">与君共勉</text>
+        <text class="quote-card-tag">今日精选</text>
       </view>
-      <view
-        wx:for="{{quoteSection.items}}"
-        wx:key="author"
-        class="quote-box quote-box--{{item.theme}}"
-      >
-        <text class="quote-text">{{item.text}}</text>
-        <text class="quote-author">{{item.author}}</text>
+      <view class="quote-box quote-box--blue">
+        <text class="quote-text" selectable>{{dailyQuote.text}}</text>
+        <text class="quote-author">—— {{dailyQuote.author}}</text>
       </view>
     </view>
 
-    <!-- 订阅按钮 -->
+    <!-- 订阅 / 已订阅后改为分享 -->
     <view class="subscribe-wrap">
+      <!-- 未订阅：订阅按钮 -->
       <button
-        class="subscribe-btn {{subscribed ? 'subscribe-btn--done' : ''}}"
+        wx:if="{{!subscribed}}"
+        class="subscribe-btn"
         bindtap="onSubscribe"
       >
-        <text class="subscribe-text">{{subscribed ? '已开启提醒' : '订阅提醒，避免淋雨'}}</text>
-        <view class="subscribe-bell {{subscribed ? 'subscribe-bell--done' : ''}}">
+        <text class="subscribe-text">订阅提醒，每日早上8:30推送今日天气</text>
+        <view class="subscribe-bell">
           <image class="subscribe-icon" src="/images/icon-bell.png" mode="aspectFit"/>
-          <text class="subscribe-bell-text">{{subscribed ? '已开启' : '立即订阅'}}</text>
+          <text class="subscribe-bell-text">立即订阅</text>
         </view>
       </button>
+
+      <!-- 已订阅：提示 + 分享 -->
+      <view wx:else class="subscribed-row">
+        <view class="subscribed-done">
+          <text class="subscribed-check">✓</text>
+          <text class="subscribed-label">已开启每日提醒</text>
+        </view>
+        <button class="share-btn" open-type="share">
+          <text class="share-btn-text">分享给朋友</text>
+        </button>
+      </view>
     </view>
   </block>
 </view>
