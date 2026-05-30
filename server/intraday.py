@@ -617,17 +617,26 @@ def calc_display_score(
     baseline_score: int,
     intraday_score: Optional[int],
     *,
+    prev_baseline: Optional[int] = None,
     now: Optional[datetime] = None,
 ) -> tuple[int, str]:
     """
     返回 (展示分, scoreMode)。
     9:00 起若有盘中分（含竞价）则融合；收盘后回到基准分。
+    prev_baseline：前一交易日基准分，用于计算趋势速度修正（±8 分上限）。
     """
+    # 速度修正：相较前日基准的方向性加权，±8 分封顶，盘中不叠加（由盘中分承接）
+    adjusted_baseline = baseline_score
+    if prev_baseline is not None and (intraday_score is None or not is_live_score_window(now)):
+        velocity = baseline_score - int(prev_baseline)
+        kicker = max(-8, min(8, round(velocity * 0.25)))
+        adjusted_baseline = max(0, min(100, baseline_score + kicker))
+
     if intraday_score is None or not is_live_score_window(now):
-        return baseline_score, "baseline"
+        return adjusted_baseline, "baseline"
     w = _live_blend_weight(now)
     if w <= 0:
-        return baseline_score, "baseline"
+        return adjusted_baseline, "baseline"
     blended = round(baseline_score * (1 - w) + int(intraday_score) * w)
     return max(0, min(100, blended)), "live"
 

@@ -29,6 +29,24 @@ W_INTRADAY = {
     "breakLive": 0.10,
 }
 
+# 昨日 9 项权重：leading indicators（晋级/炸板/封板/高度）权重更高
+W_YESTERDAY = {
+    "promote":   0.15,
+    "break":     0.14,
+    "seal":      0.13,
+    "height":    0.12,
+    "limitUp":   0.11,
+    "oneWord":   0.09,
+    "advance":   0.09,
+    "volume":    0.09,
+    "limitDown": 0.08,
+}
+# 可选项：有数据时纳入权重并归一化
+W_YESTERDAY_OPT = {
+    "high10":      0.06,
+    "top10AvgChg": 0.06,
+}
+
 # 仅昨日 metrics（历史 sync / 趋势图）
 W_YESTERDAY_ONLY = 1.0
 
@@ -37,22 +55,39 @@ SCORE_MID = 55
 SCORE_WEAK = 20
 SCORE_NEUTRAL = 55
 
+# 连续评分中判定"信号偏弱"的阈值（用于收集风险原因）
+_SIGNAL_WEAK = 40
 
-def _tier_high(value: float, hi: float, mid: float) -> int:
+
+# ── 连续线性评分函数 ───────────────────────────────────────────
+
+def _linear_high(value: float, lo: float, hi: float) -> int:
+    """值越高越好：lo → 20，hi → 90，中间线性插值。"""
+    if value <= lo:
+        return SCORE_WEAK
     if value >= hi:
         return SCORE_STRONG
-    if value >= mid:
-        return SCORE_MID
-    return SCORE_WEAK
+    return round(SCORE_WEAK + (value - lo) / (hi - lo) * (SCORE_STRONG - SCORE_WEAK))
+
+
+def _linear_low(value: float, lo: float, hi: float) -> int:
+    """值越低越好：lo → 90，hi → 20，中间线性插值。"""
+    if value <= lo:
+        return SCORE_STRONG
+    if value >= hi:
+        return SCORE_WEAK
+    return round(SCORE_STRONG - (value - lo) / (hi - lo) * (SCORE_STRONG - SCORE_WEAK))
+
+
+# 保留旧的三档函数供外部兼容调用
+def _tier_high(value: float, hi: float, mid: float) -> int:
+    lo = 2 * mid - hi
+    return _linear_high(value, lo, hi)
 
 
 def _tier_low(value: float, lo: float, mid: float) -> int:
-    """值越低越好（跌停、炸板等）"""
-    if value <= lo:
-        return SCORE_STRONG
-    if value <= mid:
-        return SCORE_MID
-    return SCORE_WEAK
+    hi = 2 * mid - lo
+    return _linear_low(value, lo, hi)
 
 
 def _parse_num(raw) -> Optional[float]:
@@ -109,45 +144,53 @@ def _item_num(item: Optional[dict]) -> Optional[float]:
     return _parse_num(item.get("value"))
 
 
-# ── 昨日情绪 9 项 ─────────────────────────────────────────────
-
+# ── 昨日情绪 9 项（连续线性评分）─────────────────────────────
 
 def score_height(max_board: int) -> int:
-    return _tier_high(float(max_board or 0), 6, 3)
+    # lo=0（1板平淡）→20  hi=6（6板龙头）→90  mid=3→55
+    return _linear_high(float(max_board or 0), lo=0, hi=6)
 
 
 def score_limit_up(count: int) -> int:
-    return _tier_high(float(count or 0), 80, 40)
+    # lo=0 → 20  hi=80 → 90  mid=40 → 55
+    return _linear_high(float(count or 0), lo=0, hi=80)
 
 
 def score_seal(rate: float) -> int:
-    return _tier_high(float(rate or 0), 75, 58)
+    # lo=41% → 20  hi=75% → 90  mid=58% → 55
+    return _linear_high(float(rate or 0), lo=41.0, hi=75.0)
 
 
 def score_promote(rate: float) -> int:
-    return _tier_high(float(rate or 0), 40, 20)
+    # lo=0% → 20  hi=40% → 90  mid=20% → 55
+    return _linear_high(float(rate or 0), lo=0.0, hi=40.0)
 
 
 def score_limit_down(count: int) -> int:
-    return _tier_low(float(count or 0), 5, 18)
+    # lo=5（偏少）→90  hi=31（偏多）→20  mid=18 → 55
+    return _linear_low(float(count or 0), lo=5.0, hi=31.0)
 
 
 def score_break_rate(rate: float) -> int:
-    return _tier_low(float(rate or 0), 18, 32)
+    # lo=18%（健康）→90  hi=46%（危险）→20  mid=32% → 55
+    return _linear_low(float(rate or 0), lo=18.0, hi=46.0)
 
 
 def score_one_word(count: int) -> int:
-    return _tier_high(float(count or 0), 12, 5)
+    # lo=0 → 20  hi=12 → 90  mid=5 → 49（略低于55，可接受）
+    return _linear_high(float(count or 0), lo=0, hi=12)
 
 
 def score_volume_yi(yi: float) -> int:
-    return _tier_high(float(yi or 0), 9000, 6500)
+    # lo=4000亿 → 20  hi=9000亿 → 90  mid=6500亿 → 55
+    return _linear_high(float(yi or 0), lo=4000.0, hi=9000.0)
 
 
 def score_volume_intraday(amount_raw: float, vol_pct: Optional[float] = None) -> int:
     """盘中量能：优先同时刻同比；无对比时不使用全天阈值压分。"""
     if vol_pct is not None:
-        return _tier_high(float(vol_pct), 8.0, -2.0)
+        # lo=-10% → 20  hi=15% → 90  mid=2.5% ≈ 55
+        return _linear_high(float(vol_pct), lo=-10.0, hi=15.0)
     if float(amount_raw or 0) > 0:
         return SCORE_NEUTRAL
     return SCORE_NEUTRAL
@@ -158,24 +201,24 @@ def score_advance_breadth(adv: int, dec: int) -> int:
     total = adv + dec
     if adv <= 0 or dec <= 0 or total < 500:
         return SCORE_NEUTRAL
-    ratio = adv / total
-    if ratio >= 0.62:
-        return SCORE_STRONG
-    if ratio >= 0.48:
-        return SCORE_MID
-    return SCORE_WEAK
+    ratio = adv / total * 100  # 转为百分比
+    # lo=34% → 20  hi=66% → 90  mid=50% → 55
+    return _linear_high(ratio, lo=34.0, hi=66.0)
 
 
 def score_high10(count: int) -> int:
-    return _tier_high(float(count or 0), 400, 150)
+    # lo=0 → 20  hi=400 → 90  mid=150 → 46（略低于55，可接受）
+    return _linear_high(float(count or 0), lo=0, hi=400)
 
 
 def score_top10_avg_chg(chg: float) -> int:
-    return _tier_high(float(chg or 0), 1.2, 0.0)
+    # lo=-1.2% → 20  hi=1.2% → 90  mid=0% → 55
+    return _linear_high(float(chg or 0), lo=-1.2, hi=1.2)
 
 
 def score_sse_index(chg: float) -> int:
-    return _tier_high(float(chg or 0), 0.8, 0.0)
+    # lo=-0.8% → 20  hi=0.8% → 90  mid=0% → 55
+    return _linear_high(float(chg or 0), lo=-0.8, hi=0.8)
 
 
 def _score_yesterday_block(metrics: dict, grid9: Optional[list] = None) -> dict[str, int]:
@@ -225,6 +268,20 @@ def _score_yesterday_block(metrics: dict, grid9: Optional[list] = None) -> dict[
     return out
 
 
+def _weighted_yesterday_avg(scores: dict[str, int]) -> float:
+    """昨日块加权平均：leading indicators 权重更高；optional 项有数据时纳入并归一化。"""
+    all_weights = {**W_YESTERDAY, **W_YESTERDAY_OPT}
+    weighted = 0.0
+    total_w = 0.0
+    for key, w in all_weights.items():
+        if key in scores:
+            weighted += scores[key] * w
+            total_w += w
+    if total_w <= 0:
+        return float(SCORE_NEUTRAL)
+    return weighted / total_w
+
+
 # ── 盘中实时 9 项 ─────────────────────────────────────────────
 
 
@@ -253,9 +310,10 @@ def score_intraday_block(snap: dict) -> dict[str, int]:
     break_r = snap.get("break_live")
 
     if ratio is not None:
-        breadth_s = _tier_high(float(ratio), 62, 48)
+        # lo=34% → 20  hi=66% → 90
+        breadth_s = _linear_high(float(ratio), lo=34.0, hi=66.0)
     elif adv > 0 and dec > 0 and adv + dec >= 500:
-        breadth_s = _tier_high(adv / (adv + dec) * 100, 62, 48)
+        breadth_s = _linear_high(adv / (adv + dec) * 100, lo=34.0, hi=66.0)
     else:
         breadth_s = SCORE_NEUTRAL
 
@@ -267,8 +325,10 @@ def score_intraday_block(snap: dict) -> dict[str, int]:
     return {
         "sseIndex": score_sse_index(float(sse)) if sse is not None else SCORE_NEUTRAL,
         "upRatio": breadth_s,
-        "limitUpLive": _tier_high(float(lu), 70, 35),
-        "limitDownLive": _tier_low(float(ld), 8, 25),
+        # lo=0 → 20  hi=70 → 90  mid=35 → 55
+        "limitUpLive": _linear_high(float(lu), lo=0, hi=70),
+        # lo=8（少）→ 90  hi=42（多）→ 20  mid=25 → 55
+        "limitDownLive": _linear_low(float(ld), lo=8.0, hi=42.0),
         "marketVolumeLive": score_volume_intraday(amt, vol_pct),
         "high10Live": score_high10(high10) if high10 else SCORE_NEUTRAL,
         "top10AvgChgLive": score_top10_avg_chg(top10_f) if top10_f is not None else SCORE_NEUTRAL,
@@ -358,7 +418,7 @@ def calc_live_score(
     return None
 
 
-# ── 外围 3 项 ───────────────────────────────────────────────
+# ── 外围 3 项（收窄阈值，提高敏感度）──────────────────────────
 
 
 def _match_peripheral(items: list, *keywords: str) -> Optional[dict]:
@@ -380,14 +440,16 @@ def _score_peripheral_block(peripheral: Optional[list]) -> dict[str, int]:
     cnh_chg = _item_pct(cnh)
 
     return {
-        "ftseA50": _tier_high(a50_chg if a50_chg is not None else 0, 0.5, -0.3)
+        # 富时A50：lo=-0.3% → 20，hi=+0.3% → 90，0% → 55（收窄，更敏感）
+        "ftseA50": _linear_high(a50_chg, lo=-0.3, hi=0.3)
         if a50_chg is not None
         else SCORE_NEUTRAL,
-        "sp500": _tier_high(sp_chg if sp_chg is not None else 0, 0.3, -0.5)
+        # 标普500：lo=-0.3% → 20，hi=+0.3% → 90
+        "sp500": _linear_high(sp_chg, lo=-0.3, hi=0.3)
         if sp_chg is not None
         else SCORE_NEUTRAL,
-        # 离岸人民币升（贬值）偏空，取反
-        "cnh": _tier_low(cnh_chg if cnh_chg is not None else 0, -0.05, 0.15)
+        # 离岸人民币：贬值（chg>0）偏空；lo=-0.05（升值）→90，hi=+0.35（贬值）→20
+        "cnh": _linear_low(cnh_chg, lo=-0.05, hi=0.35)
         if cnh_chg is not None
         else SCORE_NEUTRAL,
     }
@@ -414,22 +476,28 @@ def _score_auction_block(auction: Optional[list], metrics: Optional[dict] = None
     top10_chg = _parse_pct((a.get("top10AuctionChg") or {}).get("value"))
 
     return {
-        "auctionOneWord": _tier_high(float(one_word or 0), 8, 3)
+        # lo=0 → 20  hi=8 → 90  mid=3 → 46
+        "auctionOneWord": _linear_high(float(one_word or 0), lo=0, hi=8)
         if one_word is not None
         else SCORE_NEUTRAL,
-        "auctionVolume": _tier_high(float(vol_yi or 0), 450, 320)
+        # lo=190亿 → 20  hi=450亿 → 90  mid=320亿 → 55
+        "auctionVolume": _linear_high(float(vol_yi or 0), lo=190.0, hi=450.0)
         if vol_yi is not None
         else SCORE_NEUTRAL,
-        "yesterdayFirst": _tier_high(first_chg if first_chg is not None else 0, 2.0, 0.0)
+        # lo=-2% → 20  hi=+2% → 90  mid=0% → 55
+        "yesterdayFirst": _linear_high(first_chg if first_chg is not None else 0, lo=-2.0, hi=2.0)
         if first_chg is not None
         else SCORE_NEUTRAL,
-        "yesterdayMulti": _tier_high(multi_chg if multi_chg is not None else 0, 1.0, -1.0)
+        # lo=-3% → 20  hi=+1% → 90  mid=-1% → 55
+        "yesterdayMulti": _linear_high(multi_chg if multi_chg is not None else 0, lo=-3.0, hi=1.0)
         if multi_chg is not None
         else SCORE_NEUTRAL,
-        "recentMulti": _tier_high(recent_chg if recent_chg is not None else 0, 2.5, 0.0)
+        # lo=-2.5% → 20  hi=+2.5% → 90  mid=0% → 55
+        "recentMulti": _linear_high(recent_chg if recent_chg is not None else 0, lo=-2.5, hi=2.5)
         if recent_chg is not None
         else SCORE_NEUTRAL,
-        "top10AuctionChg": _tier_high(top10_chg if top10_chg is not None else 0, 1.2, 0.0)
+        # lo=-1.2% → 20  hi=+1.2% → 90  mid=0% → 55
+        "top10AuctionChg": _linear_high(top10_chg if top10_chg is not None else 0, lo=-1.2, hi=1.2)
         if top10_chg is not None
         else SCORE_NEUTRAL,
     }
@@ -451,32 +519,35 @@ def _has_auction_data(auction: Optional[list]) -> bool:
     return False
 
 
+# ── 分级风险系统 ──────────────────────────────────────────────
+
 def _collect_weak_reasons(
     y: dict[str, int],
     p: dict[str, int],
     metrics: dict,
 ) -> list[str]:
+    """收集偏弱信号原因；使用连续评分阈值 _SIGNAL_WEAK=40。"""
     reasons = []
-    if y.get("promote", 99) <= SCORE_WEAK:
+    if y.get("promote", 99) < _SIGNAL_WEAK:
         reasons.append(f"昨日涨停股今日晋级率仅{metrics.get('promote_rate', 0):.0f}%")
-    if y.get("limitUp", 99) <= SCORE_WEAK:
+    if y.get("break", 99) < _SIGNAL_WEAK:
+        reasons.append(f"炸板率{metrics.get('break_rate', 0):.0f}%偏高")
+    if y.get("limitUp", 99) < _SIGNAL_WEAK:
         reasons.append(f"涨停仅{metrics.get('limit_up_count', 0)}只")
-    if y.get("height", 99) <= SCORE_WEAK:
+    if y.get("height", 99) < _SIGNAL_WEAK:
         reasons.append(f"最高连板仅{metrics.get('max_board', 0)}板")
-    if y.get("advance", 99) <= SCORE_WEAK:
+    if y.get("advance", 99) < _SIGNAL_WEAK:
         adv = int(metrics.get("advance_count") or 0)
         dec = int(metrics.get("decline_count") or 0)
         if adv + dec >= 50:
             reasons.append(f"上涨家数占比偏低（涨{adv}/跌{dec}）")
-    if y.get("break", 99) <= SCORE_WEAK:
-        reasons.append(f"炸板率{metrics.get('break_rate', 0):.0f}%偏高")
     top10 = metrics.get("top10_avg_chg")
-    if top10 is not None and y.get("top10AvgChg", 99) <= SCORE_WEAK:
+    if top10 is not None and y.get("top10AvgChg", 99) < _SIGNAL_WEAK:
         reasons.append(f"成交额前10平均涨幅仅{float(top10):.2f}%")
     high10 = metrics.get("high10_count")
-    if high10 is not None and y.get("high10", 99) <= SCORE_WEAK:
+    if high10 is not None and y.get("high10", 99) < _SIGNAL_WEAK:
         reasons.append(f"10日新高仅{int(high10)}只")
-    if p.get("ftseA50", 99) <= SCORE_WEAK and p.get("sp500", 99) <= SCORE_WEAK:
+    if p.get("ftseA50", 99) < _SIGNAL_WEAK and p.get("sp500", 99) < _SIGNAL_WEAK:
         reasons.append("外围指数偏弱")
     return reasons
 
@@ -489,15 +560,42 @@ def _collect_live_weak_reasons(
     """盘中分走弱原因（含竞价 6 项）"""
     reasons = []
     m = metrics or {}
-    if auc_scores.get("auctionOneWord", 99) <= SCORE_WEAK and auc_scores.get("yesterdayFirst", 99) <= SCORE_WEAK:
+    if auc_scores.get("auctionOneWord", 99) < _SIGNAL_WEAK and auc_scores.get("yesterdayFirst", 99) < _SIGNAL_WEAK:
         reasons.append("竞价接力偏弱")
-    if auc_scores.get("recentMulti", 99) <= SCORE_WEAK:
+    if auc_scores.get("recentMulti", 99) < _SIGNAL_WEAK:
         reasons.append("连板竞价溢价不足")
-    if live_scores.get("limitDownLive", 99) <= SCORE_WEAK:
+    if live_scores.get("limitDownLive", 99) < _SIGNAL_WEAK:
         reasons.append("实时跌停偏多")
-    if live_scores.get("breakLive", 99) <= SCORE_WEAK:
+    if live_scores.get("breakLive", 99) < _SIGNAL_WEAK:
         reasons.append(f"实时炸板率{m.get('break_rate', 0):.0f}%偏高")
     return reasons
+
+
+def _calc_risk_level(reasons: list[str], score: int) -> str:
+    """
+    分级风险：none / caution / warning / critical。
+    - caution（提示）：1 条弱信号，仓位轻微收窄
+    - warning（警示）：3 条弱信号或分数偏低，仓位减半
+    - critical（高风险）：4+ 条弱信号或极低分，仓位归零
+    """
+    n = len(reasons)
+    if score <= 14 or n >= 4:
+        return "critical"
+    if n >= 3 or score <= 25:
+        return "warning"
+    if n >= 1 or score <= 35:
+        return "caution"
+    return "none"
+
+
+def _apply_risk_to_position(position: int, risk_level: str) -> int:
+    if risk_level == "critical":
+        return 0
+    if risk_level == "warning":
+        return position // 2
+    if risk_level == "caution":
+        return min(position, 30)
+    return position
 
 
 def calc_sentiment(
@@ -515,7 +613,7 @@ def calc_sentiment(
     """
     metrics = metrics or {}
     y_scores = _score_yesterday_block(metrics, grid9)
-    y_avg = _block_avg(y_scores)
+    y_avg = _weighted_yesterday_avg(y_scores)
 
     has_peripheral = bool(peripheral)
 
@@ -539,30 +637,30 @@ def calc_sentiment(
 
     if score >= 90:
         level, color, signal = "极度亢奋", "#CF1322", "强"
-        position, pos_label = 70, ""
+        position = 70
     elif score >= 80:
         level, color, signal = "高潮", "#FF4D4F", "强"
-        position, pos_label = 60, ""
+        position = 60
     elif score >= 60:
         level, color, signal = "偏乐观", "#FF4D4F", "强"
-        position, pos_label = 50, ""
+        position = 50
     elif score >= 50:
         level, color, signal = "中性", "#FAAD14", "中"
-        position, pos_label = 30, ""
+        position = 30
     elif score >= 40:
         level, color, signal = "偏谨慎", "#FA8C16", "弱"
-        position, pos_label = 10, ""
+        position = 10
     elif score >= 30:
         level, color, signal = "偏冷", "#38BDF8", "弱"
-        position, pos_label = 0, ""
+        position = 0
     else:
         level, color, signal = "冰点", "#1890FF", "极弱"
-        position, pos_label = 0, ""
+        position = 0
 
     empty_reasons = _collect_weak_reasons(y_scores, p_scores, metrics)
-    empty_warning = len(empty_reasons) >= 2 or score <= 14
-    if empty_warning:
-        position, pos_label = 0, ""
+    risk_level = _calc_risk_level(empty_reasons, score)
+    position = _apply_risk_to_position(position, risk_level)
+    empty_warning = risk_level == "critical"
 
     return {
         "score": score,
@@ -570,8 +668,9 @@ def calc_sentiment(
         "levelColor": color,
         "longkongSignal": signal,
         "positionPercent": position,
-        "positionLabel": pos_label,
+        "positionLabel": "",
         "emptyWarning": empty_warning,
+        "riskLevel": risk_level,
         "emptyReasons": empty_reasons,
         "scoreMode": mode,
         "subScores": {
@@ -640,17 +739,16 @@ def apply_display_longkong(
     score_mode: str = "baseline",
 ) -> dict:
     """
-    龙空信号 / emptyWarning 随展示分更新。
-    展示分 < 50 追加盘中或综合走弱风险提示（与基准龙空取并集）。
+    龙空信号 / riskLevel / emptyWarning 随展示分更新。
+    展示分 < 50 追加盘中或综合走弱风险提示。
     """
     baseline_sentiment = baseline_sentiment or {}
+    baseline_risk = baseline_sentiment.get("riskLevel", "none")
     baseline_empty = bool(baseline_sentiment.get("emptyWarning"))
     reasons = list(baseline_sentiment.get("emptyReasons") or [])
     display_score = int(display_score or 0)
 
     display_risk = display_score < DISPLAY_LONGKONG_THRESHOLD
-    empty_warning = baseline_empty or display_risk or display_score <= 14
-
     if display_risk:
         if score_mode == "live":
             risk_reason = f"盘中情绪分{display_score}，低于{DISPLAY_LONGKONG_THRESHOLD}分"
@@ -659,18 +757,26 @@ def apply_display_longkong(
         if risk_reason not in reasons:
             reasons.insert(0, risk_reason)
 
-    signal = longkong_signal_from_score(display_score)
+    # 综合展示分重新计算风险等级
+    risk_level = _calc_risk_level(reasons, display_score)
+    # 取基准与展示风险的较高档
+    _levels = ("none", "caution", "warning", "critical")
+    risk_level = _levels[max(_levels.index(baseline_risk), _levels.index(risk_level))]
+
+    empty_warning = baseline_empty or risk_level == "critical" or display_score <= 14
+
     position = int(baseline_sentiment.get("positionPercent") or 0)
-    pos_label = baseline_sentiment.get("positionLabel") or ""
+    position = _apply_risk_to_position(position, risk_level)
     if empty_warning:
-        position, pos_label = 0, ""
+        position = 0
 
     return {
-        "longkongSignal": signal,
+        "longkongSignal": longkong_signal_from_score(display_score),
         "emptyWarning": empty_warning,
+        "riskLevel": risk_level,
         "emptyReasons": reasons,
         "positionPercent": position,
-        "positionLabel": pos_label,
+        "positionLabel": "",
     }
 
 
@@ -681,10 +787,13 @@ def strategy_note_for_home(
     score_mode: str,
     longkong: dict,
 ) -> str:
-    if not longkong.get("emptyWarning"):
+    risk = longkong.get("riskLevel", "none")
+    if risk == "none":
         if display_score >= 60:
             return "综合情绪偏强，盘面结构活跃"
         return "综合昨日收盘与外围，更新今日情绪参考"
+    if risk == "caution":
+        return "情绪出现弱信号，建议轻仓观察"
     if (
         score_mode == "live"
         and display_score < DISPLAY_LONGKONG_THRESHOLD
@@ -694,14 +803,16 @@ def strategy_note_for_home(
     return "综合情绪偏弱，个人龙空信号触发（作者复盘）"
 
 
-def position_desc(score: int, empty_warning: bool) -> str:
+def position_desc(score: int, empty_warning: bool, risk_level: str = "none") -> str:
     score = int(score or 0)
-    if empty_warning and score <= 14:
+    if risk_level == "critical" or (empty_warning and score <= 14):
         return "综合情绪极弱，盘面偏冷"
-    if empty_warning and score < DISPLAY_LONGKONG_THRESHOLD:
+    if risk_level == "warning" or (empty_warning and score < DISPLAY_LONGKONG_THRESHOLD):
         return "综合情绪走弱，展示分低于50，宜控节奏"
     if empty_warning:
         return "综合情绪偏弱，龙空风险提示"
+    if risk_level == "caution":
+        return "情绪出现弱信号，建议轻仓观察"
     if score >= 60:
         return "综合情绪偏强，接力结构尚可"
     if score >= 50:

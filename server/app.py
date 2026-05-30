@@ -332,7 +332,10 @@ def _build_home_payload(ref_d: str, prev_d: Optional[str], advice_d: str, is_rea
             }
     baseline_score = int(sentiment["score"])
     intraday_score = intraday_payload.get("intradayScore")
-    display_score, score_mode = calc_display_score(baseline_score, intraday_score)
+    prev_baseline = int(calc_sentiment(prev_metrics)["score"]) if prev_metrics else None
+    display_score, score_mode = calc_display_score(
+        baseline_score, intraday_score, prev_baseline=prev_baseline
+    )
     longkong = apply_display_longkong(
         sentiment, display_score, score_mode=score_mode
     )
@@ -438,13 +441,14 @@ def _build_home_payload(ref_d: str, prev_d: Optional[str], advice_d: str, is_rea
         ),
         "positionPercent": longkong["positionPercent"],
         "positionLabel": longkong["positionLabel"],
-        "positionDesc": position_desc(display_score, longkong["emptyWarning"]),
+        "positionDesc": position_desc(display_score, longkong["emptyWarning"], longkong.get("riskLevel", "none")),
         "emptyWarning": longkong["emptyWarning"],
         "emptyReasons": longkong["emptyReasons"],
         "strategyNote": strategy_note,
         "subScores": sentiment.get("subScores") or {},
         "intradaySubScores": intraday_payload.get("intradaySubScores") or {},
         "baselineEmptyWarning": sentiment["emptyWarning"],
+        "baselineRiskLevel": sentiment.get("riskLevel", "none"),
         "baselineEmptyReasons": sentiment["emptyReasons"],
         "baselinePositionPercent": sentiment["positionPercent"],
         "baselinePositionLabel": sentiment["positionLabel"],
@@ -692,9 +696,11 @@ def _sync_intraday_display_fields(
         )
 
     baseline = int(p.get("baselineScore") or p.get("score") or 0)
-    display_score, score_mode = calc_display_score(baseline, live_raw)
+    prev_baseline_2 = int(calc_sentiment(p.get("prevMetrics") or {})["score"]) if p.get("prevMetrics") else None
+    display_score, score_mode = calc_display_score(baseline, live_raw, prev_baseline=prev_baseline_2)
     baseline_sentiment = {
         "emptyWarning": bool(p.get("baselineEmptyWarning")),
+        "riskLevel": p.get("baselineRiskLevel") or "none",
         "emptyReasons": list(p.get("baselineEmptyReasons") or []),
         "positionPercent": p.get("baselinePositionPercent"),
         "positionLabel": p.get("baselinePositionLabel") or "",
@@ -723,7 +729,7 @@ def _sync_intraday_display_fields(
     p["emptyReasons"] = longkong["emptyReasons"]
     p["positionPercent"] = longkong["positionPercent"]
     p["positionLabel"] = longkong["positionLabel"]
-    p["positionDesc"] = position_desc(display_score, longkong["emptyWarning"])
+    p["positionDesc"] = position_desc(display_score, longkong["emptyWarning"], longkong.get("riskLevel", "none"))
     p = _attach_longkong_state(
         p,
         intraday_sub_scores=intraday_payload.get("intradaySubScores") or {},
