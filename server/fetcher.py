@@ -1535,7 +1535,7 @@ def _fmt_adv_decline(metrics: dict) -> str:
 
 
 def build_yesterday_sentiment(metrics: dict, prev_metrics: Optional[dict] = None) -> list:
-    """昨日情绪概览 9 项"""
+    """昨日情绪概览 10 项（含连板占比）"""
     prev = prev_metrics or {}
 
     def _y(key, suffix=""):
@@ -1553,7 +1553,14 @@ def build_yesterday_sentiment(metrics: dict, prev_metrics: Optional[dict] = None
     prev_adv_s = _fmt_prev_breadth(prev_adv, prev_dec)
     prev_adv_cmp = None if prev_adv_s == "--" else prev_adv
 
-    return [
+    mb = int(metrics.get("multi_board_count") or 0)
+    lu = int(metrics.get("limit_up_count") or 0)
+    mb_prev = int(prev.get("multi_board_count") or 0)
+    lu_prev = int(prev.get("limit_up_count") or 0)
+    cont_val = f"{mb}/{lu}" if lu else "--"
+    cont_prev = f"{mb_prev}/{lu_prev}" if lu_prev else "--"
+
+    rows = [
         {"key": "height", "label": "连板高度", "value": f"{metrics['max_board']}板", "yesterday": f"{_y('max_board')}板", "trend": _trend(metrics["max_board"], prev.get("max_board"))},
         {"key": "limitUp", "label": "涨停家数", "value": str(metrics["limit_up_count"]), "yesterday": str(_y("limit_up_count")), "trend": _trend(metrics["limit_up_count"], prev.get("limit_up_count"))},
         {"key": "seal", "label": "封板率", "value": f"{metrics['seal_rate']:.0f}%", "yesterday": f"{_y('seal_rate')}%", "trend": _trend(metrics["seal_rate"], prev.get("seal_rate"))},
@@ -1572,6 +1579,17 @@ def build_yesterday_sentiment(metrics: dict, prev_metrics: Optional[dict] = None
             "trend": _trend(adv, prev_adv_cmp),
         },
     ]
+    if lu:
+        rows.append({
+            "key": "continuationDepth",
+            "label": "连板占比",
+            "value": cont_val,
+            "yesterday": cont_prev,
+            "multi_board_count": mb,
+            "limit_up_count": lu,
+            "trend": _trend(mb / lu if lu else 0, mb_prev / lu_prev if lu_prev else None),
+        })
+    return rows
 
 
 def patch_grid9_live_breadth(
@@ -2717,6 +2735,27 @@ def build_home_trend(ref_d: str, days: int = HOME_TREND_DAYS) -> list[dict]:
     return trend
 
 
+def calc_regime(ref_d: str, days: int = 20) -> dict:
+    """
+    20 日情绪分移动均值，判断当前市场环境档位。
+    regime: bull（均值≥60）/ neutral（40–60）/ bear（<40）
+    """
+    trend = build_home_trend(ref_d, days=days)
+    if not trend:
+        return {"regimeScore": None, "regimeLabel": "--", "regime": "neutral"}
+    scores = [int(t.get("score") or 0) for t in trend if t.get("score") is not None]
+    if not scores:
+        return {"regimeScore": None, "regimeLabel": "--", "regime": "neutral"}
+    avg = round(sum(scores) / len(scores))
+    if avg >= 60:
+        label, regime = f"偏强（{days}日均分{avg}）", "bull"
+    elif avg >= 40:
+        label, regime = f"中性（{days}日均分{avg}）", "neutral"
+    else:
+        label, regime = f"偏弱（{days}日均分{avg}）", "bear"
+    return {"regimeScore": avg, "regimeLabel": label, "regime": regime}
+
+
 def display_level_label(score: int) -> str:
     if score >= 90:
         return "狂热"
@@ -3282,6 +3321,20 @@ def build_ref_day_metrics(trade_d: str, prev_d: Optional[str] = None) -> dict:
     }
 
 
+def _enrich_metrics_volume_avg(metrics: dict, ref_d: str) -> dict:
+    """注入 volume_20d_avg（20日成交量均值）供动态量能评分使用。失败时静默跳过。"""
+    if metrics.get("volume_20d_avg"):
+        return metrics
+    try:
+        from history_store import fetch_avg_volume_yi
+        avg = fetch_avg_volume_yi(ref_d, days=20)
+        if avg and avg > 0:
+            metrics = {**metrics, "volume_20d_avg": avg}
+    except Exception:
+        pass
+    return metrics
+
+
 def load_ref_day_snapshot(ref_d: str, prev_d: Optional[str] = None) -> tuple[dict, Optional[dict], list]:
     """
     读取 ref 日昨日情绪快照：优先 MySQL 归档，近 30 日无归档时从东财计算一次。
@@ -3303,12 +3356,14 @@ def load_ref_day_snapshot(ref_d: str, prev_d: Optional[str] = None) -> tuple[dic
             prev_detail = fetch_daily_detail(prev_d)
             if prev_detail and prev_detail.get("metrics"):
                 prev_metrics = _fill_metrics_breadth(prev_detail["metrics"], prev_d)
-        metrics = _fill_metrics_breadth(raw_metrics, ref_d)
+        metrics = _enrich_metrics_volume_avg(_fill_metrics_breadth(raw_metrics, ref_d), ref_d)
         grid9 = build_yesterday_sentiment(metrics, prev_metrics)
         return metrics, prev_metrics, grid9
 
     if em_pool_available(ref_d):
-        metrics = _fill_metrics_breadth(build_ref_day_metrics(ref_d, prev_d), ref_d)
+        metrics = _enrich_metrics_volume_avg(
+            _fill_metrics_breadth(build_ref_day_metrics(ref_d, prev_d), ref_d), ref_d
+        )
         prev_metrics = (
             _fill_metrics_breadth(build_ref_day_metrics(prev_d, None), prev_d)
             if prev_d
@@ -3318,8 +3373,10 @@ def load_ref_day_snapshot(ref_d: str, prev_d: Optional[str] = None) -> tuple[dic
         return metrics, prev_metrics, grid9
 
     if ref_detail:
-        metrics = _fill_metrics_breadth(
-            ref_detail.get("metrics") or build_ref_day_metrics(ref_d, prev_d),
+        metrics = _enrich_metrics_volume_avg(
+            _fill_metrics_breadth(
+                ref_detail.get("metrics") or build_ref_day_metrics(ref_d, prev_d), ref_d
+            ),
             ref_d,
         )
         prev_metrics = None
@@ -3330,7 +3387,9 @@ def load_ref_day_snapshot(ref_d: str, prev_d: Optional[str] = None) -> tuple[dic
         grid9 = build_yesterday_sentiment(metrics, prev_metrics)
         return metrics, prev_metrics, grid9
 
-    metrics = _fill_metrics_breadth(build_ref_day_metrics(ref_d, prev_d), ref_d)
+    metrics = _enrich_metrics_volume_avg(
+        _fill_metrics_breadth(build_ref_day_metrics(ref_d, prev_d), ref_d), ref_d
+    )
     prev_metrics = (
         _fill_metrics_breadth(build_ref_day_metrics(prev_d, None), prev_d)
         if prev_d

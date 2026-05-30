@@ -26,6 +26,7 @@ from fetcher import (
     build_auction_sentiment,
     build_day_metrics,
     build_home_trend,
+    calc_regime,
     build_indicator_sections,
     build_indicators,
     build_ref_day_metrics,
@@ -317,6 +318,7 @@ def _build_home_payload(ref_d: str, prev_d: Optional[str], advice_d: str, is_rea
     indicators = build_indicators(metrics, prev_metrics)
 
     trend = build_home_trend(ref_d)
+    regime = calc_regime(ref_d)
 
     intraday_payload = {"items": [], "intradayScore": None, "active": False}
     if should_live_intraday(mode):
@@ -459,6 +461,9 @@ def _build_home_payload(ref_d: str, prev_d: Optional[str], advice_d: str, is_rea
             for ind in indicators
         ],
         "trend": trend,
+        "regimeScore": regime.get("regimeScore"),
+        "regimeLabel": regime.get("regimeLabel"),
+        "regime": regime.get("regime", "neutral"),
         "metrics": metrics,
         "prevMetrics": prev_metrics,
     }

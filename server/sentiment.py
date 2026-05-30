@@ -29,6 +29,16 @@ W_INTRADAY = {
     "breakLive": 0.10,
 }
 
+# 竞价 6 项权重：接力信号（近期溢价/首板涨幅）权重更高
+W_AUCTION = {
+    "recentMulti":      0.22,
+    "yesterdayFirst":   0.22,
+    "yesterdayMulti":   0.20,
+    "top10AuctionChg":  0.18,
+    "auctionOneWord":   0.10,
+    "auctionVolume":    0.08,
+}
+
 # 昨日 9 项权重：leading indicators（晋级/炸板/封板/高度）权重更高
 W_YESTERDAY = {
     "promote":   0.15,
@@ -43,8 +53,9 @@ W_YESTERDAY = {
 }
 # 可选项：有数据时纳入权重并归一化
 W_YESTERDAY_OPT = {
-    "high10":      0.06,
-    "top10AvgChg": 0.06,
+    "continuationDepth": 0.08,  # 连板占比，高权重 leading indicator
+    "high10":            0.05,
+    "top10AvgChg":       0.05,
 }
 
 # 仅昨日 metrics（历史 sync / 趋势图）
@@ -55,8 +66,9 @@ SCORE_MID = 55
 SCORE_WEAK = 20
 SCORE_NEUTRAL = 55
 
-# 连续评分中判定"信号偏弱"的阈值（用于收集风险原因）
-_SIGNAL_WEAK = 40
+# 连续评分中判定"信号偏弱"的阈值
+_SIGNAL_WEAK = 40          # 一般指标
+_SIGNAL_WEAK_PRIMARY = 45  # leading indicators（晋级率/炸板率/封板率）：阈值更高，更早预警
 
 
 # ── 连续线性评分函数 ───────────────────────────────────────────
@@ -173,7 +185,24 @@ def score_limit_down(count: int) -> int:
 
 def score_break_rate(rate: float) -> int:
     # lo=18%（健康）→90  hi=46%（危险）→20  mid=32% → 55
-    return _linear_low(float(rate or 0), lo=18.0, hi=46.0)
+    # ≥50% 进入超危险区：凸形惩罚，最低接近 10
+    rate = float(rate or 0)
+    if rate >= 50.0:
+        return max(10, round(20 - (rate - 50.0) * 0.4))
+    return _linear_low(rate, lo=18.0, hi=46.0)
+
+
+def score_continuation_depth(multi_board: int, limit_up: int) -> int:
+    """
+    连板占比 = multi_board / limit_up：接力深度。
+    lo=0%（全是首板）→20；hi=40%（40%以上是连板）→90；mid=15%→55。
+    limit_up=0 时返回中性。
+    """
+    if not limit_up:
+        return SCORE_NEUTRAL
+    ratio = multi_board / limit_up * 100  # 转为百分比
+    # lo=0% → 20  hi=40% → 90  mid=15% → 46（偏低，符合现实：连板占15%已属不错）
+    return _linear_high(ratio, lo=0.0, hi=40.0)
 
 
 def score_one_word(count: int) -> int:
@@ -181,9 +210,16 @@ def score_one_word(count: int) -> int:
     return _linear_high(float(count or 0), lo=0, hi=12)
 
 
-def score_volume_yi(yi: float) -> int:
-    # lo=4000亿 → 20  hi=9000亿 → 90  mid=6500亿 → 55
-    return _linear_high(float(yi or 0), lo=4000.0, hi=9000.0)
+def score_volume_yi(yi: float, avg_20d: Optional[float] = None) -> int:
+    """
+    有 avg_20d（20日均量）时：相对均量百分比评分，-25%→20，+25%→90，0%→55。
+    无均量时：绝对阈值兜底（4000–9000亿）。
+    """
+    yi = float(yi or 0)
+    if avg_20d and avg_20d > 0:
+        pct = (yi - avg_20d) / avg_20d * 100
+        return _linear_high(pct, lo=-25.0, hi=25.0)
+    return _linear_high(yi, lo=4000.0, hi=9000.0)
 
 
 def score_volume_intraday(amount_raw: float, vol_pct: Optional[float] = None) -> int:
@@ -247,12 +283,13 @@ def _score_yesterday_block(metrics: dict, grid9: Optional[list] = None) -> dict[
 
     high10 = m.get("high10_count")
     top10_chg = m.get("top10_avg_chg")
+    multi_board = m.get("multi_board_count")
     try:
         top10_f = float(top10_chg) if top10_chg is not None else None
     except (TypeError, ValueError):
         top10_f = None
 
-    out = {
+    out: dict[str, int] = {
         "height": score_height(int(max_board or 0)),
         "limitUp": score_limit_up(int(limit_up or 0)),
         "seal": score_seal(float(seal or 0)),
@@ -260,12 +297,27 @@ def _score_yesterday_block(metrics: dict, grid9: Optional[list] = None) -> dict[
         "limitDown": score_limit_down(int(limit_down or 0)),
         "break": score_break_rate(float(break_r or 0)),
         "oneWord": score_one_word(int(one_word or 0)),
-        "volume": score_volume_yi(float(vol_yi or 0)),
+        "volume": score_volume_yi(float(vol_yi or 0), avg_20d=m.get("volume_20d_avg")),
         "advance": score_advance_breadth(int(adv or 0), int(dec or 0)),
         "high10": score_high10(int(high10 or 0)) if high10 is not None else SCORE_NEUTRAL,
         "top10AvgChg": score_top10_avg_chg(top10_f) if top10_f is not None else SCORE_NEUTRAL,
     }
+    if multi_board is not None:
+        out["continuationDepth"] = score_continuation_depth(int(multi_board), int(limit_up or 0))
     return out
+
+
+def _weighted_auction_avg(scores: dict[str, int]) -> float:
+    """竞价块加权平均：接力信号（溢价/涨幅）权重更高。"""
+    weighted = 0.0
+    total_w = 0.0
+    for key, w in W_AUCTION.items():
+        if key in scores:
+            weighted += scores[key] * w
+            total_w += w
+    if total_w <= 0:
+        return float(SCORE_NEUTRAL)
+    return weighted / total_w
 
 
 def _weighted_yesterday_avg(scores: dict[str, int]) -> float:
@@ -404,7 +456,7 @@ def calc_live_score(
     auc_avg: Optional[float] = None
     live_avg: Optional[float] = None
     if has_auc:
-        auc_avg = _block_avg(_score_auction_block(auction, metrics))
+        auc_avg = _weighted_auction_avg(_score_auction_block(auction, metrics))
     if has_live:
         live_avg = _weighted_intraday_avg(score_intraday_block(snap))
 
@@ -526,12 +578,20 @@ def _collect_weak_reasons(
     p: dict[str, int],
     metrics: dict,
 ) -> list[str]:
-    """收集偏弱信号原因；使用连续评分阈值 _SIGNAL_WEAK=40。"""
+    """收集偏弱信号原因。Leading indicators 使用更高阈值 _SIGNAL_WEAK_PRIMARY=45。"""
     reasons = []
-    if y.get("promote", 99) < _SIGNAL_WEAK:
+    # ── leading indicators（阈值 45）──────────────────────────
+    if y.get("promote", 99) < _SIGNAL_WEAK_PRIMARY:
         reasons.append(f"昨日涨停股今日晋级率仅{metrics.get('promote_rate', 0):.0f}%")
-    if y.get("break", 99) < _SIGNAL_WEAK:
+    if y.get("break", 99) < _SIGNAL_WEAK_PRIMARY:
         reasons.append(f"炸板率{metrics.get('break_rate', 0):.0f}%偏高")
+    if y.get("seal", 99) < _SIGNAL_WEAK_PRIMARY:
+        reasons.append(f"封板率{metrics.get('seal_rate', 0):.0f}%偏低")
+    if y.get("continuationDepth", 99) < _SIGNAL_WEAK_PRIMARY:
+        mb = int(metrics.get("multi_board_count") or 0)
+        lu = int(metrics.get("limit_up_count") or 1)
+        reasons.append(f"连板占比仅{mb}/{lu}（接力深度偏弱）")
+    # ── secondary indicators（阈值 40）───────────────────────
     if y.get("limitUp", 99) < _SIGNAL_WEAK:
         reasons.append(f"涨停仅{metrics.get('limit_up_count', 0)}只")
     if y.get("height", 99) < _SIGNAL_WEAK:
@@ -679,7 +739,7 @@ def calc_sentiment(
             "auction": a_scores,
             "yesterdayAvg": round(y_avg, 1),
             "peripheralAvg": round(_block_avg(p_scores), 1) if p_scores else None,
-            "auctionAvg": round(_block_avg(a_scores), 1) if a_scores else None,
+            "auctionAvg": round(_weighted_auction_avg(a_scores), 1) if a_scores else None,
         },
     }
 

@@ -400,6 +400,47 @@ def fetch_daily_detail(trade_d: str) -> Optional[dict]:
         return None
 
 
+def fetch_avg_volume_yi(trade_d: str, days: int = 20) -> Optional[float]:
+    """
+    trade_d 之前最近 days 个交易日的成交量均值（亿）。
+    用于动态量能评分基准，避免固定阈值随市场环境失真。
+    """
+    if not mysql_enabled() or not ensure_schema():
+        return None
+    trade_d = (trade_d or "").replace("-", "")[:8]
+
+    def _run(conn):
+        with conn.cursor() as cur:
+            cur.execute(
+                f"""
+                SELECT metrics_json FROM `{TABLE_DAILY}`
+                WHERE trade_date < %s
+                ORDER BY trade_date DESC
+                LIMIT %s
+                """,
+                (trade_d, max(1, min(days, 60))),
+            )
+            rows = cur.fetchall() or []
+        values = []
+        for row in rows:
+            try:
+                m = json.loads(row.get("metrics_json") or "{}")
+                v = float(m.get("volume_raw") or 0)
+                if v > 0:
+                    values.append(v)
+            except Exception:
+                pass
+        if not values:
+            return None
+        return round(sum(values) / len(values), 1)
+
+    try:
+        return with_retry(_run)
+    except Exception:
+        log.exception("fetch_avg_volume_yi failed trade_d=%s", trade_d)
+        return None
+
+
 def count_daily_records() -> int:
     if not mysql_enabled() or not ensure_schema():
         return 0
