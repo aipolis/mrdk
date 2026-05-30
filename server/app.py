@@ -16,7 +16,7 @@ from pydantic import BaseModel
 
 import os
 
-from config import APP_ENV, CRON_SECRET, SUBSCRIBE_FIELD_KEYS, SUBSCRIBE_TEMPLATES, SYNC_HISTORY_DAYS, bj_now
+from config import APP_ENV, CRON_SECRET, REVIEW_SCORE, SUBSCRIBE_FIELD_KEYS, SUBSCRIBE_TEMPLATES, SYNC_HISTORY_DAYS, bj_now
 from intraday import (
     build_intraday_payload,
     calc_display_score,
@@ -1200,7 +1200,7 @@ def _review_score_payload() -> Optional[dict]:
     审核模式：设置环境变量 REVIEW_SCORE=<分数> 后，接口返回固定分数的静态数据。
     审核通过后在云托管环境变量中删除或清空 REVIEW_SCORE 即可切回真实接口。
     """
-    raw = os.getenv("REVIEW_SCORE", "").strip()
+    raw = REVIEW_SCORE.strip() if REVIEW_SCORE else ""
     if not raw:
         return None
     try:

@@ -40,6 +40,9 @@ CRON_SECRET = os.getenv("CRON_SECRET", "")
 # 云托管部署时应设置 APP_ENV=prod 或 ENV=prod
 APP_ENV = os.getenv("APP_ENV", os.getenv("ENV", "")).lower()
 
+# 审核模式：非空时 /api/sentiment/today 返回固定分数（审核通过后设环境变量 REVIEW_SCORE= 清空即可）
+REVIEW_SCORE = os.getenv("REVIEW_SCORE", "25")
+
 # 微信订阅消息模板（公众平台 → 订阅消息 → 模板 ID）
 TMPL_MARKET_SENTIMENT = os.getenv(
     "TMPL_SENTIMENT",
