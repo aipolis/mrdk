@@ -21,6 +21,61 @@ const HOME_QUOTE = '不怕错过，就怕做错。不出门的时候，就在家
 
 const $ = (sel) => document.querySelector(sel)
 
+/**
+ * 根据 ref_d / advice_d / scoreMode 组合出有意义的状态栏文字。
+ *
+ * 盘中 (live)       → "今日实时情绪 · HH:MM 更新"
+ * ref != advice     → "昨日收盘情绪 · 今日参考" / "周五收盘情绪 · 下周一参考"
+ * ref == advice today → "今日收盘情绪 · 明日参考"
+ */
+function buildStatusText(data) {
+  if (!data) return '数据加载中…'
+  const scoreMode = data.scoreMode || 'baseline'
+  const updTime   = data.generatedAtTime || ''
+
+  // 盘中实时
+  if (scoreMode === 'live') {
+    return `今日实时情绪${updTime ? ' · ' + updTime + ' 更新' : ''}`
+  }
+
+  // 从 generatedAtLabel 提取 ref 日描述（"昨天 15:00 更新" → "昨日"）
+  const genLabel   = String(data.generatedAtLabel || data.generatedAt || '')
+  const dayWord    = genLabel.match(/^(今天|昨天|前天)/)?.[1]
+  const refLabel   = dayWord ? dayWord.replace('天', '日') : _dateMMDD(data.refDate)
+
+  const refKey  = _dateKey(data.refDate)
+  const advKey  = _dateKey(data.adviceDate || data.date)
+  const todayKey = _dateKey(new Date())
+
+  // ref 与 advice 是同一天 & 是今天（今日收盘 → 明日参考）
+  if (refKey && refKey === advKey && advKey === todayKey) {
+    return `今日收盘情绪 · 明日参考`
+  }
+
+  // advice 是今天
+  if (advKey === todayKey) {
+    return `${refLabel}收盘情绪 · 今日参考`
+  }
+
+  // advice 是未来（周末 / 节假日后下一个交易日）
+  const advLabel = advKey && advKey > todayKey ? _dateMMDD(data.adviceDate || data.date) : '下一交易日'
+  return `${refLabel}收盘情绪 · ${advLabel}参考`
+}
+
+function _dateKey(raw) {
+  if (!raw) return ''
+  if (raw instanceof Date) {
+    return raw.toISOString().slice(0, 10).replace(/-/g, '')
+  }
+  return String(raw).replace(/\D/g, '').slice(0, 8)
+}
+
+function _dateMMDD(raw) {
+  const s = _dateKey(raw)
+  if (s.length !== 8) return s || '--'
+  return `${parseInt(s.slice(4, 6), 10)}月${parseInt(s.slice(6, 8), 10)}日`
+}
+
 function esc(s) {
   return String(s ?? '')
     .replace(/&/g, '&amp;')
@@ -404,10 +459,10 @@ function applyData(data, options = {}) {
   renderSections(normalizeSections(data.indicatorSections, data), data)
 
   if (data.archiveFallback) {
-    $('#statusBar').textContent = `首页缓存更新中，暂显示 ${data.refDate || data.adviceDate || '--'} 归档数据`
+    $('#statusBar').textContent = `缓存更新中，暂显示 ${buildStatusText(data)}`
     $('#statusBar').className = 'status-bar err'
   } else {
-    $('#statusBar').textContent = `参考日 ${data.refDate || data.adviceDate || '--'} · 数据已更新`
+    $('#statusBar').textContent = buildStatusText(data)
     $('#statusBar').className = 'status-bar ok'
   }
 
