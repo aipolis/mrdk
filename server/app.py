@@ -39,6 +39,7 @@ from fetcher import (
     fetch_foreign_sentiment,
     fetch_peripheral_sentiment,
     load_peripheral_snapshot,
+    load_peripheral_best_available,
     fetch_sse_index_change,
     get_longkong_risk_payload_cached,
     get_recent_trade_dates,
@@ -311,13 +312,12 @@ def _build_home_payload(ref_d: str, prev_d: Optional[str], advice_d: str, is_rea
     grid9 = patch_grid9_live_breadth(grid9, metrics, ref_d=ref_d, advice_d=advice_d)
     advice_metrics = load_advice_metrics(advice_d)
     # 板块集中度：注入 metrics 供 calc_sentiment 评分
+    # total 在非交易时段可能为 0，用 hotConceptCount 兜底
     sector_conc = calc_sector_concentration(ref_d)
-    if sector_conc.get("total", 0) > 0:
+    if sector_conc.get("total", 0) > 0 or sector_conc.get("hotConceptCount", 0) > 0:
         metrics = {**metrics, "sector_concentration": sector_conc}
-    peripheral = load_peripheral_snapshot(advice_d)
-    if not peripheral and should_live_fetch_section("peripheral", mode):
-        peripheral = fetch_peripheral_sentiment()
-    peripheral = peripheral or []
+    # 外围：始终显示最近有效数据（不因 archive-only 模式返回空）
+    peripheral = load_peripheral_best_available(advice_d, ref_d)
     auction = load_auction_snapshot(
         advice_d, ref_d, prev_d, metrics, prev_metrics, is_ready=is_ready
     )

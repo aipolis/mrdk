@@ -265,8 +265,8 @@ def score_top10_avg_chg(chg: float) -> int:
 
 
 def score_sse_index(chg: float) -> int:
-    # lo=-0.8% → 20  hi=0.8% → 90  mid=0% → 55
-    return _linear_high(float(chg or 0), lo=-0.8, hi=0.8)
+    # 昨日涨停指数均涨幅：lo=-5%（大面）→20，hi=8%（大部分续板）→90，mid≈2%→55
+    return _linear_high(float(chg or 0), lo=-5.0, hi=8.0)
 
 
 def _score_yesterday_block(metrics: dict, grid9: Optional[list] = None) -> dict[str, int]:

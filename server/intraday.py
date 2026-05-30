@@ -8,7 +8,6 @@ from typing import Optional
 from config import bj_now
 from fetcher import (
     _fetch_market_breadth_live,
-    _fetch_sse_chg_tencent,
     _parse_legu_stat_date,
     _parse_market_activity_df,
     _spot_market_amount_yi,
@@ -17,6 +16,7 @@ from fetcher import (
     fetch_high10_stats,
     fetch_intraday_board_stats,
     fetch_market_activity,
+    fetch_prev_zt_avg_chg,
     fetch_ref_volume_at_same_time,
     fetch_ref_volume_prev_label,
     fetch_sse_index_change,
@@ -59,6 +59,19 @@ def intraday_session_phase(now: Optional[datetime] = None) -> str:
 def is_intraday_session(now: Optional[datetime] = None) -> bool:
     """交易日 9:30–15:00 盘中时段"""
     return intraday_session_phase(now) == "live"
+
+
+def is_data_prep_window(now: Optional[datetime] = None) -> bool:
+    """
+    交易日 8:00–9:15：数据准备期。
+    此窗口内，昨日情绪以外的板块显示 --；
+    其余时间一律显示数据（实时或 DB）。
+    """
+    now = now or bj_now()
+    if not is_trading_day(now):
+        return False
+    hm = now.hour * 60 + now.minute
+    return 8 * 60 <= hm < 9 * 60 + 15
 
 
 def is_intraday_pinned_window(now: Optional[datetime] = None) -> bool:
@@ -144,17 +157,19 @@ def _legu_live_counts() -> dict:
 
 
 def _resolve_prev_sse(ref_metrics: Optional[dict], ref_d: str = "") -> Optional[float]:
-    """昨日收盘上证涨跌幅（对比列「昨」）"""
-    ref_metrics = ref_metrics or {}
-    val = ref_metrics.get("index_chg")
-    if val is not None:
-        try:
-            return float(val)
-        except (TypeError, ValueError):
-            pass
-    ref_d = (ref_d or ref_metrics.get("date") or "").replace("-", "")[:8]
-    if ref_d:
-        return fetch_sse_index_change(ref_d)
+    """「昨」对比列：ref_d 的前一日涨停指数（即 prev_d 涨停股在 ref_d 的均涨幅）。"""
+    ref_d = (ref_d or (ref_metrics or {}).get("date") or "").replace("-", "")[:8]
+    if not ref_d:
+        return None
+    # 找 ref_d 的前一个交易日
+    dates = get_recent_trade_dates(5)
+    try:
+        idx = dates.index(ref_d)
+        prev_d = dates[idx + 1] if idx + 1 < len(dates) else None
+    except ValueError:
+        prev_d = None
+    if prev_d:
+        return fetch_prev_zt_avg_chg(prev_d)
     return None
 
 
@@ -179,7 +194,8 @@ def fetch_intraday_snapshot(ref_metrics: Optional[dict] = None, ref_d: str = "")
         if stat_d == today or _breadth_live_valid(adv2, dec2):
             adv, dec = adv2, dec2
 
-    sse_chg = _fetch_sse_chg_tencent(today)
+    # 昨日涨停指数：ref_d 涨停股今日均涨幅（替代上证涨跌，更贴近龙空龙策略）
+    sse_chg = fetch_prev_zt_avg_chg(ref_d)
     amount_str, amount_raw = _spot_market_amount_yi()
     if amount_raw <= 0:
         act = fetch_market_activity()
@@ -351,7 +367,7 @@ def build_intraday_items(snap: dict) -> list:
     return [
         _item(
             "sseIndex",
-            "上证涨跌",
+            "昨日涨停指数",
             sse_val,
             sse_prev,
             _trend(sse, prev_sse),
@@ -452,7 +468,7 @@ def build_intraday_placeholder_items(ref_metrics: Optional[dict] = None) -> list
     sse_prev = f"{float(prev_sse):+.2f}%" if prev_sse is not None else "--"
     vol_prev = vol_prev_s if vol_prev_s not in ("", "--") else "--"
     return [
-        _item("sseIndex", "上证涨跌", sse_prev),
+        _item("sseIndex", "昨日涨停指数", sse_prev),
         _item("upRatio", "上涨占比", f"{prev_ratio:.1f}%" if prev_ratio is not None else "--"),
         _item("limitUpLive", "实时涨停", str(prev_lu) if prev_lu is not None else "--"),
         _item("limitDownLive", "实时跌停", str(prev_ld) if prev_ld is not None else "--"),
@@ -531,7 +547,7 @@ def build_intraday_closed_items(
     return [
         _item(
             "sseIndex",
-            "上证涨跌",
+            "昨日涨停指数",
             f"{float(sse):+.2f}%" if sse is not None else "--",
             f"{float(prev_sse):+.2f}%" if prev_sse is not None else "--",
         ),
@@ -655,8 +671,12 @@ def build_intraday_payload(
     phase = intraday_session_phase()
     metrics = ref_metrics or {}
     now = bj_now()
-    if phase in ("off", "night"):
-        items = build_intraday_placeholder_items(ref_metrics)
+    prep = is_data_prep_window(now)
+
+    # 非盘中时段：按「数据准备期」规则决定显示占位还是 DB 数据
+    if phase in ("off", "night", "closed") or (phase == "waiting" and not prep):
+        # off/night/closed：显示最近交易日收盘数据；waiting且已过9:15：同样
+        items = build_intraday_closed_items(ref_metrics, prev_metrics)
         return {
             "items": items,
             "intradayScore": None,
@@ -664,8 +684,9 @@ def build_intraday_payload(
             "active": False,
             "phase": phase,
         }
-    if phase == "closed":
-        items = build_intraday_closed_items(ref_metrics, prev_metrics)
+    if phase == "waiting" and prep:
+        # 8:00–9:15 数据准备期：显示占位 --
+        items = build_intraday_placeholder_items(ref_metrics)
         return {
             "items": items,
             "intradayScore": None,

@@ -1159,6 +1159,37 @@ _SSE_INDEX_QT = "s_sh000001"
 _SSE_INDEX_BS = "sh.000001"
 
 
+def fetch_prev_zt_avg_chg(ref_d: str) -> Optional[float]:
+    """
+    昨日涨停指数：ref_d 涨停股在次日（advice_d）的平均涨跌幅。
+    直接从 stock_zt_pool_previous_em 接口获取，无需自行对码计算。
+    含义：
+      均涨幅 ≈ +10% → 大部分续板，接力结构强
+      均涨幅 ≈ 0%   → 续板少，结构一般
+      均涨幅 < 0%   → 高位大面，情绪转弱信号
+    """
+    ref_d = (ref_d or "")[:8]
+    if not ref_d:
+        return None
+    key = f"prev_zt_avg_{ref_d}"
+    cached = _cache_get(key, 7200)
+    if cached is not None:
+        return float(cached)
+    try:
+        df = ak.stock_zt_pool_previous_em(date=ref_d)
+        if df is None or df.empty or "涨跌幅" not in df.columns:
+            return None
+        import pandas as pd
+        chgs = pd.to_numeric(df["涨跌幅"], errors="coerce").dropna()
+        if chgs.empty:
+            return None
+        avg = round(float(chgs.mean()), 2)
+        _cache_set(key, avg)
+        return avg
+    except Exception:
+        return None
+
+
 def _fetch_sse_chg_tencent(trade_d: str) -> Optional[float]:
     """腾讯财经：当日实时上证涨跌幅 %"""
     trade_d = (trade_d or "")[:8]
@@ -1553,12 +1584,15 @@ def build_yesterday_sentiment(metrics: dict, prev_metrics: Optional[dict] = None
     prev_adv_s = _fmt_prev_breadth(prev_adv, prev_dec)
     prev_adv_cmp = None if prev_adv_s == "--" else prev_adv
 
-    mb = int(metrics.get("multi_board_count") or 0)
+    # multi_board_count 必须是真实数据（非 None），否则不显示连板占比
+    mb_raw = metrics.get("multi_board_count")
     lu = int(metrics.get("limit_up_count") or 0)
-    mb_prev = int(prev.get("multi_board_count") or 0)
+    mb = int(mb_raw) if mb_raw is not None else None
+    mb_prev_raw = prev.get("multi_board_count")
     lu_prev = int(prev.get("limit_up_count") or 0)
-    cont_val = f"{mb}/{lu}" if lu else "--"
-    cont_prev = f"{mb_prev}/{lu_prev}" if lu_prev else "--"
+    mb_prev = int(mb_prev_raw) if mb_prev_raw is not None else None
+    cont_val = f"{mb}/{lu}" if mb is not None and lu else "--"
+    cont_prev = f"{mb_prev}/{lu_prev}" if mb_prev is not None and lu_prev else "--"
 
     rows = [
         {"key": "height", "label": "连板高度", "value": f"{metrics['max_board']}板", "yesterday": f"{_y('max_board')}板", "trend": _trend(metrics["max_board"], prev.get("max_board"))},
@@ -1579,7 +1613,7 @@ def build_yesterday_sentiment(metrics: dict, prev_metrics: Optional[dict] = None
             "trend": _trend(adv, prev_adv_cmp),
         },
     ]
-    if lu:
+    if mb is not None and lu:  # 只有真实数据才显示，None 时不显示
         rows.append({
             "key": "continuationDepth",
             "label": "连板占比",
@@ -1587,7 +1621,7 @@ def build_yesterday_sentiment(metrics: dict, prev_metrics: Optional[dict] = None
             "yesterday": cont_prev,
             "multi_board_count": mb,
             "limit_up_count": lu,
-            "trend": _trend(mb / lu if lu else 0, mb_prev / lu_prev if lu_prev else None),
+            "trend": _trend(mb / lu if lu else 0, mb_prev / lu_prev if mb_prev is not None and lu_prev else None),
         })
 
     # 10日新高数（可选）
@@ -1610,11 +1644,30 @@ def build_yesterday_sentiment(metrics: dict, prev_metrics: Optional[dict] = None
         top10_prev_f = _safe_float(top10_prev)
         rows.append({
             "key": "top10AvgChg",
-            "label": "龙头平均涨幅",
+            "label": "活跃股均涨幅",
             "value": f"{top10_chg_f:+.2f}%" if top10_chg_f is not None else "--",
             "yesterday": f"{top10_prev_f:+.2f}%" if top10_prev_f is not None else "--",
             "trend": _trend(top10_chg_f, top10_prev_f),
         })
+    # 高位板晋级率（≥3连板）：高位股开始大面时情绪转弱的前瞻信号
+    hb_cont = metrics.get("high_board_promote_continued")
+    hb_total = metrics.get("high_board_promote_total")
+    hb_cont_prev = prev.get("high_board_promote_continued")
+    hb_total_prev = prev.get("high_board_promote_total")
+    if hb_total is not None and hb_total > 0:
+        hb_rate = round(hb_cont / hb_total * 100, 1) if hb_cont is not None else 0.0
+        hb_val = f"{hb_cont}/{hb_total}"
+        hb_prev_rate = round(hb_cont_prev / hb_total_prev * 100, 1) if hb_cont_prev is not None and hb_total_prev else None
+        hb_prev_val = f"{hb_cont_prev}/{hb_total_prev}" if hb_cont_prev is not None and hb_total_prev else "--"
+        rows.append({
+            "key": "highBoardPromote",
+            "label": "高位板晋级",
+            "value": hb_val,
+            "yesterday": hb_prev_val,
+            "high_board_promote_rate": hb_rate,
+            "trend": _trend(hb_rate, hb_prev_rate),
+        })
+
     # 板块集中度（如 metrics 中有数据）
     sc = metrics.get("sector_concentration") or {}
     if sc.get("total", 0) >= 10:
@@ -1740,10 +1793,11 @@ def calc_sector_concentration(trade_d: str) -> dict:
             "topSector": hot[0]["name"] if hot else "",
             "hotConceptCount": len(hot),
         }
-        _cache_set(key, result, 900)
+        _cache_set(key, result)
         return result
-    except Exception:
-        log.exception("calc_sector_concentration failed trade_d=%s", trade_d)
+    except Exception as e:
+        import traceback
+        traceback.print_exc()
         return empty
 
 
@@ -2531,6 +2585,94 @@ def _pool_codes_all(df_up: pd.DataFrame) -> list[str]:
     return _normalize_code_list(df_up[col].tolist())
 
 
+def _recent_zt_big_drop_count(
+    ref_d: str,
+    prev_d: Optional[str],
+    advice_d: str,
+    spot_df=None,
+) -> Optional[int]:
+    """
+    近3日曾触板（涨停封住 + 炸板）、今日跌停的股票数量。
+    非交易日（advice_d 不是交易日）返回 None → 显示 --。
+    """
+    # 非交易日无「今日跌停」，返回 None
+    advice_d = (advice_d or "")[:8]
+    today = date_str(bj_now())
+    if advice_d != today:
+        # advice_d 是历史日期，或非当天 → 查是否是真实交易日
+        try:
+            from intraday import is_trading_day
+            from datetime import datetime
+            dt = datetime.strptime(advice_d, "%Y%m%d")
+            if not is_trading_day(dt):
+                return None
+        except Exception:
+            pass
+    # 近3个交易日的触板代码合集（涨停 + 炸板）
+    recent_zt: set[str] = set()
+    for d in [ref_d, prev_d]:
+        if d:
+            recent_zt |= _normalize_stock_codes(fetch_limit_up(d))
+            recent_zt |= _normalize_stock_codes(fetch_broken_board(d))
+    # 第3日：从交易日历往前推
+    dates = get_recent_trade_dates(6)
+    try:
+        ri = dates.index(ref_d)
+        if ri + 2 < len(dates):
+            d3 = dates[ri + 2]
+            recent_zt |= _normalize_stock_codes(fetch_limit_up(d3))
+            recent_zt |= _normalize_stock_codes(fetch_broken_board(d3))
+    except ValueError:
+        pass
+
+    if not recent_zt:
+        return 0
+
+    # 今日跌停代码：优先 spot_df 实时（盘中），否则跌停池
+    today_down: set[str] = set()
+    if spot_df is not None and not spot_df.empty:
+        pct_col = _df_col(spot_df, "涨跌幅")
+        code_col = _df_col(spot_df, "代码")
+        if pct_col and code_col:
+            pcts = pd.to_numeric(spot_df[pct_col], errors="coerce")
+            mask = pcts <= -9.8
+            codes = (
+                spot_df.loc[mask, code_col]
+                .astype(str)
+                .str.replace(r"\D", "", regex=True)
+                .str.zfill(6)
+            )
+            today_down = set(codes.tolist())
+    if not today_down:
+        today_down = _normalize_stock_codes(fetch_limit_down(advice_d))
+
+    return len(recent_zt & today_down)
+
+
+def _build_risk_placeholder(metrics: dict, prev_metrics: dict) -> list[dict]:
+    """数据准备期（8:00-9:15）占位：全部显示 --，昨列保留对比值。"""
+    prev_promote = prev_metrics.get("promote_rate")
+    prev_break_rate = prev_metrics.get("break_rate")
+    prev_limit_down = prev_metrics.get("limit_down_count")
+    prev_max_board = int(prev_metrics.get("max_board") or 0)
+
+    def ph(key, label, yesterday="--", desc=""):
+        return {"key": key, "label": label, "value": "--",
+                "yesterday": str(yesterday) if yesterday not in (None, "") else "--",
+                "trend": "flat", "desc": desc}
+
+    multi_fail_prev = f"{max(0.0, 100.0-float(prev_promote or 0)):.0f}%" if prev_promote is not None else "--"
+    reseal_prev = f"{max(0.0, 100.0-float(prev_break_rate or 0)):.0f}%" if prev_break_rate is not None else "--"
+    return [
+        ph("highBreakFeedback", "连板最高标涨幅", f"{prev_max_board}板" if prev_max_board else "--"),
+        ph("limitUpPremium", "昨日涨停溢价"),
+        ph("multiFailRate", "连板晋级失败率", multi_fail_prev),
+        ph("resealRate", "炸板后回封率", reseal_prev),
+        ph("limitDownRisk", "跌停家数", str(prev_limit_down) if prev_limit_down is not None else "--"),
+        ph("bigLossCount", "大面家数"),
+    ]
+
+
 def build_longkong_risk_items(
     ref_d: str,
     prev_d: Optional[str],
@@ -2542,6 +2684,14 @@ def build_longkong_risk_items(
     metrics = metrics or {}
     prev_metrics = prev_metrics or {}
     ref_d = (ref_d or "")[:8]
+
+    # 数据准备期（交易日 8:00–9:15）：本板块全部显示 --，避免旧数据误导
+    try:
+        from intraday import is_data_prep_window
+        if is_data_prep_window():
+            return _build_risk_placeholder(metrics, prev_metrics)
+    except Exception:
+        pass
 
     df_ref_up = fetch_limit_up(ref_d)
     df_ref_broken = fetch_broken_board(ref_d)
@@ -2566,13 +2716,10 @@ def build_longkong_risk_items(
     reseal_rate = round(limit_up_n / (limit_up_n + broken_n) * 100, 1) if limit_up_n + broken_n > 0 else 0.0
 
     limit_down_n = int(metrics.get("limit_down_count") or (len(df_ref_down) if df_ref_down is not None else 0))
-    big_loss = 0
-    try:
-        pct_col = _df_col(spot_df, "\u6da8\u8dcc\u5e45")
-        if spot_df is not None and not spot_df.empty and pct_col:
-            big_loss = int((pd.to_numeric(spot_df[pct_col], errors="coerce") <= -7).sum())
-    except Exception:
-        big_loss = 0
+
+    # \u5927\u9762\u5bb6\u6570\uff1a\u8fd13\u65e5\u66fe\u6da8\u505c\u3001\u4eca\u65e5\u8dcc\u505c\u7684\u80a1\u7968\u6570\u91cf
+    # \u6bd4\u300c\u5168\u5e02\u8dcc\u5e45\u2264-7%\u300d\u66f4\u7cbe\u51c6 \u2014\u2014 \u4e13\u6307\u70ed\u94b1\u9ad8\u4f4d\u5d29\u76d8
+    big_loss = _recent_zt_big_drop_count(ref_d, prev_d, advice_d or ref_d, spot_df)
 
     prev_limit_down = prev_metrics.get("limit_down_count")
     prev_break_rate = prev_metrics.get("break_rate")
@@ -2588,13 +2735,27 @@ def build_longkong_risk_items(
             "desc": desc,
         }
 
+    # \u8fde\u677f\u6700\u9ad8\u6807\u4eca\u65e5\u6da8\u5e45\uff08\u66ff\u4ee3\u539f\u9ad8\u6807\u65ad\u677f\u516c\u5f0f\uff09
+    top_chg = _top_board_stock_chg(prev_d, ref_d) if prev_d else None
+    top_chg_str = f"{top_chg:+.1f}%" if top_chg is not None else "--"
+    top_chg_trend = ("up" if top_chg is not None and top_chg >= 9.5
+                     else "down" if top_chg is not None and top_chg < 0
+                     else "flat")
     return [
-        item("highBreakFeedback", "\u9ad8\u6807\u65ad\u677f\u8d1f\u53cd\u9988", f"{high_break}\u677f" if high_break > 0 else "0\u677f", f"{prev_max_board}\u677f" if prev_max_board else "--", _trend(high_break, 0, inverse=True), "\u9ad8\u6807\u9ad8\u5ea6\u56de\u843d\u8d8a\u591a\uff0c\u63a5\u529b\u8d1f\u53cd\u9988\u8d8a\u91cd"),
+        item("highBreakFeedback", "\u8fde\u677f\u6700\u9ad8\u6807\u6da8\u5e45",
+             top_chg_str,
+             f"{prev_max_board}\u677f" if prev_max_board else "--",
+             top_chg_trend,
+             "\u6628\u65e5\u6700\u9ad8\u8fde\u677f\u80a1\u4eca\u65e5\u6da8\u5e45\uff1a\u7eed\u677f+10%\u4e3a\u5f3a\uff0c\u8dcc\u7eff\u4e3a\u9ad8\u4f4d\u5927\u9762\u4fe1\u53f7"),
         item("limitUpPremium", "\u6628\u65e5\u6da8\u505c\u6ea2\u4ef7", f"{float(premium):+.2f}%" if premium is not None else "--", "--", "up" if premium is not None and float(premium) >= 0 else "down" if premium is not None else "flat", "\u6628\u65e5\u6da8\u505c\u6c60\u4eca\u65e5\u5e73\u5747\u8868\u73b0"),
         item("multiFailRate", "\u8fde\u677f\u664b\u7ea7\u5931\u8d25\u7387", f"{multi_fail_rate:.0f}%", f"{max(0.0, 100.0 - float(prev_promote or 0)):.0f}%" if prev_promote is not None else "--", _trend(multi_fail_rate, max(0.0, 100.0 - float(prev_promote or 0)) if prev_promote is not None else None, inverse=True), "\u664b\u7ea7\u7387\u7684\u53cd\u5411\u98ce\u9669\u53e3\u5f84"),
         item("resealRate", "\u70b8\u677f\u540e\u56de\u5c01\u7387", f"{reseal_rate:.0f}%", f"{max(0.0, 100.0 - float(prev_break_rate or 0)):.0f}%" if prev_break_rate is not None else "--", _trend(reseal_rate, max(0.0, 100.0 - float(prev_break_rate or 0)) if prev_break_rate is not None else None), "\u6da8\u505c\u5c01\u4f4f\u5360\u6da8\u505c\u52a0\u70b8\u677f\u7684\u6bd4\u4f8b"),
         item("limitDownRisk", "\u8dcc\u505c\u5bb6\u6570", str(limit_down_n), str(prev_limit_down) if prev_limit_down is not None else "--", _trend(limit_down_n, prev_limit_down, inverse=True), "\u6781\u7aef\u4e8f\u94b1\u6548\u5e94\u6e29\u5ea6"),
-        item("bigLossCount", "\u5927\u9762\u5bb6\u6570", str(big_loss), "--", "down" if big_loss > 20 else "flat", "\u5b9e\u65f6\u8dcc\u5e45\u4e0d\u5c0f\u4e8e 7% \u7684\u4e2a\u80a1\u6570"),
+        item("bigLossCount", "\u5927\u9762\u5bb6\u6570",
+             str(big_loss) if big_loss is not None else "--",
+             "--",
+             "down" if big_loss is not None and big_loss > 5 else "flat",
+             "\u8fd13\u65e5\u89e6\u677f\u80a1\u4eca\u65e5\u8dcc\u505c\u5bb6\u6570"),
     ]
 
 
@@ -2732,6 +2893,25 @@ def load_peripheral_snapshot(advice_d: str) -> list:
     return []
 
 
+def load_peripheral_best_available(advice_d: str, ref_d: str = "") -> list:
+    """
+    外围数据最优来源：始终返回最近有效快照，非交易时段也不显示 --。
+    优先级：advice_d 快照 → ref_d 快照 → 实时拉取
+    A50/标普/人民币均为全球市场，非 A 股交易日也有行情数据。
+    """
+    # 1. advice_d 快照（当日 9:00 入库）
+    data = load_peripheral_snapshot(advice_d)
+    if data:
+        return data
+    # 2. ref_d 快照（最近一个完整交易日的外围归档）
+    if ref_d and ref_d != advice_d:
+        data = load_peripheral_snapshot(ref_d)
+        if data:
+            return data
+    # 3. 实时拉取（全球市场非交易日也有数据）
+    return fetch_peripheral_sentiment() or []
+
+
 def build_indicator_sections(
     ref_d: str,
     prev_d: Optional[str],
@@ -2763,7 +2943,7 @@ def build_indicator_sections(
             "meta": metas["peripheral"],
             "layout": "row3",
             "cols": 3,
-            "items": load_peripheral_snapshot(advice_d) or fetch_peripheral_sentiment(),
+            "items": load_peripheral_best_available(advice_d, ref_d),
         },
         {
             "id": "auction",
@@ -3080,6 +3260,79 @@ def _promote_rate(prev_d: str, curr_d: str) -> float:
     return round(len(codes_prev & codes_curr) / len(codes_prev) * 100, 1)
 
 
+def _top_board_stock_chg(prev_d: str, ref_d: str) -> Optional[float]:
+    """
+    昨日最高连板股在 ref_d 当天的收益率（%）。
+    先查 ref_d 涨停/炸板池快速判断，再回落到日线数据。
+    最多对 2 只最高板股取均值。
+    """
+    df_prev = fetch_limit_up(prev_d)
+    if df_prev is None or df_prev.empty or "连板数" not in df_prev.columns:
+        return None
+    boards = pd.to_numeric(df_prev["连板数"], errors="coerce").fillna(1)
+    max_b = int(boards.max())
+    if max_b < 2:
+        return None
+    norm = df_prev["代码"].astype(str).str.replace(r"\D", "", regex=True).str.zfill(6)
+    top_codes = set(norm[boards == max_b].tolist())
+    if not top_codes:
+        return None
+
+    # 快捷路径：还在涨停池 → 取该板块实际涨停幅度
+    df_up = fetch_limit_up(ref_d)
+    up_codes = _normalize_stock_codes(df_up)
+    still_up = top_codes & up_codes
+    if still_up:
+        # 读收盘涨幅（科创板 20%，主板 10%，创业板 20%）
+        # 用 df_up 的「涨跌幅」列（若有），否则近似10%
+        if df_up is not None and "涨跌幅" in df_up.columns:
+            norm_up = df_up["代码"].astype(str).str.replace(r"\D", "", regex=True).str.zfill(6)
+            vals = pd.to_numeric(df_up.loc[norm_up.isin(still_up), "涨跌幅"], errors="coerce").dropna()
+            if not vals.empty:
+                return round(float(vals.mean()), 2)
+        return 10.0  # 主板涨停近似值
+
+    # 回落到日线接口：取当天涨跌幅
+    chgs: list[float] = []
+    for code in list(top_codes)[:2]:
+        key = f"board_chg_{prev_d}_{ref_d}_{code}"
+        cached = _cache_get(key, 86400 * 7)
+        if cached is not None:
+            chgs.append(float(cached))
+            continue
+        try:
+            df_h = ak.stock_zh_a_hist(
+                symbol=code, period="daily",
+                start_date=ref_d[:8], end_date=ref_d[:8], adjust="qfq",
+            )
+            if df_h is not None and not df_h.empty and "涨跌幅" in df_h.columns:
+                v = float(pd.to_numeric(df_h.iloc[0]["涨跌幅"], errors="coerce"))
+                _cache_set(key, v)
+                chgs.append(v)
+        except Exception:
+            pass
+    return round(sum(chgs) / len(chgs), 2) if chgs else None
+
+
+def _high_board_promote(prev_d: str, curr_d: str, min_boards: int = 3) -> Optional[tuple[int, int]]:
+    """
+    高位股（≥min_boards 连板）的晋级情况：返回 (continued, total)。
+    当高位股开始大面断板，情绪往往转弱。
+    数据不足时返回 None。
+    """
+    df_prev = fetch_limit_up(prev_d)
+    if df_prev is None or df_prev.empty or "连板数" not in df_prev.columns:
+        return None
+    boards = pd.to_numeric(df_prev["连板数"], errors="coerce").fillna(1)
+    df_high = df_prev[boards >= min_boards]
+    if df_high.empty:
+        return None
+    high_codes = set(df_high["代码"].astype(str).str.replace(r"\D", "", regex=True).str.zfill(6).tolist())
+    df_curr = fetch_limit_up(curr_d)
+    curr_codes = _normalize_stock_codes(df_curr)
+    return len(high_codes & curr_codes), len(high_codes)
+
+
 def _break_rate(d: str) -> float:
     df_up = fetch_limit_up(d)
     df_broken = fetch_broken_board(d)
@@ -3353,8 +3606,17 @@ def fetch_intraday_board_stats(
 
 
 def _seal_rate(d: str) -> float:
-    br = _break_rate(d)
-    return round(100 - br, 1) if br else 0.0
+    """封板率 = 成功封板数 / (成功封板 + 炸板)。
+    直接从两个池计算，避免 break_rate=0 时误判（0.0 falsy → 封板率错误返回 0）。
+    """
+    df_up = fetch_limit_up(d)
+    df_broken = fetch_broken_board(d)
+    up_n = len(df_up) if df_up is not None and not df_up.empty else 0
+    broken_n = len(df_broken) if df_broken is not None and not df_broken.empty else 0
+    total = up_n + broken_n
+    if total == 0:
+        return 0.0
+    return round(up_n / total * 100, 1)
 
 
 def _auction_up_estimate() -> int:
@@ -3389,7 +3651,15 @@ def build_ref_day_metrics(trade_d: str, prev_d: Optional[str] = None) -> dict:
     limit_up = len(df_up) if df_up is not None and not df_up.empty else 0
     limit_down = len(df_down) if df_down is not None and not df_down.empty else 0
     max_board = _max_board(df_up)
+    # 连板分布：首板 / 连板数量（用于连板占比指标）
+    first_board_count: Optional[int] = None
+    multi_board_count: Optional[int] = None
+    if df_up is not None and not df_up.empty and "连板数" in df_up.columns:
+        boards = pd.to_numeric(df_up["连板数"], errors="coerce").fillna(1)
+        first_board_count = int((boards == 1).sum())
+        multi_board_count = int((boards >= 2).sum())
     promote = _promote_rate(prev_d, trade_d) if prev_d else 0.0
+    high_board_promote = _high_board_promote(prev_d, trade_d) if prev_d else None  # (continued, total)
     break_r = _break_rate(trade_d)
     seal_r = _seal_rate(trade_d)
     one_word = _one_word_count(df_up)
@@ -3429,6 +3699,10 @@ def build_ref_day_metrics(trade_d: str, prev_d: Optional[str] = None) -> dict:
         "high10_count": high10_count,
         "top10_codes": top10_codes,
         "top10_avg_chg": top10_avg_chg,
+        "first_board_count": first_board_count,
+        "multi_board_count": multi_board_count,
+        "high_board_promote_continued": high_board_promote[0] if high_board_promote else None,
+        "high_board_promote_total": high_board_promote[1] if high_board_promote else None,
     }
 
 
