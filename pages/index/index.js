@@ -2,7 +2,7 @@ const { orderIndicatorSections, normalizeIndicatorSections } = require('../../ut
 const { fetchHomeFromNetwork, applyHomeData, getHomeCache, isSameHomeSnapshot, fetchHistory } = require('../../utils/store')
 const { withPreviewScore } = require('../../utils/preview')
 const { homeData } = require('../../utils/data')
-const { getDisplayLevel, dailyQuote, normalizeQuote, formatQuoteText } = require('../../utils/theme')
+const { getDisplayLevel, dailyQuote, normalizeQuote, formatQuoteText, HOME_QUOTE } = require('../../utils/theme')
 const { setupCanvas2d, getCustomNavLayout } = require('../../utils/device')
 const { createGaugeController, SKIP_ANIM_MS, CACHE_IDLE_MS } = require('../../utils/gaugeAnim')
 const { getChartColors } = require('../../utils/uiTheme')
@@ -73,7 +73,7 @@ Page({
     this._gaugeCtrl = createGaugeController(this)
     this._pendingGaugeMeta = null
     this.setData(getCustomNavLayout())
-    this.applyQuoteData(dailyQuote())
+    this.applyQuoteData(HOME_QUOTE)
     const app = getApp()
     this.setData({ quoteFontReady: !!(app.globalData && app.globalData.quoteFontReady) })
     this.loadQuoteFontFace()
@@ -193,8 +193,8 @@ Page({
     wx.nextTick(() => this.bootstrapGauge())
   },
 
-  applyQuoteData(raw, dateStr) {
-    const item = raw ? normalizeQuote(raw) : dailyQuote(dateStr)
+  applyQuoteData(raw) {
+    const item = normalizeQuote(raw || HOME_QUOTE)
     this.setData({
       dailyQuoteText: formatQuoteText(item.text),
       dailyQuoteAuthor: item.author
@@ -261,7 +261,7 @@ Page({
       label: data.positionLabel
     })
 
-    const quote = normalizeQuote(data.dailyQuote || dailyQuote(data.adviceDate || data.date))
+    const quote = normalizeQuote(HOME_QUOTE)
     const refDate = data.refDate || data.adviceDate || data.date || ''
     const longkongState = resolveLongkongState(data)
     const longkongTone = resolveLongkongTone(data)

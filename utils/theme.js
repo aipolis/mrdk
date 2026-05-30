@@ -84,6 +84,12 @@ function getQuoteCharset(quotes = QUOTES) {
   return Array.from(new Set(text.split(''))).join('')
 }
 
+// 首页固定语录（与 web HOME_QUOTE 保持一致）
+const HOME_QUOTE = {
+  text: '不怕错过，就怕做错。不出门的时候，就在家修炼。',
+  author: '养家心法'
+}
+
 module.exports = {
   getDisplayLevel,
   randomQuote,
@@ -91,5 +97,6 @@ module.exports = {
   normalizeQuote,
   formatQuoteText,
   QUOTES,
-  getQuoteCharset
+  getQuoteCharset,
+  HOME_QUOTE
 }
