@@ -249,7 +249,7 @@ function renderGridSection(section) {
   return html
 }
 
-function renderSections(sections) {
+function renderSections(sections, homeData) {
   const box = $('#sections')
   if (!box) return
   if (!sections?.length) {
@@ -272,27 +272,32 @@ function renderSections(sections) {
     </section>`
   }).join('')
   // post-render: expand sector bar cells and paint intraday canvases
-  _postRenderSections(box, sections)
+  _postRenderSections(box, sections, homeData)
 }
 
-function _postRenderSections(box, sections) {
-  // sector concentration bars: inject below sectorConcentration cell
-  for (const sec of sections) {
-    const scItem = (sec.items || []).find(it => it.key === 'sectorConcentration')
-    if (!scItem?.topSectors?.length) continue
-    const cell = box.querySelector('[data-key="sectorConcentration"]')
-    if (!cell) continue
-    const wrap = cell.closest('.section')
-    if (!wrap) continue
-    const existing = wrap.querySelector('.sector-bars-card')
-    if (!existing) {
+// homeData: the raw API data object (may have top-level sectorConcentration)
+function _postRenderSections(box, sections, homeData) {
+  // ── 概念集中度柱状图 ────────────────────────────────────────
+  // 优先从 homeData 顶层字段取（不依赖 grid 单元格是否存在）
+  const sc = homeData?.sectorConcentration
+  const topSectors = sc?.topSectors?.length ? sc.topSectors
+    : (sections || []).flatMap(s => s.items || [])
+        .find(it => it.key === 'sectorConcentration')?.topSectors
+  if (topSectors?.length) {
+    // 注入到"情绪概览"或"yesterday"section 下方
+    const yesterdaySec = [...box.querySelectorAll('.section')]
+      .find(el => {
+        const title = el.querySelector('.section-title')?.textContent || ''
+        return title.includes('情绪概览')
+      })
+    if (yesterdaySec && !yesterdaySec.querySelector('.sector-bars-card')) {
       const barsEl = document.createElement('article')
       barsEl.className = 'card sector-bars-card'
-      barsEl.innerHTML = renderSectorBars(scItem.topSectors)
-      wrap.appendChild(barsEl)
+      barsEl.innerHTML = renderSectorBars(topSectors)
+      yesterdaySec.appendChild(barsEl)
     }
   }
-  // intraday chart canvases
+  // ── 盘中分时图 ──────────────────────────────────────────────
   box.querySelectorAll('.intraday-chart-canvas').forEach(canvas => {
     try {
       const series = JSON.parse(canvas.dataset.series || '[]')
@@ -396,7 +401,7 @@ function applyData(data, options = {}) {
     emptyTip.hidden = true
   }
 
-  renderSections(normalizeSections(data.indicatorSections, data))
+  renderSections(normalizeSections(data.indicatorSections, data), data)
 
   if (data.archiveFallback) {
     $('#statusBar').textContent = `首页缓存更新中，暂显示 ${data.refDate || data.adviceDate || '--'} 归档数据`
@@ -589,7 +594,7 @@ async function hydrateHomeExtras(data) {
 
   const enriched = await attachAuctionArchives({ ...data }, histList)
   const normalizedSections = normalizeSections(enriched.indicatorSections, enriched)
-  renderSections(normalizedSections)
+  renderSections(normalizedSections, enriched)
   loadAndRenderIntradayChart(normalizedSections).catch(() => {})
   if (!isSameHomeSnapshot(data, enriched)) {
     saveHomeCache(enriched)

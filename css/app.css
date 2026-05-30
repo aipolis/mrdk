@@ -89,18 +89,13 @@ a {
   gap: 10px;
 }
 
-.brand-mark {
+.brand-logo {
   width: 32px;
   height: 32px;
   border-radius: 8px;
-  background: linear-gradient(135deg, #f87171, #ef4444);
-  display: inline-flex;
-  align-items: center;
-  justify-content: center;
-  font-size: 14px;
-  font-weight: 700;
-  color: #1f2937;
   flex-shrink: 0;
+  display: block;
+  object-fit: cover;
 }
 
 .brand-name {
@@ -852,6 +847,30 @@ a {
 
 @media (min-width: 520px) {
   .page { padding-top: 24px; }
+}
+
+/* ── 手机端头部适配 ─────────────────────────────────────────────
+   问题：brand(114px) + gap(12px) + nav含日期(281px) = 407px
+   在360px手机可用宽度(328px)里会溢出换行
+   方案：≤479px 隐藏日期、压缩间距；≤359px 只保留品牌图标
+─────────────────────────────────────────────────────────────── */
+@media (max-width: 479px) {
+  /* 日期在仪表盘卡片里仍有显示，头部可省略 */
+  .header-date { display: none; }
+  /* 压缩导航间距 */
+  .header-actions { gap: 5px; }
+  .nav-link { padding: 5px 8px; font-size: 12px; }
+  .btn-icon  { padding: 5px 8px; }
+  /* hero 宣传语：移动端只保留一行，减少占屏 */
+  .hero-copy { display: none; }
+  .hero-intro { padding: 8px 12px; margin-bottom: 10px; }
+  .hero-kicker { font-size: 13px; }
+}
+
+@media (max-width: 359px) {
+  /* 极窄屏（老款 iPhone SE 等）：只保留品牌图标，隐藏文字 */
+  .brand-name { display: none; }
+  .nav-link { padding: 5px 7px; font-size: 11px; }
 }
 
 /* ── 盘中分时走势图 ───────────────────────────────────────────── */
