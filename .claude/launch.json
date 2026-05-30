@@ -1,0 +1,12 @@
+{
+  "version": "0.0.1",
+  "configurations": [
+    {
+      "name": "mrdk-web",
+      "runtimeExecutable": "py",
+      "runtimeArgs": ["-m", "http.server", "8888"],
+      "port": 8888,
+      "cwd": "web"
+    }
+  ]
+}

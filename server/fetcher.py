@@ -1589,6 +1589,22 @@ def build_yesterday_sentiment(metrics: dict, prev_metrics: Optional[dict] = None
             "limit_up_count": lu,
             "trend": _trend(mb / lu if lu else 0, mb_prev / lu_prev if lu_prev else None),
         })
+    # 板块集中度（如 metrics 中有数据）
+    sc = metrics.get("sector_concentration") or {}
+    if sc.get("total", 0) >= 10:
+        top3r = sc.get("top3Ratio", 0)
+        top_name = sc.get("topSector", "")
+        sc_prev = (prev_metrics or {}).get("sector_concentration") or {}
+        sc_prev_top3r = sc_prev.get("top3Ratio")
+        rows.append({
+            "key": "sectorConcentration",
+            "label": "板块集中度",
+            "value": f"{top3r:.0f}%",
+            "displaySuffix": top_name,
+            "topSectors": sc.get("topSectors", []),
+            "yesterday": f"{sc_prev_top3r:.0f}%" if sc_prev_top3r is not None else "--",
+            "trend": _trend(top3r, sc_prev_top3r),
+        })
     return rows
 
 
@@ -1634,6 +1650,48 @@ def patch_grid9_live_breadth(
 
 def build_grid_nine(metrics: dict, prev_metrics: Optional[dict] = None) -> list:
     return build_yesterday_sentiment(metrics, prev_metrics)
+
+
+def calc_sector_concentration(trade_d: str) -> dict:
+    """
+    计算涨停板块集中度。
+    使用 akshare 涨停池的「所属行业」字段，计算 HHI 及前三板块占比。
+    返回 {topSectors, top3Ratio, hhi, total, topSector}。
+    集中度高（热点聚焦）→ 对接力有利；分散 → 主题扩散，接力难度大。
+    """
+    key = f"sector_conc_{trade_d}"
+    cached = _cache_get(key, 900)
+    if cached is not None:
+        return cached
+
+    empty = {"topSectors": [], "top3Ratio": 0.0, "hhi": 0.0, "total": 0, "topSector": ""}
+    try:
+        df = fetch_limit_up(trade_d)
+        if df is None or df.empty or "所属行业" not in df.columns:
+            return empty
+        total = len(df)
+        if total == 0:
+            return empty
+        counts = df["所属行业"].value_counts()
+        top_sectors = [
+            {"name": str(s), "count": int(c), "ratio": round(int(c) / total * 100, 1)}
+            for s, c in counts.items()
+        ]
+        top3_count = sum(d["count"] for d in top_sectors[:3])
+        top3_ratio = round(top3_count / total * 100, 1)
+        hhi = round(sum((d["count"] / total) ** 2 for d in top_sectors) * 100, 1)
+        result = {
+            "topSectors": top_sectors[:5],
+            "top3Ratio": top3_ratio,
+            "hhi": hhi,
+            "total": total,
+            "topSector": top_sectors[0]["name"] if top_sectors else "",
+        }
+        _cache_set(key, result, 900)
+        return result
+    except Exception:
+        log.exception("calc_sector_concentration failed trade_d=%s", trade_d)
+        return empty
 
 
 def _limit_up_board_stats(trade_d: str) -> tuple[int, int, int]:

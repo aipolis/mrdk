@@ -249,6 +249,47 @@ def save_intraday_snapshot(
         return False
 
 
+def fetch_intraday_series(trade_d: str) -> list[dict]:
+    """
+    返回某交易日盘中情绪快照序列，按时间升序。
+    每条记录：{time, displayScore, intradayScore, baselineScore, scoreMode, longkongSignal}
+    """
+    if not mysql_enabled() or not ensure_schema():
+        return []
+    trade_d = (trade_d or "").replace("-", "")[:8]
+
+    def _run(conn):
+        with conn.cursor() as cur:
+            cur.execute(
+                f"""
+                SELECT snap_time, display_score, intraday_score, baseline_score,
+                       score_mode, longkong_signal
+                FROM `{TABLE_INTRADAY}`
+                WHERE trade_date = %s
+                ORDER BY snap_time ASC
+                """,
+                (trade_d,),
+            )
+            rows = cur.fetchall() or []
+        return [
+            {
+                "time": str(r["snap_time"]),
+                "displayScore": int(r["display_score"] or 0),
+                "intradayScore": int(r["intraday_score"]) if r["intraday_score"] is not None else None,
+                "baselineScore": int(r["baseline_score"] or 0),
+                "scoreMode": r["score_mode"] or "",
+                "longkongSignal": r["longkong_signal"] or "",
+            }
+            for r in rows
+        ]
+
+    try:
+        return with_retry(_run) or []
+    except Exception:
+        log.exception("fetch_intraday_series failed trade_d=%s", trade_d)
+        return []
+
+
 def _display_date_key(row: dict) -> str:
     """history 列表展示用日期（YYYY-MM-DD 或 YYYYMMDD）→ YYYYMMDD"""
     try:

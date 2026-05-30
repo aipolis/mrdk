@@ -53,9 +53,10 @@ W_YESTERDAY = {
 }
 # 可选项：有数据时纳入权重并归一化
 W_YESTERDAY_OPT = {
-    "continuationDepth": 0.08,  # 连板占比，高权重 leading indicator
-    "high10":            0.05,
-    "top10AvgChg":       0.05,
+    "continuationDepth":    0.08,  # 连板占比，leading indicator
+    "sectorConcentration":  0.06,  # 板块集中度，结构性信号
+    "high10":               0.04,
+    "top10AvgChg":          0.04,
 }
 
 # 仅昨日 metrics（历史 sync / 趋势图）
@@ -192,6 +193,17 @@ def score_break_rate(rate: float) -> int:
     return _linear_low(rate, lo=18.0, hi=46.0)
 
 
+def score_sector_concentration(top3_ratio: float, total: int) -> int:
+    """
+    板块集中度（前三板块涨停占比）：集中 → 接力有利，分散 → 主题扩散难持续。
+    total < 10 时数据不够，返回中性。
+    lo=30% → 20，hi=80% → 90，mid=55% → 55。
+    """
+    if total < 10:
+        return SCORE_NEUTRAL
+    return _linear_high(float(top3_ratio or 0), lo=30.0, hi=80.0)
+
+
 def score_continuation_depth(multi_board: int, limit_up: int) -> int:
     """
     连板占比 = multi_board / limit_up：接力深度。
@@ -304,6 +316,11 @@ def _score_yesterday_block(metrics: dict, grid9: Optional[list] = None) -> dict[
     }
     if multi_board is not None:
         out["continuationDepth"] = score_continuation_depth(int(multi_board), int(limit_up or 0))
+    sc = m.get("sector_concentration")
+    if sc:
+        out["sectorConcentration"] = score_sector_concentration(
+            float(sc.get("top3Ratio") or 0), int(sc.get("total") or 0)
+        )
     return out
 
 
@@ -591,6 +608,9 @@ def _collect_weak_reasons(
         mb = int(metrics.get("multi_board_count") or 0)
         lu = int(metrics.get("limit_up_count") or 1)
         reasons.append(f"连板占比仅{mb}/{lu}（接力深度偏弱）")
+    sc = (metrics.get("sector_concentration") or {})
+    if y.get("sectorConcentration", 99) < _SIGNAL_WEAK_PRIMARY and sc.get("total", 0) >= 10:
+        reasons.append(f"板块集中度偏低（前三板块占比{sc.get('top3Ratio', 0):.0f}%）")
     # ── secondary indicators（阈值 40）───────────────────────
     if y.get("limitUp", 99) < _SIGNAL_WEAK:
         reasons.append(f"涨停仅{metrics.get('limit_up_count', 0)}只")

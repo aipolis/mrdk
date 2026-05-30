@@ -27,6 +27,7 @@ from fetcher import (
     build_day_metrics,
     build_home_trend,
     calc_regime,
+    calc_sector_concentration,
     build_indicator_sections,
     build_indicators,
     build_ref_day_metrics,
@@ -68,7 +69,7 @@ from update_schedule import (
     should_live_intraday,
     should_use_archive_only,
 )
-from history_store import fetch_daily_detail, fetch_history_list, build_history_item, dedupe_daily_market_records, save_intraday_snapshot
+from history_store import fetch_daily_detail, fetch_history_list, fetch_intraday_series, build_history_item, dedupe_daily_market_records, save_intraday_snapshot
 from history_sync import (
     persist_auction_snapshot,
     persist_day,
@@ -302,6 +303,10 @@ def _build_home_payload(ref_d: str, prev_d: Optional[str], advice_d: str, is_rea
     metrics, prev_metrics, grid9 = load_ref_day_snapshot(ref_d, prev_d)
     grid9 = patch_grid9_live_breadth(grid9, metrics, ref_d=ref_d, advice_d=advice_d)
     advice_metrics = load_advice_metrics(advice_d)
+    # 板块集中度：注入 metrics 供 calc_sentiment 评分
+    sector_conc = calc_sector_concentration(ref_d)
+    if sector_conc.get("total", 0) > 0:
+        metrics = {**metrics, "sector_concentration": sector_conc}
     peripheral = load_peripheral_snapshot(advice_d)
     if not peripheral and should_live_fetch_section("peripheral", mode):
         peripheral = fetch_peripheral_sentiment()
@@ -464,6 +469,7 @@ def _build_home_payload(ref_d: str, prev_d: Optional[str], advice_d: str, is_rea
         "regimeScore": regime.get("regimeScore"),
         "regimeLabel": regime.get("regimeLabel"),
         "regime": regime.get("regime", "neutral"),
+        "sectorConcentration": sector_conc,
         "metrics": metrics,
         "prevMetrics": prev_metrics,
     }
@@ -1463,6 +1469,15 @@ def sentiment_day(date: str = ""):
     if not detail:
         return {"code": 1, "message": "未找到该交易日归档", "data": {"tradeDate": trade_d}}
     return {"code": 0, "data": detail}
+
+
+@app.get("/api/sentiment/intraday-series")
+def sentiment_intraday_series(date: str = ""):
+    """返回某交易日盘中情绪分时序列（每 2 分钟一个快照）"""
+    ref_d, _, advice_d, _ = resolve_advice_dates()
+    trade_d = (date or advice_d or ref_d).replace("-", "")[:8]
+    series = fetch_intraday_series(trade_d)
+    return {"code": 0, "data": {"tradeDate": trade_d, "series": series}}
 
 
 @app.post("/api/cache/sync-history")
