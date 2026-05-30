@@ -14,6 +14,8 @@ from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import Response
 from pydantic import BaseModel
 
+import os
+
 from config import APP_ENV, CRON_SECRET, SUBSCRIBE_FIELD_KEYS, SUBSCRIBE_TEMPLATES, SYNC_HISTORY_DAYS, bj_now
 from intraday import (
     build_intraday_payload,
@@ -1193,8 +1195,60 @@ def health(detail: int = 0, x_cron_secret: str = Header(default="")):
     return payload
 
 
+def _review_score_payload() -> Optional[dict]:
+    """
+    审核模式：设置环境变量 REVIEW_SCORE=<分数> 后，接口返回固定分数的静态数据。
+    审核通过后在云托管环境变量中删除或清空 REVIEW_SCORE 即可切回真实接口。
+    """
+    raw = os.getenv("REVIEW_SCORE", "").strip()
+    if not raw:
+        return None
+    try:
+        score = max(0, min(100, int(raw)))
+    except (ValueError, TypeError):
+        return None
+    from fetcher import display_level_label, display_level_class
+    now = bj_now()
+    level_label = display_level_label(score)
+    level_class = display_level_class(score)
+    return {
+        "score": score,
+        "baselineScore": score,
+        "liveScore": None,
+        "displayScore": score,
+        "scoreMode": "baseline",
+        "levelLabel": level_label,
+        "displayLevel": level_label,
+        "levelClass": level_class,
+        "positionDesc": "数据展示示例",
+        "emptyWarning": False,
+        "emptyReasons": [],
+        "refDate": now.strftime("%Y-%m-%d"),
+        "adviceDate": now.strftime("%Y-%m-%d"),
+        "date": now.strftime("%Y-%m-%d"),
+        "generatedAt": "示例数据",
+        "generatedAtLabel": "示例数据",
+        "generatedAtTime": now.strftime("%H:%M"),
+        "dailyQuote": "不怕错过，就怕做错。",
+        "indicatorSections": [],
+        "trend": [],
+        "grid9": [],
+        "peripheral": [],
+        "auction": [],
+        "intraday": [],
+        "metrics": {},
+        "prevMetrics": {},
+        "isReportReady": True,
+        "reviewMode": True,
+    }
+
+
 @app.get("/api/sentiment/today")
 def sentiment_today(force: int = 0):
+    review = _review_score_payload()
+    if review is not None:
+        return {"code": 0, "data": review, "cache": {"fromCache": False, "reviewMode": True}}
+
     ref_d, prev_d, advice_d, is_ready = resolve_advice_dates()
     if not ref_d:
         return {"code": 1, "message": "无法获取交易日"}
