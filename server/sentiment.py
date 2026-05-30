@@ -703,13 +703,21 @@ def longkong_state(
     score: int,
     *,
     empty_warning: bool = False,
+    risk_level: str = "none",
     sub_scores: Optional[dict] = None,
     intraday_sub_scores: Optional[dict] = None,
 ) -> dict:
-    """龙空龙短线状态：龙>70 / 修复50–70 / 退潮30–50 / 空<30；龙空风险强制为空。"""
+    """
+    龙空龙短线状态：龙>70 / 修复50–70 / 退潮30–50 / 空<30。
+    风险等级会压低状态上限：
+      critical → 强制为空
+      warning  → 最高为退潮（即使分数在修复/龙区间）
+      caution  → 最高为修复（即使分数在龙区间）
+    """
     del sub_scores, intraday_sub_scores
     score = int(score or 0)
-    if empty_warning:
+
+    if empty_warning or risk_level == "critical":
         state, label = "empty", "空"
         desc = "风险偏高，宜控节奏"
     elif score > 70:
@@ -724,6 +732,21 @@ def longkong_state(
     else:
         state, label = "empty", "空"
         desc = "风险偏高，宜控节奏"
+
+    # 风险等级压制：warning 最高退潮，caution 最高修复
+    _order = ("empty", "retreat", "repair", "dragon")
+    if risk_level == "warning":
+        cap = "retreat"
+    elif risk_level == "caution":
+        cap = "repair"
+    else:
+        cap = "dragon"
+    if _order.index(state) > _order.index(cap):
+        state = cap
+        if cap == "retreat":
+            label, desc = "退潮", "弱信号较多，接力偏弱"
+        else:
+            label, desc = "修复", "有修复迹象，注意风险"
 
     return {
         "state": state,

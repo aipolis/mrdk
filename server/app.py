@@ -139,6 +139,7 @@ def _attach_longkong_state(
     p["longkongState"] = longkong_state(
         display_score,
         empty_warning=bool(p.get("emptyWarning")),
+        risk_level=p.get("riskLevel") or "none",
         sub_scores=p.get("subScores") or {},
         intraday_sub_scores=intraday_sub_scores,
     )
@@ -436,6 +437,7 @@ def _build_home_payload(ref_d: str, prev_d: Optional[str], advice_d: str, is_rea
         "longkongState": longkong_state(
             display_score,
             empty_warning=longkong["emptyWarning"],
+            risk_level=longkong.get("riskLevel", "none"),
             sub_scores=sentiment.get("subScores") or {},
             intraday_sub_scores=intraday_payload.get("intradaySubScores") or {},
         ),
@@ -726,6 +728,7 @@ def _sync_intraday_display_fields(
     p["levelClass"] = display_level_class(display_score)
     p["longkongSignal"] = longkong["longkongSignal"]
     p["emptyWarning"] = longkong["emptyWarning"]
+    p["riskLevel"] = longkong.get("riskLevel", "none")
     p["emptyReasons"] = longkong["emptyReasons"]
     p["positionPercent"] = longkong["positionPercent"]
     p["positionLabel"] = longkong["positionLabel"]

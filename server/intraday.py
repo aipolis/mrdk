@@ -625,9 +625,9 @@ def calc_display_score(
     9:00 起若有盘中分（含竞价）则融合；收盘后回到基准分。
     prev_baseline：前一交易日基准分，用于计算趋势速度修正（±8 分上限）。
     """
-    # 速度修正：相较前日基准的方向性加权，±8 分封顶，盘中不叠加（由盘中分承接）
+    # 速度修正：相较前日基准的方向性加权，±8 分封顶，盘中同样作用于基准分量
     adjusted_baseline = baseline_score
-    if prev_baseline is not None and (intraday_score is None or not is_live_score_window(now)):
+    if prev_baseline is not None:
         velocity = baseline_score - int(prev_baseline)
         kicker = max(-8, min(8, round(velocity * 0.25)))
         adjusted_baseline = max(0, min(100, baseline_score + kicker))
@@ -637,7 +637,8 @@ def calc_display_score(
     w = _live_blend_weight(now)
     if w <= 0:
         return adjusted_baseline, "baseline"
-    blended = round(baseline_score * (1 - w) + int(intraday_score) * w)
+    # 盘中：速度调整后的基准分（含昨日趋势）× (1-w) + 盘中分 × w
+    blended = round(adjusted_baseline * (1 - w) + int(intraday_score) * w)
     return max(0, min(100, blended)), "live"
 
 
