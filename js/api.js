@@ -1,19 +1,4 @@
-import { FETCH_TIMEOUT_MS } from './config.js'
-
-// 动态解析API_BASE，支持运行时切换（开发调试用）
-function resolveApiBase() {
-  if (typeof window !== 'undefined' && window.__API_BASE__) {
-    return window.__API_BASE__
-  }
-  if (typeof localStorage !== 'undefined') {
-    const stored = localStorage.getItem('mrdk_api_base')
-    if (stored && stored.trim()) return stored.trim()
-  }
-  if (typeof process !== 'undefined' && process.env && process.env.VITE_API_BASE) {
-    return process.env.VITE_API_BASE
-  }
-  return 'https://mingri-api-260693-8-1435576840.sh.run.tcloudbase.com'
-}
+import { FETCH_TIMEOUT_MS, resolveApiBase } from './config.js'
 
 async function fetchJson(path) {
   const ctrl = new AbortController()

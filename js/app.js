@@ -57,9 +57,8 @@ function buildStatusText(data) {
     return `${refLabel}收盘情绪 · 今日参考`
   }
 
-  // advice 是未来（周末 / 节假日后下一个交易日）
-  const advLabel = advKey && advKey > todayKey ? _dateMMDD(data.adviceDate || data.date) : '下一交易日'
-  return `${refLabel}收盘情绪 · ${advLabel}参考`
+  // advice 是未来（周末 / 节假日），统一显示「下一交易日」
+  return `${refLabel}收盘情绪 · 下一交易日参考`
 }
 
 function _dateKey(raw) {

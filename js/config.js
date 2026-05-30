@@ -20,6 +20,7 @@ function resolveApiBase() {
 }
 
 export const API_BASE = resolveApiBase()
+export { resolveApiBase }
 
 export const FETCH_TIMEOUT_MS = 45000
 
