@@ -43,14 +43,14 @@ const AUCTION_DEFS = [
 ]
 
 const INTRADAY_DEFS = [
-  { key: 'sseIndex', label: '上证涨跌' },
+  { key: 'sseIndex', label: '昨日涨停指数' },
   { key: 'upRatio', label: '上涨占比' },
   { key: 'limitUpLive', label: '实时涨停' },
   { key: 'limitDownLive', label: '实时跌停' },
   { key: 'marketVolumeLive', label: '全市量能' },
   { key: 'high10Live', label: '10日新高' },
   { key: 'top10AvgChgLive', label: 'T-1成交额前10平均涨幅' },
-  { key: 'promoteLive', label: 'T-1日涨停晋级率' },
+  { key: 'promoteLive', label: '晋级率' },
   { key: 'breakLive', label: '实时炸板率' }
 ]
 

@@ -65,6 +65,40 @@ function formatGaugeUpdatedAt(data) {
   return `${dayLabel} ${hm} 更新`
 }
 
+/**
+ * 状态栏语义文字（与 web buildStatusText 逻辑一致）
+ * scoreMode=live  → "今日实时情绪 · HH:MM 更新"
+ * ref != advice, advice=today  → "昨日收盘情绪 · 今日参考"
+ * ref == advice == today        → "今日收盘情绪 · 明日参考"
+ * advice 是未来                  → "昨日收盘情绪 · N月D日参考"
+ */
+function buildStatusText(data) {
+  if (!data) return '数据加载中…'
+  const scoreMode = data.scoreMode || 'baseline'
+  const updTime = data.generatedAtTime || ''
+  if (scoreMode === 'live') {
+    return `今日实时情绪${updTime ? ' · ' + updTime + ' 更新' : ''}`
+  }
+  const todayKey = getLocalCalendarKey()
+  function dateKey(raw) {
+    if (!raw) return ''
+    return String(raw).replace(/\D/g, '').slice(0, 8)
+  }
+  const refKey = dateKey(data.refDate)
+  const advKey = dateKey(data.adviceDate || data.date)
+  // 从 generatedAtLabel 提取 ref 日描述
+  const genLabel = String(data.generatedAtLabel || data.generatedAt || '')
+  const dayWord = (genLabel.match(/^(今天|昨天|前天)/) || [])[1]
+  const refLabel = dayWord ? dayWord.replace('天', '日') : relativeDayLabel(data.refDate)
+  const todayDKey = dateKey(todayKey)
+  if (refKey && refKey === advKey && advKey === todayDKey) return '今日收盘情绪 · 明日参考'
+  if (advKey === todayDKey) return `${refLabel}收盘情绪 · 今日参考`
+  // 未来日期
+  const advParsed = parseDateKey(data.adviceDate || data.date)
+  const advLabel = advParsed ? `${advParsed.month}月${advParsed.day}日` : '下一交易日'
+  return `${refLabel}收盘情绪 · ${advLabel}参考`
+}
+
 module.exports = {
   getLocalCalendarKey,
   getLocalNowHm,
@@ -73,5 +107,6 @@ module.exports = {
   formatHeaderDate,
   relativeDayLabel,
   formatGaugeUpdatedAt,
+  buildStatusText,
   WEEKDAYS
 }

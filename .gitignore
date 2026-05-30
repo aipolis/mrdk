@@ -33,6 +33,9 @@ data/
 .DS_Store
 Thumbs.db
 
-# Web 本地调试
+# Web - 只排除依赖和本地调试产物
 web/_write_pages.py
-web/
+web/node_modules/
+web/*.log
+web/debug_*.png
+web/mrdk_*.png

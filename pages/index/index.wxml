@@ -109,6 +109,11 @@
 
 
 
+  <!-- 状态文字：昨日收盘情绪 · 今日参考 / 今日实时情绪 -->
+  <view class="status-bar {{loading ? '' : 'status-bar--ok'}}" wx:if="{{!loading}}">
+    <text class="status-bar-text">{{statusText}}</text>
+  </view>
+
   <view class="loading-wrap" wx:if="{{loading}}">
 
     <view class="sk-card"></view>
@@ -175,7 +180,16 @@
 
         </block>
 
-
+        <!-- 概念集中度柱状图：昨日情绪概览 section 下方 -->
+        <view class="sector-bars-card" wx:if="{{item.id === 'yesterday' && sectorConcentration.topSectors.length}}">
+          <view class="sector-bar-row" wx:for="{{sectorConcentration.topSectors}}" wx:key="name" wx:for-item="s">
+            <text class="sector-bar-name">{{s.name}}</text>
+            <view class="sector-bar-track">
+              <view class="sector-bar-fill" style="width:{{Math.round(s.chg / sectorConcentration.topSectors[0].chg * 100)}}%"></view>
+            </view>
+            <text class="sector-bar-count">+{{s.chg}}%</text>
+          </view>
+        </view>
 
         <view class="peripheral-row" wx:elif="{{item.items.length}}">
 

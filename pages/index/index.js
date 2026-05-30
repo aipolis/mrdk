@@ -8,7 +8,7 @@ const { createGaugeController, SKIP_ANIM_MS, CACHE_IDLE_MS } = require('../../ut
 const { getChartColors } = require('../../utils/uiTheme')
 const uiThemeBehavior = require('../../behaviors/uiTheme')
 const { createSharePoster, savePosterToAlbum, forwardPosterImage } = require('../../utils/shareImage')
-const { formatHeaderDate, formatGaugeUpdatedAt } = require('../../utils/dateDisplay')
+const { formatHeaderDate, formatGaugeUpdatedAt, buildStatusText } = require('../../utils/dateDisplay')
 const { resolveLongkongState, resolveLongkongTone, buildLongkongHeroText } = require('../../utils/longkongState')
 
 const LOADING_DESC = '正在汇总昨日收盘数据…'
@@ -35,8 +35,10 @@ Page({
     scoreRevealing: false,
     displayScore: '',
     displayAdviceDate: '',
+    statusText: '数据加载中…',
     refDate: '',
     generatedAt: '更新中',
+    sectorConcentration: null,
     dailyQuoteText: '',
     dailyQuoteAuthor: '',
     score: 0,
@@ -292,7 +294,9 @@ Page({
       longkongLevelClass: longkongTone.class,
       longkongStateSteps: longkongState.steps || [],
       ...heroFields,
+      statusText: buildStatusText(data),
       indicatorSections: data.indicatorSections || [],
+      sectorConcentration: data.sectorConcentration || null,
       trend: data.trend || [],
       historyList: data.historyList || [],
       trendDays: this.data.trendDays || 10,

@@ -855,3 +855,55 @@
 .share-sheet__safe {
   height: env(safe-area-inset-bottom);
 }
+
+/* ── 状态栏 ── */
+.status-bar {
+  text-align: center;
+  padding: 6rpx 0 14rpx;
+  margin-bottom: 4rpx;
+}
+.status-bar-text {
+  font-size: 24rpx;
+  color: var(--mr-text-muted);
+}
+.status-bar--ok .status-bar-text {
+  color: var(--mr-green, #4ade80);
+}
+
+/* ── 概念集中度柱状图 ── */
+.sector-bars-card {
+  padding: 20rpx 24rpx 16rpx;
+  margin-top: 12rpx;
+}
+.sector-bar-row {
+  display: flex;
+  align-items: center;
+  margin-bottom: 12rpx;
+}
+.sector-bar-name {
+  width: 140rpx;
+  font-size: 22rpx;
+  color: var(--mr-text-muted);
+  flex-shrink: 0;
+}
+.sector-bar-track {
+  flex: 1;
+  height: 10rpx;
+  border-radius: 6rpx;
+  background: rgba(255,255,255,0.08);
+  overflow: hidden;
+  margin: 0 16rpx;
+}
+.sector-bar-fill {
+  height: 100%;
+  border-radius: 6rpx;
+  background: var(--mr-accent, #fbbf24);
+  min-width: 8rpx;
+}
+.sector-bar-count {
+  font-size: 22rpx;
+  color: var(--mr-text-muted);
+  width: 90rpx;
+  text-align: right;
+  flex-shrink: 0;
+}
