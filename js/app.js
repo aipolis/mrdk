@@ -410,7 +410,7 @@ function applyLongkongState(data) {
     descEl.className = `longkong-state-desc ${tone.class}`
     descEl.hidden = !descEl.textContent
   }
-  if (lightsEl) lightsEl.innerHTML = renderLongkongLightsHtml(lk.state, tone.class)
+  if (lightsEl) lightsEl.innerHTML = renderLongkongLightsHtml(lk.state, tone.class, data?.riskLevel || 'none')
 }
 
 function applyData(data, options = {}) {

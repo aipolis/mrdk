@@ -43,10 +43,12 @@ export function setGaugeLevelClass(el, levelClass) {
   if (levelClass) el.classList.add(levelClass)
 }
 
-export function renderLongkongLightsHtml(activeState, levelClass = 'neutral') {
+export function renderLongkongLightsHtml(activeState, levelClass = 'neutral', riskLevel = 'none') {
   return LONGKONG_STATE_STEPS.map((step) => {
     const active = step.state === activeState
-    const tone = active ? ` is-active ${levelClass}` : ''
+    const riskClass = active && (riskLevel === 'warning' || riskLevel === 'caution')
+      ? ` risk-${riskLevel}` : ''
+    const tone = active ? ` is-active ${levelClass}${riskClass}` : ''
     return `<div class="longkong-light${tone}" data-state="${step.state}" role="listitem">
       <span class="longkong-light-dot" aria-hidden="true"></span>
       <span class="longkong-light-label">${step.label}</span>

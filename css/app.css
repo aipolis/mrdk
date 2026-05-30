@@ -444,6 +444,19 @@ a {
   box-shadow: 0 0 12px currentColor;
 }
 
+/* ── 风险分级视觉提示（叠加在活跃灯上）── */
+.longkong-light.is-active.risk-warning {
+  animation: risk-warning-pulse 1.4s ease-in-out infinite;
+}
+.longkong-light.is-active.risk-caution {
+  border-color: rgba(251, 191, 36, 0.55) !important;
+  box-shadow: 0 0 8px rgba(251, 191, 36, 0.2);
+}
+@keyframes risk-warning-pulse {
+  0%, 100% { border-color: rgba(251, 191, 36, 0.35); box-shadow: none; }
+  50%       { border-color: rgba(251, 191, 36, 0.9);  box-shadow: 0 0 14px rgba(251, 191, 36, 0.45); }
+}
+
 .longkong-light-label {
   font-size: 13px;
   font-weight: 500;
@@ -495,8 +508,8 @@ a {
   position: absolute;
   left: 0;
   right: 0;
-  top: 54%;
-  transform: translateY(-62%);
+  top: 62%;
+  transform: translateY(-50%);
   text-align: center;
   pointer-events: none;
 }
