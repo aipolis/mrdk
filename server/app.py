@@ -1197,8 +1197,8 @@ def health(detail: int = 0, x_cron_secret: str = Header(default="")):
 
 def _review_score_payload() -> Optional[dict]:
     """
-    审核模式：设置环境变量 REVIEW_SCORE=<分数> 后，接口返回固定分数的静态数据。
-    审核通过后在云托管环境变量中删除或清空 REVIEW_SCORE 即可切回真实接口。
+    审核模式：只覆盖分数字段，其余内容保留真实缓存数据（指标板块正常显示）。
+    审核通过后在云托管环境变量中设置 REVIEW_SCORE= 清空即可切回。
     """
     raw = REVIEW_SCORE.strip() if REVIEW_SCORE else ""
     if not raw:
@@ -1208,9 +1208,28 @@ def _review_score_payload() -> Optional[dict]:
     except (ValueError, TypeError):
         return None
     from fetcher import display_level_label, display_level_class
-    now = bj_now()
     level_label = display_level_label(score)
     level_class = display_level_class(score)
+
+    ensure_memory_loaded()
+    snap = get_snapshot()
+    if snap and snap.get("payload"):
+        payload = dict(snap["payload"])
+        payload.update({
+            "score": score,
+            "baselineScore": score,
+            "liveScore": None,
+            "displayScore": score,
+            "scoreMode": "baseline",
+            "levelLabel": level_label,
+            "displayLevel": level_label,
+            "levelClass": level_class,
+            "reviewMode": True,
+        })
+        return payload
+
+    # 缓存不可用时返回最简 payload
+    now = bj_now()
     return {
         "score": score,
         "baselineScore": score,
@@ -1220,7 +1239,7 @@ def _review_score_payload() -> Optional[dict]:
         "levelLabel": level_label,
         "displayLevel": level_label,
         "levelClass": level_class,
-        "positionDesc": "数据展示示例",
+        "positionDesc": "",
         "emptyWarning": False,
         "emptyReasons": [],
         "refDate": now.strftime("%Y-%m-%d"),
