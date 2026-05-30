@@ -9,6 +9,7 @@ const { getChartColors } = require('../../utils/uiTheme')
 const uiThemeBehavior = require('../../behaviors/uiTheme')
 const { createSharePoster, savePosterToAlbum, forwardPosterImage } = require('../../utils/shareImage')
 const { formatHeaderDate, formatGaugeUpdatedAt } = require('../../utils/dateDisplay')
+const { resolveLongkongState, resolveLongkongTone, buildLongkongHeroText } = require('../../utils/longkongState')
 
 const LOADING_DESC = '正在汇总昨日收盘数据…'
 
@@ -47,6 +48,12 @@ Page({
     positionDesc: LOADING_DESC,
     isEmptyPosition: false,
     emptyReasons: [],
+    longkongStateKey: '',
+    longkongStateLabel: '',
+    longkongHeroLevel: '',
+    longkongHeroDesc: '',
+    longkongLevelClass: 'neutral',
+    longkongStateSteps: [],
     quoteFontReady: false,
     trend: [],
     trendDays: 10,
@@ -84,6 +91,11 @@ Page({
     this.setData({ displayAdviceDate: formatHeaderDate() })
     if (!this.data.quoteFontReady) this.loadQuoteFontFace()
     this.syncIndicatorSectionOrder()
+    this._startPolling()
+  },
+
+  onHide() {
+    this._stopPolling()
   },
 
   syncIndicatorSectionOrder() {
@@ -107,8 +119,68 @@ Page({
   },
 
   onUnload() {
+    this._stopPolling()
     if (this._gaugeIdleTimer) clearTimeout(this._gaugeIdleTimer)
     if (this._gaugeCtrl) this._gaugeCtrl.stop()
+  },
+
+  _isTradingHours() {
+    const now = new Date()
+    const day = now.getDay()
+    if (day === 0 || day === 6) return false
+    const hm = now.getHours() * 60 + now.getMinutes()
+    return hm >= 9 * 60 + 25 && hm <= 15 * 60 + 5
+  },
+
+  _startPolling() {
+    this._stopPolling()
+    if (!this._isTradingHours()) return
+    this._pollTimer = setTimeout(() => {
+      this._silentRefresh()
+      this._pollInterval = setInterval(() => {
+        if (!this._isTradingHours()) {
+          this._stopPolling()
+          return
+        }
+        this._silentRefresh()
+      }, 120000)
+    }, 3000)
+  },
+
+  _stopPolling() {
+    if (this._pollTimer) {
+      clearInterval(this._pollTimer)
+      this._pollTimer = null
+    }
+    if (this._pollInterval) {
+      clearInterval(this._pollInterval)
+      this._pollInterval = null
+    }
+  },
+
+  _silentRefresh() {
+    if (this._refreshing) return
+    this._refreshing = true
+    const prevCache = getHomeCache()
+    Promise.all([
+      fetchHomeFromNetwork({ reuseInflight: false }),
+      fetchHistory(20).catch(() => ({ list: [] })),
+    ])
+      .then(([data, histData]) => {
+        const histList = (histData && histData.list) || data.historyList || []
+        if (!prevCache || !isSameHomeSnapshot(prevCache, data)) {
+          this.applyPageData({ ...data, historyList: histList }, { silent: true })
+        } else {
+          this.setData({
+            historyList: histList,
+            indicatorSections: data.indicatorSections || this.data.indicatorSections,
+          }, () => this.drawTrend())
+        }
+      })
+      .catch(() => {})
+      .finally(() => {
+        this._refreshing = false
+      })
   },
 
   onPullDownRefresh() {
@@ -136,6 +208,29 @@ Page({
       refDate: this.data.refDate,
       generatedAtLabel: this.data.generatedAt
     })
+  },
+
+  buildLongkongHeroFields(data, longkongState, overrides = {}) {
+    const riskDesc = data.emptyWarning ? '分数中性，但接力晋级偏弱' : ''
+    const positionDesc = overrides.positionDesc != null
+      ? overrides.positionDesc
+      : (riskDesc || data.positionDesc || '')
+    const merged = {
+      ...data,
+      positionDesc,
+      levelLabel: overrides.levelLabel != null
+        ? overrides.levelLabel
+        : (data.displayLevel || data.levelLabel || ''),
+      displayScore: overrides.displayScore != null
+        ? overrides.displayScore
+        : (data.displayScore != null ? data.displayScore : data.score),
+    }
+    const hero = buildLongkongHeroText(merged, longkongState)
+    return {
+      longkongStateLabel: longkongState.label,
+      longkongHeroLevel: hero.levelLabel,
+      longkongHeroDesc: hero.desc,
+    }
   },
 
   applyPageData(data, options = {}) {
@@ -166,6 +261,19 @@ Page({
 
     const quote = normalizeQuote(data.dailyQuote || dailyQuote(data.adviceDate || data.date))
     const refDate = data.refDate || data.adviceDate || data.date || ''
+    const longkongState = resolveLongkongState(data)
+    const longkongTone = resolveLongkongTone(data)
+    const positionDesc = skipAnim
+      ? (data.emptyWarning ? '分数中性，但接力晋级偏弱' : (this._pendingGaugeMeta.positionDesc || data.positionDesc))
+      : LOADING_DESC
+    const levelLabel = skipAnim
+      ? (this._pendingGaugeMeta.levelLabel || level.label)
+      : '计算中'
+    const heroFields = this.buildLongkongHeroFields(data, longkongState, {
+      positionDesc,
+      levelLabel,
+      displayScore: finalScore,
+    })
 
     this.setData({
       loading: false,
@@ -180,13 +288,17 @@ Page({
       scoreMode: data.scoreMode || 'baseline',
       isEmptyPosition: !!data.emptyWarning,
       emptyReasons: data.emptyReasons || [],
+      longkongStateKey: longkongState.state,
+      longkongLevelClass: longkongTone.class,
+      longkongStateSteps: longkongState.steps || [],
+      ...heroFields,
       indicatorSections: data.indicatorSections || [],
       trend: data.trend || [],
       historyList: data.historyList || [],
       trendDays: this.data.trendDays || 10,
-      positionDesc: skipAnim ? this._pendingGaugeMeta.positionDesc : LOADING_DESC,
-      levelLabel: skipAnim ? this._pendingGaugeMeta.levelLabel : '',
-      levelClass: skipAnim ? this._pendingGaugeMeta.levelClass : '',
+      positionDesc,
+      levelLabel: skipAnim ? levelLabel : '',
+      levelClass: skipAnim ? (this._pendingGaugeMeta.levelClass || level.class) : '',
     }, () => {
       wx.nextTick(() => {
         this.finishGaugeAnimation(finalScore, skipAnim, level, {
@@ -228,15 +340,34 @@ Page({
     const minIdleMs = opts.minIdleMs || 0
     const applyMeta = () => {
       const meta = this._pendingGaugeMeta || {}
+      const riskDesc = this.data.isEmptyPosition ? '分数中性，但接力晋级偏弱' : ''
+      const positionDesc = riskDesc || meta.positionDesc || this.data.positionDesc
+      const levelLabel = meta.levelLabel || level.label
+      const levelClass = meta.levelClass || level.class
+      const lk = resolveLongkongState({
+        ...this.data,
+        emptyWarning: this.data.isEmptyPosition,
+        displayScore: finalScore,
+        positionDesc,
+      })
+      const heroFields = this.buildLongkongHeroFields(
+        { ...this.data, emptyWarning: this.data.isEmptyPosition, positionDesc },
+        lk,
+        { positionDesc, levelLabel, displayScore: finalScore }
+      )
       this.setData({
         scoreCalculating: false,
         scoreRevealing: false,
         displayScore: String(finalScore),
         baselineScore: meta.baselineScore,
         scoreMode: meta.scoreMode || 'baseline',
-        levelLabel: meta.levelLabel || level.label,
-        levelClass: meta.levelClass || level.class,
-        positionDesc: meta.positionDesc || this.data.positionDesc,
+        levelLabel,
+        levelClass,
+        positionDesc,
+        longkongStateKey: lk.state,
+        longkongLevelClass: resolveLongkongTone({ displayScore: finalScore }).class,
+        longkongStateSteps: lk.steps || [],
+        ...heroFields,
       })
     }
 

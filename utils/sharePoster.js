@@ -161,7 +161,7 @@ function cellValueColor(key) {
 function cellPrevText(cell) {
   const prev = cell.prev != null ? String(cell.prev) : (cell.yesterday != null ? String(cell.yesterday) : '')
   if (!prev || prev === '--') return ''
-  return `前 ${prev}`
+  return `昨 ${prev}`
 }
 
 function loadCanvasImage(canvas, src) {

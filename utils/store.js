@@ -136,6 +136,8 @@ function applyHomeData(data) {
 
     longkongSignal: data.longkongSignal,
 
+    longkongState: data.longkongState || null,
+
     positionPercent,
 
     positionLabel,

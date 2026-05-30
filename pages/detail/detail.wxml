@@ -35,7 +35,7 @@
         <view class="share-cell" wx:for="{{row}}" wx:key="key" wx:for-item="cell">
 
           <view class="share-val-row">
-            <text class="share-val {{cell.key === 'advance' ? 'mr-up' : ''}}">{{cell.displayValue || cell.value}}</text>
+            <text class="share-val {{cell.valueClass}} {{cell.key === 'advance' ? 'mr-up' : ''}}">{{cell.displayValue || cell.value}}</text>
             <text
               wx:if="{{(item.id === 'yesterday' || item.id === 'auction') && cell.trendArrow}}"
               class="share-arrow {{cell.trendGood ? 'trend-good' : 'trend-bad'}}"
@@ -48,7 +48,7 @@
             wx:if="{{item.id === 'yesterday' || item.id === 'auction' || item.id === 'intraday'}}"
           >
             <block wx:if="{{cell.prev && cell.prev !== '--'}}">
-              <text class="share-sub-prefix">{{item.id === 'yesterday' ? '前 ' : '昨 '}}</text>
+              <text class="share-sub-prefix">昨 </text>
               <text class="share-sub-val">{{cell.prev}}</text>
             </block>
           </view>

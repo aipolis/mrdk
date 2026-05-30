@@ -16,6 +16,7 @@ log = logging.getLogger("mingri.db")
 
 TABLE_HOME = "home_sentiment_cache"
 TABLE_DAILY = "daily_market"
+TABLE_INTRADAY = "intraday_market_snapshots"
 CACHE_KEY = "default"
 _schema_ready = False
 MYSQL_CHARSET = "utf8mb4"
@@ -147,16 +148,47 @@ def ensure_schema() -> bool:
                 ) ENGINE=InnoDB DEFAULT CHARSET={MYSQL_CHARSET} COLLATE={MYSQL_COLLATE}
                 """
             )
+            cur.execute(
+                f"""
+                CREATE TABLE IF NOT EXISTS `{TABLE_INTRADAY}` (
+                    id BIGINT NOT NULL AUTO_INCREMENT PRIMARY KEY,
+                    trade_date CHAR(8) NOT NULL,
+                    snap_time VARCHAR(5) NOT NULL,
+                    ref_trade_date CHAR(8) NULL,
+                    advice_date CHAR(8) NULL,
+                    baseline_score INT NOT NULL DEFAULT 0,
+                    intraday_score INT NULL,
+                    display_score INT NOT NULL DEFAULT 0,
+                    score_mode VARCHAR(16) NOT NULL DEFAULT '',
+                    longkong_signal VARCHAR(16) NOT NULL DEFAULT '',
+                    empty_warning TINYINT NOT NULL DEFAULT 0,
+                    items_json LONGTEXT NULL,
+                    snap_json LONGTEXT NULL,
+                    sub_scores_json LONGTEXT NULL,
+                    source_status_json TEXT NULL,
+                    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+                    UNIQUE KEY uniq_trade_time (trade_date, snap_time),
+                    KEY idx_trade_date (trade_date)
+                ) ENGINE=InnoDB DEFAULT CHARSET={MYSQL_CHARSET} COLLATE={MYSQL_COLLATE}
+                """
+            )
             for col_def in (
-                "ADD COLUMN grid9_json TEXT NULL",
-                "ADD COLUMN peripheral_json TEXT NULL",
-                "ADD COLUMN auction_json TEXT NULL",
-                "ADD COLUMN indicator_sections_json TEXT NULL",
+                "MODIFY COLUMN indicators_json LONGTEXT NULL",
+                "MODIFY COLUMN sentiment_json LONGTEXT NOT NULL",
+                "MODIFY COLUMN history_json LONGTEXT NOT NULL",
+                "MODIFY COLUMN grid9_json LONGTEXT NULL",
+                "MODIFY COLUMN peripheral_json LONGTEXT NULL",
+                "MODIFY COLUMN auction_json LONGTEXT NULL",
+                "MODIFY COLUMN indicator_sections_json LONGTEXT NULL",
+                "ADD COLUMN grid9_json LONGTEXT NULL",
+                "ADD COLUMN peripheral_json LONGTEXT NULL",
+                "ADD COLUMN auction_json LONGTEXT NULL",
+                "ADD COLUMN indicator_sections_json LONGTEXT NULL",
             ):
                 try:
                     cur.execute(f"ALTER TABLE `{TABLE_DAILY}` {col_def}")
                 except pymysql.err.OperationalError as exc:
-                    if exc.args[0] != 1060:
+                    if exc.args[0] not in (1060,):
                         raise
             # 旧库可能是 utf8（3 字节），无法存 emoji（指标 icon 📈 等）
             for table in (TABLE_HOME, TABLE_DAILY):

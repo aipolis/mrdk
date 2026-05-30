@@ -5,6 +5,7 @@ from __future__ import annotations
 from datetime import datetime
 from typing import Optional
 
+from config import bj_now
 from fetcher import (
     _fetch_market_breadth_live,
     _fetch_sse_chg_tencent,
@@ -32,7 +33,7 @@ from sentiment import (
 
 def is_trading_day(now: Optional[datetime] = None) -> bool:
     """是否 A 股交易日（不含时段）"""
-    now = now or datetime.now()
+    now = now or bj_now()
     if now.weekday() >= 5:
         return False
     today = date_str(now)
@@ -41,8 +42,8 @@ def is_trading_day(now: Optional[datetime] = None) -> bool:
 
 
 def intraday_session_phase(now: Optional[datetime] = None) -> str:
-    """off | waiting | live | closed"""
-    now = now or datetime.now()
+    """off | waiting | live | closed | night"""
+    now = now or bj_now()
     if not is_trading_day(now):
         return "off"
     hm = now.hour * 60 + now.minute
@@ -50,6 +51,8 @@ def intraday_session_phase(now: Optional[datetime] = None) -> str:
         return "waiting"
     if hm <= 15 * 60:
         return "live"
+    if hm >= 18 * 60:
+        return "night"
     return "closed"
 
 
@@ -60,17 +63,36 @@ def is_intraday_session(now: Optional[datetime] = None) -> bool:
 
 def is_intraday_pinned_window(now: Optional[datetime] = None) -> bool:
     """盘中板块置顶时段：交易日 9:00–15:30"""
-    now = now or datetime.now()
+    now = now or bj_now()
     if not is_trading_day(now):
         return False
     hm = now.hour * 60 + now.minute
     return 9 * 60 <= hm <= 15 * 60 + 30
 
 
+# 交易时段完整顺序：盘中 → 龙空风控 → 竞价 → 昨日 → 外围
+_TRADING_SECTION_ORDER = (
+    "intraday",
+    "longkongRisk",
+    "auction",
+    "yesterday",
+    "peripheral",
+)
+
+
 def order_indicator_sections(sections: list, *, now: Optional[datetime] = None) -> list:
-    """9:00–15:30 将盘中实时情绪置顶；其余时段保持竞价下方。"""
+    """9:00–15:30 按交易时段顺序排列；非置顶时段仅盘中块沉底。"""
     if not sections:
         return sections
+    if is_intraday_pinned_window(now):
+        by_id = {sec.get("id"): sec for sec in sections if sec and sec.get("id")}
+        ordered = [by_id[sid] for sid in _TRADING_SECTION_ORDER if sid in by_id]
+        known = set(_TRADING_SECTION_ORDER)
+        for sec in sections:
+            sid = sec.get("id")
+            if sid and sid not in known:
+                ordered.append(sec)
+        return ordered if ordered else sections
     intraday = None
     rest = []
     for sec in sections:
@@ -80,8 +102,6 @@ def order_indicator_sections(sections: list, *, now: Optional[datetime] = None) 
             rest.append(sec)
     if not intraday:
         return sections
-    if is_intraday_pinned_window(now):
-        return [intraday] + rest
     return rest + [intraday]
 
 
@@ -143,16 +163,20 @@ def fetch_intraday_snapshot(ref_metrics: Optional[dict] = None, ref_d: str = "")
     ref_metrics = ref_metrics or {}
     if not ref_d:
         ref_d = (ref_metrics.get("date") or "").replace("-", "")[:8]
-    today = date_str(datetime.now())
+    today = date_str(bj_now())
     legu = _legu_live_counts()
     adv = int(legu.get("advance") or 0)
     dec = int(legu.get("decline") or 0)
     limit_up = int(legu.get("limit_up") or 0)
     limit_down = int(legu.get("limit_down") or 0)
 
-    if adv + dec < 50:
+    def _breadth_live_valid(a: int, d: int) -> bool:
+        total = int(a or 0) + int(d or 0)
+        return total >= 500 and int(a or 0) > 0 and int(d or 0) > 0
+
+    if not _breadth_live_valid(adv, dec):
         adv2, dec2, stat_d = _fetch_market_breadth_live()
-        if stat_d == today or adv2 + dec2 >= 50:
+        if stat_d == today or _breadth_live_valid(adv2, dec2):
             adv, dec = adv2, dec2
 
     sse_chg = _fetch_sse_chg_tencent(today)
@@ -165,7 +189,7 @@ def fetch_intraday_snapshot(ref_metrics: Optional[dict] = None, ref_d: str = "")
         except (TypeError, ValueError):
             amount_raw = 0.0
 
-    up_ratio = round(adv / (adv + dec) * 100, 1) if adv + dec >= 50 else None
+    up_ratio = round(adv / (adv + dec) * 100, 1) if _breadth_live_valid(adv, dec) else None
 
     prev_adv = int(ref_metrics.get("advance_count") or 0)
     prev_dec = int(ref_metrics.get("decline_count") or 0)
@@ -210,17 +234,18 @@ def fetch_intraday_snapshot(ref_metrics: Optional[dict] = None, ref_d: str = "")
         "prev_promote": board.get("prev_promote"),
         "break_live": board.get("break_live"),
         "prev_break": board.get("prev_break"),
-        "updated_at": datetime.now().strftime("%H:%M"),
+        "updated_at": bj_now().strftime("%H:%M"),
     }
 
 
 def _prev_up_ratio(prev_adv, prev_dec) -> Optional[float]:
     if prev_adv is None or prev_dec is None:
         return None
-    total = int(prev_adv or 0) + int(prev_dec or 0)
-    if total < 50:
+    adv_i, dec_i = int(prev_adv or 0), int(prev_dec or 0)
+    total = adv_i + dec_i
+    if adv_i <= 0 or dec_i <= 0 or total < 500:
         return None
-    return round(int(prev_adv or 0) / total * 100, 1)
+    return round(adv_i / total * 100, 1)
 
 
 def _vol_pct(amount_raw: float, prev_vol: float) -> Optional[float]:
@@ -351,7 +376,7 @@ def build_intraday_items(snap: dict) -> list:
             "实时跌停",
             str(ld) if ld else "--",
             str(prev_ld) if prev_ld is not None else "--",
-            _trend(ld, prev_ld, inverse=True),
+            _trend(ld, prev_ld),
         ),
         _item(
             "marketVolumeLive",
@@ -381,7 +406,7 @@ def build_intraday_items(snap: dict) -> list:
         ),
         _item(
             "promoteLive",
-            "T-1日涨停晋级率",
+            "晋级率",
             promote_val,
             promote_prev,
             _trend(promote, prev_promote),
@@ -391,7 +416,7 @@ def build_intraday_items(snap: dict) -> list:
             "实时炸板率",
             break_val,
             break_prev,
-            _trend(break_r, prev_break, inverse=True),
+            _trend(break_r, prev_break),
         ),
     ]
 
@@ -440,7 +465,7 @@ def build_intraday_placeholder_items(ref_metrics: Optional[dict] = None) -> list
         ),
         _item(
             "promoteLive",
-            "T-1日涨停晋级率",
+            "晋级率",
             _fmt_rate_val(float(prev_promote)) if prev_promote is not None else "--",
         ),
         _item(
@@ -451,12 +476,119 @@ def build_intraday_placeholder_items(ref_metrics: Optional[dict] = None) -> list
     ]
 
 
+def build_intraday_closed_items(
+    ref_metrics: Optional[dict] = None,
+    prev_metrics: Optional[dict] = None,
+) -> list:
+    """收盘后展示当日最终盘面值，避免盘中块整块变成占位。"""
+    ref = ref_metrics or {}
+    prev = prev_metrics or {}
+    ref_d = (ref.get("date") or "").replace("-", "")[:8]
+    prev_d = (prev.get("date") or "").replace("-", "")[:8]
+    adv = ref.get("advance_count")
+    dec = ref.get("decline_count")
+    ratio = _prev_up_ratio(adv, dec)
+    sse = _resolve_prev_sse(ref, ref_d)
+    if ref_d:
+        try:
+            today_d = date_str(bj_now())
+            if ref_d == today_d:
+                live_sse = _fetch_sse_chg_tencent(today_d)
+                sse = live_sse if live_sse is not None else fetch_sse_index_change(ref_d)
+            else:
+                sse = fetch_sse_index_change(ref_d)
+        except Exception:
+            pass
+    vol_label, _ = fetch_ref_volume_prev_label(ref, ref_d)
+    prev_adv = prev.get("advance_count")
+    prev_dec = prev.get("decline_count")
+    prev_ratio = _prev_up_ratio(prev_adv, prev_dec)
+    prev_sse = _resolve_prev_sse(prev, prev_d)
+    if prev_d:
+        try:
+            prev_sse = fetch_sse_index_change(prev_d)
+        except Exception:
+            pass
+    prev_vol_label, _ = fetch_ref_volume_prev_label(prev, prev_d)
+    board = fetch_intraday_board_stats(ref_d, ref, live=True) if ref_d else {}
+    top10_live = board.get("top10_avg_live")
+    top10_prev = board.get("prev_top10_avg")
+    if top10_prev is None and prev.get("top10_avg_chg") is not None:
+        top10_prev = float(prev.get("top10_avg_chg"))
+
+    def _item(key, label, value=None, prev_val="--"):
+        value_s = str(value) if value not in (None, "") else "--"
+        prev_s = str(prev_val) if prev_val not in (None, "") else "--"
+        return {
+            "key": key,
+            "label": label,
+            "value": value_s,
+            "yesterday": prev_s,
+            "prev": prev_s,
+            "trend": "flat",
+        }
+
+    return [
+        _item(
+            "sseIndex",
+            "上证涨跌",
+            f"{float(sse):+.2f}%" if sse is not None else "--",
+            f"{float(prev_sse):+.2f}%" if prev_sse is not None else "--",
+        ),
+        _item(
+            "upRatio",
+            "上涨占比",
+            f"{ratio:.1f}%" if ratio is not None else "--",
+            f"{prev_ratio:.1f}%" if prev_ratio is not None else "--",
+        ),
+        _item("limitUpLive", "实时涨停", ref.get("limit_up_count"), prev.get("limit_up_count")),
+        _item("limitDownLive", "实时跌停", ref.get("limit_down_count"), prev.get("limit_down_count")),
+        _item(
+            "marketVolumeLive",
+            "全市量能",
+            vol_label if vol_label not in ("", "--") else ref.get("volume_amount"),
+            prev_vol_label if prev_vol_label not in ("", "--") else prev.get("volume_amount"),
+        ),
+        _item("high10Live", "10日新高", ref.get("high10_count"), prev.get("high10_count")),
+        _item(
+            "top10AvgChgLive",
+            "T-1成交额前10平均涨幅",
+            _fmt_pct_val(float(top10_live))
+            if top10_live is not None
+            else (
+                _fmt_pct_val(float(ref.get("top10_avg_chg")))
+                if ref.get("top10_avg_chg") is not None
+                else "--"
+            ),
+            _fmt_pct_val(float(top10_prev))
+            if top10_prev is not None
+            else (
+                _fmt_pct_val(float(prev.get("top10_avg_chg")))
+                if prev.get("top10_avg_chg") is not None
+                else "--"
+            ),
+        ),
+        _item(
+            "promoteLive",
+            "晋级率",
+            _fmt_rate_val(float(ref.get("promote_rate"))) if ref.get("promote_rate") is not None else "--",
+            _fmt_rate_val(float(prev.get("promote_rate"))) if prev.get("promote_rate") is not None else "--",
+        ),
+        _item(
+            "breakLive",
+            "实时炸板率",
+            _fmt_rate_val(float(ref.get("break_rate"))) if ref.get("break_rate") is not None else "--",
+            _fmt_rate_val(float(prev.get("break_rate"))) if prev.get("break_rate") is not None else "--",
+        ),
+    ]
+
+
 def _live_blend_weight(now: Optional[datetime] = None) -> float:
     """
     盘中分在展示分中的权重。
     9:00–9:29 固定 30%；9:30 起线性升至 15:00 的 85%。
     """
-    now = now or datetime.now()
+    now = now or bj_now()
     hm = now.hour * 60 + now.minute
     if hm < 9 * 60:
         return 0.0
@@ -474,7 +606,7 @@ def _live_blend_weight(now: Optional[datetime] = None) -> float:
 
 def is_live_score_window(now: Optional[datetime] = None) -> bool:
     """交易日 9:00–15:00，展示分可融合盘中分"""
-    now = now or datetime.now()
+    now = now or bj_now()
     if not is_trading_day(now):
         return False
     hm = now.hour * 60 + now.minute
@@ -505,15 +637,25 @@ def build_intraday_payload(
     ref_d: str = "",
     *,
     auction: Optional[list] = None,
+    prev_metrics: Optional[dict] = None,
 ) -> dict:
     """盘中块：items + intradayScore（含竞价）+ snap；交易日始终返回 items（非盘中为占位）"""
     if not ref_d and ref_metrics:
         ref_d = (ref_metrics.get("date") or "").replace("-", "")[:8]
     phase = intraday_session_phase()
     metrics = ref_metrics or {}
-    now = datetime.now()
-    if phase == "off":
+    now = bj_now()
+    if phase in ("off", "night"):
         items = build_intraday_placeholder_items(ref_metrics)
+        return {
+            "items": items,
+            "intradayScore": None,
+            "snap": {},
+            "active": False,
+            "phase": phase,
+        }
+    if phase == "closed":
+        items = build_intraday_closed_items(ref_metrics, prev_metrics)
         return {
             "items": items,
             "intradayScore": None,
@@ -551,3 +693,45 @@ def build_intraday_payload(
         "active": False,
         "phase": phase,
     }
+
+
+import os
+import time
+from typing import Any
+
+_intraday_read_cache: dict[str, Any] = {"key": "", "at": 0.0, "payload": None}
+
+
+def _intraday_read_ttl_sec() -> int:
+    return int(os.getenv("INTRADAY_READ_TTL_SEC", "90"))
+
+
+def invalidate_intraday_read_cache() -> None:
+    _intraday_read_cache.update({"key": "", "at": 0.0, "payload": None})
+
+
+def get_intraday_payload_cached(
+    metrics: dict,
+    *,
+    ref_d: str,
+    auction: Optional[list] = None,
+    prev_metrics: Optional[dict] = None,
+    force: bool = False,
+) -> dict:
+    """API 读取时节流盘中重算；定时任务 force=True 强制刷新。"""
+    key = f"{(ref_d or '')[:8]}:{date_str(bj_now())}"
+    now = time.time()
+    if not force:
+        cached = _intraday_read_cache.get("payload")
+        if cached and _intraday_read_cache.get("key") == key:
+            age = now - float(_intraday_read_cache.get("at") or 0)
+            if age < _intraday_read_ttl_sec():
+                return cached
+    payload = build_intraday_payload(
+        metrics,
+        ref_d=ref_d,
+        auction=auction,
+        prev_metrics=prev_metrics or {},
+    )
+    _intraday_read_cache.update({"key": key, "at": now, "payload": payload})
+    return payload

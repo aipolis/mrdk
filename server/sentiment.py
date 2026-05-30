@@ -6,6 +6,8 @@ import re
 from datetime import datetime
 from typing import Optional
 
+from config import bj_now
+
 # 基准分：仅昨日 + 外围（竞价已移入盘中分）
 W_YESTERDAY_BASE = 0.80
 W_PERIPHERAL_BASE = 0.20
@@ -154,7 +156,7 @@ def score_volume_intraday(amount_raw: float, vol_pct: Optional[float] = None) ->
 def score_advance_breadth(adv: int, dec: int) -> int:
     adv, dec = int(adv or 0), int(dec or 0)
     total = adv + dec
-    if total < 50:
+    if adv <= 0 or dec <= 0 or total < 500:
         return SCORE_NEUTRAL
     ratio = adv / total
     if ratio >= 0.62:
@@ -252,7 +254,7 @@ def score_intraday_block(snap: dict) -> dict[str, int]:
 
     if ratio is not None:
         breadth_s = _tier_high(float(ratio), 62, 48)
-    elif adv + dec >= 50:
+    elif adv > 0 and dec > 0 and adv + dec >= 500:
         breadth_s = _tier_high(adv / (adv + dec) * 100, 62, 48)
     else:
         breadth_s = SCORE_NEUTRAL
@@ -313,7 +315,7 @@ def _auction_block_weight_in_live(now: Optional[datetime] = None) -> float:
     """
     盘中分内竞价块权重：9:00–9:29 仅竞价(100%)；9:30 起随时间降低，15:00 约 15%。
     """
-    now = now or datetime.now()
+    now = now or bj_now()
     hm = now.hour * 60 + now.minute
     if hm < 9 * 60 + 30:
         return 1.0
@@ -456,7 +458,7 @@ def _collect_weak_reasons(
 ) -> list[str]:
     reasons = []
     if y.get("promote", 99) <= SCORE_WEAK:
-        reasons.append(f"晋级率仅{metrics.get('promote_rate', 0):.0f}%")
+        reasons.append(f"昨日涨停股今日晋级率仅{metrics.get('promote_rate', 0):.0f}%")
     if y.get("limitUp", 99) <= SCORE_WEAK:
         reasons.append(f"涨停仅{metrics.get('limit_up_count', 0)}只")
     if y.get("height", 99) <= SCORE_WEAK:
@@ -535,18 +537,24 @@ def calc_sentiment(
 
     score = max(0, min(100, score))
 
-    if score >= 75:
+    if score >= 90:
         level, color, signal = "极度亢奋", "#CF1322", "强"
         position, pos_label = 70, ""
-    elif score >= 55:
-        level, color, signal = "强", "#FF4D4F", "强"
+    elif score >= 80:
+        level, color, signal = "高潮", "#FF4D4F", "强"
+        position, pos_label = 60, ""
+    elif score >= 60:
+        level, color, signal = "偏乐观", "#FF4D4F", "强"
         position, pos_label = 50, ""
-    elif score >= 35:
+    elif score >= 50:
         level, color, signal = "中性", "#FAAD14", "中"
         position, pos_label = 30, ""
-    elif score >= 15:
+    elif score >= 40:
         level, color, signal = "偏谨慎", "#FA8C16", "弱"
         position, pos_label = 10, ""
+    elif score >= 30:
+        level, color, signal = "偏冷", "#38BDF8", "弱"
+        position, pos_label = 0, ""
     else:
         level, color, signal = "冰点", "#1890FF", "极弱"
         position, pos_label = 0, ""
@@ -583,13 +591,46 @@ DISPLAY_LONGKONG_THRESHOLD = 50
 def longkong_signal_from_score(score: int) -> str:
     """龙空信号档位（随展示分）"""
     score = int(score or 0)
-    if score >= 55:
+    if score >= 60:
         return "强"
-    if score >= 35:
+    if score >= 50:
         return "中"
-    if score >= 15:
+    if score >= 30:
         return "弱"
     return "极弱"
+
+
+def longkong_state(
+    score: int,
+    *,
+    empty_warning: bool = False,
+    sub_scores: Optional[dict] = None,
+    intraday_sub_scores: Optional[dict] = None,
+) -> dict:
+    """龙空龙短线状态：龙>70 / 修复50–70 / 退潮30–50 / 空<30；龙空风险强制为空。"""
+    del sub_scores, intraday_sub_scores
+    score = int(score or 0)
+    if empty_warning:
+        state, label = "empty", "空"
+        desc = "风险偏高，宜控节奏"
+    elif score > 70:
+        state, label = "dragon", "龙"
+        desc = "接力结构较强"
+    elif score >= 50:
+        state, label = "repair", "修复"
+        desc = "有修复迹象，待确认"
+    elif score >= 30:
+        state, label = "retreat", "退潮"
+        desc = "接力偏弱"
+    else:
+        state, label = "empty", "空"
+        desc = "风险偏高，宜控节奏"
+
+    return {
+        "state": state,
+        "label": label,
+        "desc": desc,
+    }
 
 
 def apply_display_longkong(
@@ -641,7 +682,7 @@ def strategy_note_for_home(
     longkong: dict,
 ) -> str:
     if not longkong.get("emptyWarning"):
-        if display_score >= 55:
+        if display_score >= 60:
             return "综合情绪偏强，盘面结构活跃"
         return "综合昨日收盘与外围，更新今日情绪参考"
     if (
@@ -661,10 +702,12 @@ def position_desc(score: int, empty_warning: bool) -> str:
         return "综合情绪走弱，展示分低于50，宜控节奏"
     if empty_warning:
         return "综合情绪偏弱，龙空风险提示"
-    if score >= 61:
+    if score >= 60:
         return "综合情绪偏强，接力结构尚可"
-    if score >= 41:
+    if score >= 50:
         return "综合情绪中性偏暖，注意分化"
-    if score >= 21:
+    if score >= 40:
         return "综合情绪偏谨慎，短线结构一般"
+    if score >= 30:
+        return "综合情绪偏冷，耐心等待修复"
     return "综合情绪偏弱，宜控节奏"

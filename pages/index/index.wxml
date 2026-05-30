@@ -49,10 +49,28 @@
 
     <view class="gauge-wheel-wrap" bindtap="goDetail">
 
-      <view class="gauge-level-row">
-        <text class="gauge-level calculating" wx:if="{{scoreCalculating}}">计算中</text>
-        <text class="gauge-level {{levelClass}}" wx:else>{{levelLabel}}</text>
-        <text class="gauge-desc">{{positionDesc}}</text>
+      <view class="longkong-state {{longkongLevelClass}}" wx:if="{{longkongStateSteps.length}}">
+        <view class="longkong-state-head">
+          <text class="longkong-state-title">龙空龙状态</text>
+        </view>
+        <view class="longkong-state-hero {{longkongLevelClass}}">
+          <view class="longkong-state-hero-dot"></view>
+          <view class="longkong-state-titleline">
+            <text class="longkong-state-active {{longkongLevelClass}}">{{longkongStateLabel}}</text>
+            <text class="longkong-state-level {{scoreCalculating ? 'calculating' : levelClass}}" wx:if="{{longkongHeroLevel}}">{{longkongHeroLevel}}</text>
+          </view>
+          <text class="longkong-state-desc {{longkongLevelClass}}" wx:if="{{longkongHeroDesc}}">{{longkongHeroDesc}}</text>
+        </view>
+        <view class="longkong-lights">
+          <view
+            wx:for="{{longkongStateSteps}}"
+            wx:key="state"
+            class="longkong-light {{item.active ? 'is-active' : ''}} {{item.active ? longkongLevelClass : ''}}"
+          >
+            <view class="longkong-light-dot"></view>
+            <text class="longkong-light-label">{{item.label}}</text>
+          </view>
+        </view>
       </view>
 
       <view class="gauge-body">
@@ -64,8 +82,8 @@
             <text class="gauge-dot"></text>
           </view>
           <text class="gauge-score {{levelClass}}" wx:else>{{displayScore}}</text>
-          <text class="gauge-score-label">情绪分</text>
         </view>
+        <text class="gauge-score-label">情绪分</text>
       </view>
 
       <view class="gauge-share mr-icon-btn" catchtap="onSharePoster">
@@ -83,7 +101,7 @@
 
     <view class="empty-tip" wx:if="{{isEmptyPosition && !scoreCalculating}}">
 
-      <text>龙空风险提示 · {{emptyReasons[0] || '综合情绪偏弱'}}（本人复盘，非投资建议）</text>
+      <text>龙空风险提示 · {{emptyReasons[0] || '综合情绪偏弱'}}</text>
 
     </view>
 
@@ -130,7 +148,7 @@
                 <view class="mr-grid9-item-inner">
 
                   <view class="mr-grid9-value-row">
-                    <text class="mr-grid9-value {{cell.key === 'advance' ? 'mr-up' : ''}}">{{cell.displayValue || cell.value}}</text>
+                    <text class="mr-grid9-value {{cell.valueClass}} {{cell.key === 'advance' ? 'mr-up' : ''}}">{{cell.displayValue || cell.value}}</text>
                     <text
                       wx:if="{{(item.id === 'yesterday' || item.id === 'auction' || item.id === 'intraday') && cell.trendArrow}}"
                       class="trend-arrow {{cell.trendGood ? 'trend-good' : 'trend-bad'}}"
@@ -141,7 +159,7 @@
                     class="mr-grid9-sub mr-grid9-sub--slot"
                     wx:if="{{item.id === 'yesterday' || item.id === 'auction' || item.id === 'intraday'}}"
                   >
-                    <text class="mr-grid9-sub-prefix">{{item.id === 'yesterday' ? '前 ' : '昨 '}}</text>
+                    <text class="mr-grid9-sub-prefix">昨 </text>
                     <text class="mr-grid9-sub-val {{cell.key === 'advance' ? 'mr-up' : ''}}">{{cell.prev || '--'}}</text>
                   </view>
 
@@ -249,5 +267,4 @@
   </view>
 
 </view>
-
 

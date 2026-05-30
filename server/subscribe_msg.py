@@ -10,6 +10,8 @@ from datetime import datetime
 from pathlib import Path
 from typing import Optional
 
+from config import bj_now
+
 import httpx
 
 from config import (
@@ -40,15 +42,15 @@ def _clip(text: str, key: str) -> str:
 def _tips_from_sentiment(score: int, empty: bool, reasons: list) -> str:
     if empty and reasons:
         return _clip("；".join(reasons[:2]), "thing12")
-    if empty or score <= 14:
+    if empty or score < 30:
         return _clip("昨日情绪极弱，盘面偏冷", "thing12")
-    if score >= 61:
+    if score >= 60:
         return _clip("昨日情绪偏强，注意分歧", "thing12")
-    if score >= 41:
+    if score >= 50:
         return _clip("昨日情绪偏暖，结构尚可", "thing12")
-    if score >= 21:
+    if score >= 40:
         return _clip("昨日情绪偏谨慎", "thing12")
-    return _clip("昨日情绪偏弱", "thing12")
+    return _clip("昨日情绪偏冷", "thing12")
 
 
 def build_subscribe_message(
@@ -126,7 +128,7 @@ def register_subscriber(openid: str, subscribe_type: str = "sentiment_daily") ->
     data = _load_subscribers()
     users = data.get("users", [])
     found = next((u for u in users if u.get("openid") == openid), None)
-    now = datetime.now().isoformat()
+    now = bj_now().isoformat()
     if found:
         types = set(found.get("types", []))
         types.add(subscribe_type)

@@ -42,7 +42,20 @@ def start_internal_cron(
     sched = BackgroundScheduler(timezone="Asia/Shanghai")
     weekday = "mon-fri"
 
+    def _is_trading_day() -> bool:
+        try:
+            from config import bj_now
+            from fetcher import date_str, get_recent_trade_dates
+
+            return date_str(bj_now()) in get_recent_trade_dates(10)
+        except Exception:
+            log.exception("internal cron trading-day check failed")
+            return False
+
     def _safe(name: str, fn: Callable[[], None]) -> None:
+        if not _is_trading_day():
+            log.info("internal cron skip non-trading day: %s", name)
+            return
         log.info("internal cron start: %s", name)
         try:
             fn()

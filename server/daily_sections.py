@@ -5,9 +5,11 @@ from __future__ import annotations
 from datetime import datetime
 from typing import Optional
 
+from config import bj_now
 from fetcher import (
     build_auction_sentiment,
     build_indicator_sections,
+    build_longkong_risk_items,
     build_yesterday_sentiment,
     date_str,
     fetch_peripheral_sentiment,
@@ -41,7 +43,7 @@ def build_daily_sections(
         advice_d=advice_d,
         is_ready=is_ready,
     )
-    today = date_str(datetime.now())
+    today = date_str(bj_now())
     peripheral = (
         fetch_peripheral_sentiment()
         if include_live_peripheral or trade_d == today or advice_d == today
@@ -51,5 +53,8 @@ def build_daily_sections(
         "grid9": grid9,
         "peripheral": peripheral,
         "auction": auction,
+        "longkongRisk": build_longkong_risk_items(
+            trade_d, prev_d, metrics, prev_metrics, advice_d=advice_d
+        ),
         "indicatorSections": indicator_sections,
     }

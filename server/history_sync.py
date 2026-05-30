@@ -8,6 +8,8 @@ import time
 from datetime import datetime
 from typing import Optional
 
+from config import bj_now
+
 from daily_sections import build_daily_sections
 from fetcher import (
     _fill_metrics_breadth,
@@ -58,7 +60,7 @@ def _load_or_build_ref_metrics(trade_d: str, prev_d: Optional[str], *, force: bo
 
 
 def _resolve_today_prev() -> tuple[Optional[str], Optional[str]]:
-    today = date_str(datetime.now())
+    today = date_str(bj_now())
     dates = get_recent_trade_dates(5)
     if today not in dates:
         return None, None
@@ -190,7 +192,7 @@ def persist_trading_day_snapshot(*, freeze: bool = False) -> dict:
     metrics = dict(metrics)
     metrics["snapshot_phase"] = phase
     metrics["snapshot_frozen"] = freeze
-    metrics["snapshot_at"] = datetime.now().isoformat(timespec="seconds")
+    metrics["snapshot_at"] = bj_now().isoformat(timespec="seconds")
     grid9 = build_yesterday_sentiment(metrics, prev_metrics)
 
     existing = fetch_daily_detail(today) or {}
@@ -236,7 +238,7 @@ def persist_peripheral_db_0900() -> dict:
     metrics = {
         "date": f"{today[:4]}-{today[4:6]}-{today[6:8]}",
         "peripheral_db_phase": "0900",
-        "peripheral_db_at": datetime.now().isoformat(timespec="seconds"),
+        "peripheral_db_at": bj_now().isoformat(timespec="seconds"),
     }
     existing = fetch_daily_detail(today) or {}
     sections = _patch_indicator_sections(
@@ -267,8 +269,11 @@ def persist_auction_snapshot(*, freeze: bool = False) -> dict:
         return {"ok": False, "skipped": True, "reason": "before_auction_925"}
 
     existing = fetch_daily_detail(today) or {}
+    from fetcher import auction_items_incomplete
+
     if not freeze and ((existing.get("metrics") or {}).get("auction_frozen")):
-        return {"ok": True, "skipped": True, "reason": "already_frozen", "trade_d": today}
+        if not auction_items_incomplete(existing.get("auction") or []):
+            return {"ok": True, "skipped": True, "reason": "already_frozen", "trade_d": today}
 
     dates = get_recent_trade_dates(5)
     idx = dates.index(today)
@@ -287,8 +292,28 @@ def persist_auction_snapshot(*, freeze: bool = False) -> dict:
         "date": f"{today[:4]}-{today[4:6]}-{today[6:8]}",
         "auction_phase": phase,
         "auction_frozen": freeze,
-        "auction_at": datetime.now().isoformat(timespec="seconds"),
+        "auction_at": bj_now().isoformat(timespec="seconds"),
     }
+    for it in auction or []:
+        key = it.get("key")
+        val = it.get("value")
+        if not key or val in (None, "", "--"):
+            continue
+        try:
+            if key == "yesterdayFirst":
+                metrics["first_board_auction_chg"] = float(str(val).replace("%", "").replace("+", ""))
+            elif key == "yesterdayMulti":
+                metrics["multi_board_auction_chg"] = float(str(val).replace("%", "").replace("+", ""))
+            elif key == "recentMulti":
+                metrics["max_board_auction_chg"] = float(str(val).replace("%", "").replace("+", ""))
+            elif key == "top10AuctionChg":
+                metrics["auction_median"] = float(str(val).replace("%", "").replace("+", ""))
+            elif key == "auctionVolume" and str(val).endswith("亿"):
+                metrics["auction_volume_yi"] = float(str(val).replace("亿", ""))
+            elif key == "auctionOneWord":
+                metrics["auction_one_word_count"] = int(str(val))
+        except (TypeError, ValueError):
+            pass
     sections = _patch_indicator_sections(
         existing.get("indicatorSections"),
         auction=auction,
@@ -336,10 +361,10 @@ def persist_day(
         metrics = dict(metrics)
         metrics["snapshot_phase"] = phase or ("1800" if freeze else "1505")
         metrics["snapshot_frozen"] = freeze
-        metrics["snapshot_at"] = datetime.now().isoformat(timespec="seconds")
+        metrics["snapshot_at"] = bj_now().isoformat(timespec="seconds")
     prev_metrics = _load_or_build_ref_metrics(prev_d, None, force=force) if prev_d else None
     if sections is None:
-        today = date_str(datetime.now())
+        today = date_str(bj_now())
         sections = build_daily_sections(
             trade_d,
             prev_d,
@@ -422,7 +447,7 @@ def sync_history_days(days: int = 60) -> dict:
     dates = get_recent_trade_dates(days + 1)
     stored_before = set(list_stored_trade_dates(days + 5))
     ok, fail, skipped = 0, 0, 0
-    today = date_str(datetime.now())
+    today = date_str(bj_now())
     for i in range(1, len(dates)):
         if _sync_cancel.is_set():
             skipped = max(0, len(dates) - i)
@@ -434,7 +459,7 @@ def sync_history_days(days: int = 60) -> dict:
                 d,
                 p,
                 advice_d=d,
-                is_ready=(d != today or datetime.now().hour > 9 or (datetime.now().hour == 9 and datetime.now().minute >= 15)),
+                is_ready=(d != today or bj_now().hour > 9 or (bj_now().hour == 9 and bj_now().minute >= 15)),
             ):
                 ok += 1
             else:

@@ -16,12 +16,50 @@ function enrichTrend(item) {
   if (trend === 'flat') {
     return { trendArrow: '', trendGood: null }
   }
-  const inverse = INVERSE_KEYS.has(item.key)
-  const trendGood = inverse ? trend === 'down' : trend === 'up'
+  const trendGood = trend === 'up'
   return {
     trendArrow: trend === 'up' ? '↑' : '↓',
     trendGood
   }
+}
+
+function parseFirstNumber(v) {
+  const s = displayText(v, '')
+  const m = s.match(/[+-]?\d+(?:\.\d+)?/)
+  return m ? Number(m[0]) : null
+}
+
+function parseSignedPercent(v) {
+  const s = displayText(v, '')
+  const m = s.match(/[+-]\d+(?:\.\d+)?\s*%/)
+  return m ? Number(m[0].replace('%', '')) : null
+}
+
+function inferValueGood(item) {
+  const key = item.key || ''
+  const value = displayText(item.displayValue || item.value, '')
+  if (!value || value === '--') return null
+
+  const signedPct = parseSignedPercent(value)
+  if (signedPct != null) {
+    if (signedPct === 0) return null
+    return INVERSE_KEYS.has(key) ? signedPct < 0 : signedPct > 0
+  }
+
+  const n = parseFirstNumber(value)
+  if (n == null) return null
+
+  if (key === 'upRatio') return n >= 50
+  if (key === 'advance' || key === 'advanceLive') return n >= 2500
+  if (key === 'height') return n >= 3
+  if (key === 'limitUp' || key === 'limitUpLive') return n >= 50
+  if (key === 'limitDown' || key === 'limitDownLive') return n <= 10
+  if (key === 'seal') return n >= 60
+  if (key === 'promote' || key === 'promoteLive') return n >= 25
+  if (key === 'break' || key === 'breakLive') return n <= 30
+  if (key === 'oneWord' || key === 'auctionOneWord' || key === 'high10Live') return n > 0
+  if (key === 'volume' || key === 'marketVolumeLive' || key === 'auctionVolume') return n > 0
+  return null
 }
 
 function enrichAdvance(item) {
@@ -79,6 +117,9 @@ function enrichCell(item) {
   cell = enrichAdvance(cell)
   Object.assign(cell, enrichTrend(cell))
   cell.displayValue = cell.value
+  const valueGood = cell.trendGood != null ? cell.trendGood : inferValueGood(cell)
+  cell.trendGood = cell.trendGood != null ? cell.trendGood : valueGood
+  cell.valueClass = valueGood === true ? 'value-hot' : (valueGood === false ? 'value-cold' : '')
   return cell
 }
 

@@ -11,7 +11,7 @@ import time
 from datetime import datetime
 from typing import Any, Callable, Optional
 
-from config import HOME_CACHE_FILE, HOME_CACHE_MAX_STALE_SEC
+from config import bj_now, HOME_CACHE_FILE, HOME_CACHE_MAX_STALE_SEC
 from db_store import db_status, load_home_cache as load_mysql_cache, mysql_enabled, save_home_cache as save_mysql_cache
 
 log = logging.getLogger("mingri.home_cache")
@@ -22,6 +22,8 @@ _state: dict[str, Any] = {
     "context": {},
     "built_at": 0.0,
     "building": False,
+    "building_started_at": 0.0,
+    "build_token": 0,
     "last_error": "",
     "refresh_count": 0,
     "backend": "none",
@@ -32,13 +34,17 @@ _thread: Optional[threading.Thread] = None
 
 def _refresh_interval_sec() -> int:
     """按时段调整刷新频率"""
-    now = datetime.now()
+    now = bj_now()
     hm = now.hour * 60 + now.minute
     if 8 * 60 + 30 <= hm < 10 * 60:
         return int(os.getenv("HOME_CACHE_REFRESH_OPEN", "120"))
     if 10 * 60 <= hm < 15 * 60 + 30:
         return int(os.getenv("HOME_CACHE_REFRESH_INTRADAY", "300"))
     return int(os.getenv("HOME_CACHE_REFRESH_DEFAULT", "600"))
+
+
+def _build_timeout_sec() -> int:
+    return int(os.getenv("HOME_CACHE_BUILD_TIMEOUT_SEC", "180"))
 
 
 def _load_disk() -> bool:
@@ -114,15 +120,26 @@ def _save_disk(payload: dict, context: dict) -> None:
 
 def build_and_store(build_fn: Callable[[], tuple[dict, dict]]) -> bool:
     """同步构建并写入缓存；build_fn 返回 (payload, context)。"""
+    now = time.time()
     with _lock:
         if _state["building"]:
-            return False
+            started = float(_state.get("building_started_at") or 0)
+            age = now - started if started else 0
+            if age < _build_timeout_sec():
+                return False
+            log.warning("home cache build lock timed out after %.1fs, starting a new build", age)
+        token = int(_state.get("build_token") or 0) + 1
+        _state["build_token"] = token
         _state["building"] = True
+        _state["building_started_at"] = now
     t0 = time.time()
     try:
         payload, context = build_fn()
         built_at = time.time()
         with _lock:
+            if _state.get("build_token") != token:
+                log.warning("discard stale home cache build result token=%s current=%s", token, _state.get("build_token"))
+                return False
             _state["payload"] = payload
             _state["context"] = context
             _state["built_at"] = built_at
@@ -133,12 +150,15 @@ def build_and_store(build_fn: Callable[[], tuple[dict, dict]]) -> bool:
         return True
     except Exception as e:
         with _lock:
-            _state["last_error"] = str(e)
+            if _state.get("build_token") == token:
+                _state["last_error"] = str(e)
         log.exception("home cache refresh failed")
         return False
     finally:
         with _lock:
-            _state["building"] = False
+            if _state.get("build_token") == token:
+                _state["building"] = False
+                _state["building_started_at"] = 0.0
 
 
 def patch_home_cache(patch_fn: Callable[[dict], dict]) -> bool:
@@ -174,6 +194,7 @@ def get_snapshot() -> Optional[dict[str, Any]]:
             "built_at": _state.get("built_at"),
             "age_sec": age,
             "building": bool(_state.get("building")),
+            "building_started_at": _state.get("building_started_at"),
             "refresh_count": _state.get("refresh_count"),
             "last_error": _state.get("last_error"),
             "backend": _state.get("backend"),
@@ -215,23 +236,30 @@ def is_expired() -> bool:
 def cache_status() -> dict:
     snap = get_snapshot()
     if not snap:
+        started = float(_state.get("building_started_at") or 0)
         return {
             "ready": False,
             "building": _state.get("building"),
+            "building_age_sec": round(time.time() - started, 1) if started else 0,
             "last_error": _state.get("last_error"),
             "refresh_interval_sec": _refresh_interval_sec(),
+            "build_timeout_sec": _build_timeout_sec(),
             "mysql": db_status(),
         }
+    started = float(snap.get("building_started_at") or 0)
     return {
         "ready": True,
         "age_sec": round(snap["age_sec"], 1),
         "built_at": datetime.fromtimestamp(snap["built_at"]).isoformat(timespec="seconds"),
         "building": snap["building"],
+        "building_age_sec": round(time.time() - started, 1) if started else 0,
         "refresh_count": snap["refresh_count"],
         "last_error": snap["last_error"],
         "context": snap["context"],
+        "quality": (snap.get("payload") or {}).get("quality"),
         "backend": snap.get("backend"),
         "refresh_interval_sec": _refresh_interval_sec(),
+        "build_timeout_sec": _build_timeout_sec(),
         "expired": snap["age_sec"] > HOME_CACHE_MAX_STALE_SEC,
         "mysql": db_status(),
     }

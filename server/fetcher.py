@@ -3,9 +3,11 @@
 from __future__ import annotations
 
 import math
+import os
 import re
 import time
-from datetime import datetime, timedelta
+from datetime import datetime
+from config import BJT, bj_now, timedelta
 from functools import lru_cache
 from typing import Optional
 
@@ -35,7 +37,7 @@ def _cache_set(key: str, data):
 
 def invalidate_intraday_caches(today: Optional[str] = None) -> None:
     """盘中定时刷新前清缓存，保证 high10 / top10 / 晋级率 等与 2 分钟任务同步。"""
-    today = (today or date_str(datetime.now()))[:8]
+    today = (today or date_str(bj_now()))[:8]
     for key in (
         "high10_stats_v1",
         "intraday_board_stats_v1",
@@ -43,6 +45,15 @@ def invalidate_intraday_caches(today: Optional[str] = None) -> None:
         f"zb_{today}",
     ):
         _cache.pop(key, None)
+    invalidate_market_breadth_cache(today)
+    _cache.pop(f"em_a_share_snapshot_{today}", None)
+    try:
+        from intraday import invalidate_intraday_read_cache
+
+        invalidate_intraday_read_cache()
+    except Exception:
+        pass
+    invalidate_longkong_read_cache()
 
 
 def date_str(d: datetime) -> str:
@@ -51,7 +62,7 @@ def date_str(d: datetime) -> str:
 
 def parse_date(s: str) -> datetime:
     s = s.replace("-", "")
-    return datetime.strptime(s[:8], "%Y%m%d")
+    return datetime.strptime(s[:8], "%Y%m%d").replace(tzinfo=BJT)
 
 
 def get_recent_trade_dates(count: int = 35) -> list[str]:
@@ -62,14 +73,14 @@ def get_recent_trade_dates(count: int = 35) -> list[str]:
     try:
         df = ak.tool_trade_date_hist_sina()
         df["trade_date"] = pd.to_datetime(df["trade_date"])
-        today = datetime.now()
+        today = bj_now()
         dates = df[df["trade_date"] <= today]["trade_date"].dt.strftime("%Y%m%d").tolist()
         result = dates[-count:]
         _cache_set(key, result)
         return result
     except Exception:
         result = []
-        d = datetime.now()
+        d = bj_now()
         while len(result) < count:
             if d.weekday() < 5:
                 result.insert(0, date_str(d))
@@ -84,7 +95,7 @@ def em_pool_available(trade_d: str) -> bool:
         return False
     try:
         d = parse_date(trade_d)
-        return (datetime.now() - d).days <= EM_POOL_MAX_AGE_DAYS
+        return (bj_now() - d).days <= EM_POOL_MAX_AGE_DAYS
     except Exception:
         return False
 
@@ -93,7 +104,7 @@ def fetch_limit_up(d: str, *, ttl: Optional[int] = None) -> pd.DataFrame:
     d = (d or "")[:8]
     key = f"zt_{d}"
     if ttl is None:
-        ttl = INTRADAY_CACHE_TTL if d == date_str(datetime.now()) else 300
+        ttl = INTRADAY_CACHE_TTL if d == date_str(bj_now()) else 300
     cached = _cache_get(key, ttl)
     if cached is not None:
         return cached
@@ -126,7 +137,7 @@ def fetch_broken_board(d: str, *, ttl: Optional[int] = None) -> pd.DataFrame:
     d = (d or "")[:8]
     key = f"zb_{d}"
     if ttl is None:
-        ttl = INTRADAY_CACHE_TTL if d == date_str(datetime.now()) else 300
+        ttl = INTRADAY_CACHE_TTL if d == date_str(bj_now()) else 300
     cached = _cache_get(key, ttl)
     if cached is not None:
         return cached
@@ -207,9 +218,85 @@ def _parse_market_activity_df(df: pd.DataFrame) -> dict:
     return result
 
 
+_EM_A_SHARE_FS = "m:0+t:6,m:0+t:80,m:1+t:2,m:1+t:23,m:0+t:81+s:2048"
+_EM_A_SHARE_CLIST_URLS = (
+    "https://push2.eastmoney.com/api/qt/clist/get",
+    "https://82.push2.eastmoney.com/api/qt/clist/get",
+    "https://79.push2.eastmoney.com/api/qt/clist/get",
+)
+
+
+def _fetch_em_a_share_snapshot() -> dict:
+    """东财全 A 实时列表聚合：成交额、上涨/下跌家数。"""
+    key = f"em_a_share_snapshot_{date_str(bj_now())}"
+    cached = _cache_get(key, 60)
+    if cached is not None:
+        return cached
+
+    headers = {"User-Agent": "Mozilla/5.0", "Referer": "https://quote.eastmoney.com/"}
+    base_params = {
+        "pn": "1",
+        "pz": "5000",
+        "po": "1",
+        "np": "1",
+        "ut": "bd1d9ddb04089700cf9c27f6f7426281",
+        "fltt": "2",
+        "invt": "2",
+        "fid": "f3",
+        "fs": _EM_A_SHARE_FS,
+        "fields": "f3,f6",
+    }
+    for url in _EM_A_SHARE_CLIST_URLS:
+        try:
+            params = dict(base_params)
+            r = requests.get(url, params=params, headers=headers, timeout=12)
+            data = (r.json().get("data") or {})
+            total = int(data.get("total") or 0)
+            diff = data.get("diff") or []
+            rows = list(diff.values()) if isinstance(diff, dict) else list(diff)
+            if total <= 0 or not rows:
+                continue
+
+            pages = max(1, math.ceil(total / int(base_params["pz"])))
+            for pn in range(2, pages + 1):
+                params = dict(base_params)
+                params["pn"] = str(pn)
+                r = requests.get(url, params=params, headers=headers, timeout=12)
+                diff = (r.json().get("data") or {}).get("diff") or []
+                rows.extend(list(diff.values()) if isinstance(diff, dict) else list(diff))
+
+            pct = pd.to_numeric(pd.Series([row.get("f3") for row in rows]), errors="coerce")
+            amount = pd.to_numeric(pd.Series([row.get("f6") for row in rows]), errors="coerce").sum()
+            result = {
+                "advance": int((pct > 0).sum()),
+                "decline": int((pct < 0).sum()),
+                "amount_raw": round(float(amount) / 1e8, 1) if amount > 0 else 0.0,
+                "rows": len(rows),
+            }
+            if result["rows"] >= 1000:
+                _cache_set(key, result)
+                return result
+        except Exception:
+            continue
+
+    result = {"advance": 0, "decline": 0, "amount_raw": 0.0, "rows": 0}
+    _cache_set(key, result)
+    return result
+
+
 def _spot_market_amount_yi(spot_df: Optional[pd.DataFrame] = None) -> tuple[str, float]:
-    """A 股实时总成交额（亿）；优先腾讯指数汇总，东财全 A 兜底"""
-    amt, raw = _fetch_market_amount_tencent(date_str(datetime.now()))
+    """A 股实时总成交额（亿）；优先交易所口径，再东财全 A 聚合/指数兜底。"""
+    today = date_str(bj_now())
+    amt, raw = _fetch_market_amount_exchange(today)
+    if raw > 0:
+        return amt, raw
+
+    snap = _fetch_em_a_share_snapshot()
+    raw = float(snap.get("amount_raw") or 0)
+    if raw > 0:
+        return f"{round(raw)}亿", raw
+
+    amt, raw = _fetch_market_amount_tencent(today)
     if raw > 0:
         return amt, raw
     try:
@@ -258,7 +345,28 @@ def _normalize_stock_codes(df: pd.DataFrame) -> set[str]:
 
 
 def _breadth_valid(adv: int, dec: int) -> bool:
-    return (int(adv or 0) + int(dec or 0)) >= 50
+    adv_i, dec_i = int(adv or 0), int(dec or 0)
+    return adv_i > 0 and dec_i > 0 and (adv_i + dec_i) >= 500
+
+
+def _fetch_market_breadth_spot() -> tuple[int, int]:
+    """全 A 实时涨跌家数兜底。只在乐股/归档不完整时使用。"""
+    snap = _fetch_em_a_share_snapshot()
+    adv = int(snap.get("advance") or 0)
+    dec = int(snap.get("decline") or 0)
+    if _breadth_valid(adv, dec):
+        return adv, dec
+
+    try:
+        df = ak.stock_zh_a_spot_em()
+        if df is None or df.empty or "涨跌幅" not in df.columns:
+            return 0, 0
+        pct = pd.to_numeric(df["涨跌幅"], errors="coerce")
+        adv = int((pct > 0).sum())
+        dec = int((pct < 0).sum())
+        return adv, dec
+    except Exception:
+        return 0, 0
 
 
 def _one_word_count(df_up: pd.DataFrame) -> int:
@@ -286,7 +394,7 @@ def _one_word_count(df_up: pd.DataFrame) -> int:
 
 def _auction_one_word_count(trade_d: str, spot_df: Optional[pd.DataFrame] = None) -> Optional[int]:
     """竞价一字板：开盘即涨停且最低价未破开盘价；当日拉取失败返回 None"""
-    today = date_str(datetime.now())
+    today = date_str(bj_now())
     trade_d = (trade_d or "")[:8]
     if trade_d == today:
         try:
@@ -361,6 +469,41 @@ def fetch_peripheral_sentiment() -> list[dict]:
             "trend": "up" if (chg_f is not None and chg_f >= 0) else "down" if chg_f is not None else "flat",
         })
 
+    def _quote_yahoo(symbols: tuple[str, ...]) -> tuple[Optional[float], Optional[float]]:
+        """轻量兜底行情：返回最新价与涨跌幅。Yahoo 接口缺字段时自动跳过。"""
+        headers = {"User-Agent": "Mozilla/5.0"}
+        hosts = ("query1.finance.yahoo.com", "query2.finance.yahoo.com")
+        for symbol in symbols:
+            try:
+                result = None
+                for host in hosts:
+                    url = f"https://{host}/v8/finance/chart/{symbol}"
+                    r = requests.get(url, params={"range": "1d", "interval": "1m"}, headers=headers, timeout=6)
+                    if r.status_code >= 400:
+                        continue
+                    result = ((r.json().get("chart") or {}).get("result") or [None])[0]
+                    if result:
+                        break
+                if not result:
+                    continue
+                meta = result.get("meta") or {}
+                price = _safe_float(meta.get("regularMarketPrice") or meta.get("previousClose"))
+                prev = _safe_float(meta.get("previousClose"))
+                if price is None:
+                    closes = (((result.get("indicators") or {}).get("quote") or [{}])[0]).get("close") or []
+                    for v in reversed(closes):
+                        price = _safe_float(v)
+                        if price is not None:
+                            break
+                chg = None
+                if price is not None and prev and prev > 0:
+                    chg = round((price - prev) / prev * 100, 2)
+                if price is not None:
+                    return price, chg
+            except Exception:
+                continue
+        return None, None
+
     a50_done = False
     try:
         df = ak.index_global_spot_em()
@@ -392,7 +535,12 @@ def fetch_peripheral_sentiment() -> list[dict]:
         except Exception:
             pass
     if not a50_done:
-        _append_index("富时A50指数", "--", 0.0)
+        price, chg = _quote_yahoo(("CN=F", "XIN9.FGI"))
+        if price is not None:
+            _append_index("富时A50指数", round(price, 2), chg or 0.0)
+            a50_done = True
+    if not a50_done:
+        _append_index("富时A50指数", "--", None)
 
     sp_done = False
     try:
@@ -409,7 +557,12 @@ def fetch_peripheral_sentiment() -> list[dict]:
     except Exception:
         pass
     if not sp_done:
-        _append_index("标普500", "--", 0.0)
+        price, chg = _quote_yahoo(("^GSPC",))
+        if price is not None:
+            _append_index("标普500", round(price, 2), chg or 0.0)
+            sp_done = True
+    if not sp_done:
+        _append_index("标普500", "--", None)
 
     fx_done = False
     try:
@@ -428,7 +581,12 @@ def fetch_peripheral_sentiment() -> list[dict]:
     except Exception:
         pass
     if not fx_done:
-        _append_fx("离岸人民币", "--", 0.0)
+        price, chg = _quote_yahoo(("CNH=X", "USDCNH=X"))
+        if price is not None:
+            _append_fx("离岸人民币", round(price, 4), chg or 0.0)
+            fx_done = True
+    if not fx_done:
+        _append_fx("离岸人民币", "--", None)
 
     _cache_set(key, result[:3])
     return result[:3]
@@ -489,9 +647,10 @@ def _normalize_amount(raw) -> str:
 
 
 _TENCENT_HEADERS = {"User-Agent": "Mozilla/5.0"}
-# 两市成交额 ≈ 上证 + 深证综指（与常见行情口径一致）
-_MARKET_AMOUNT_QT_CODES = ("sh000001", "sz399106")
-_MARKET_AMOUNT_BS_CODES = ("sh.000001", "sz.399106")
+# 指数成交额兜底：上证 + 深成指（与同花顺「两市」更接近，非深证综指 399106）。
+_MARKET_AMOUNT_QT_CODES = ("sh000001", "sz399001")
+_MARKET_AMOUNT_BS_CODES = ("sh.000001", "sz.399001")
+_EM_BJ_FS = "m:0+t:81"
 
 
 def _parse_tencent_qt_amount_yuan(text: str, symbol: str) -> float:
@@ -521,10 +680,180 @@ def _amount_yuan_to_yi(total: float) -> tuple[str, float]:
     return f"{int(yi)}亿", yi
 
 
+def _parse_sse_deal_stock_amount_yi(df: Optional[pd.DataFrame]) -> float:
+    """上交所每日概况：股票类成交金额（亿元）。"""
+    if df is None or df.empty:
+        return 0.0
+    label_col = df.columns[0]
+    stock_col = df.columns[1] if len(df.columns) > 1 else None
+    for _, row in df.iterrows():
+        label = str(row.get(label_col, row.iloc[0]))
+        if "成交金额" not in label:
+            continue
+        if stock_col is not None:
+            v = pd.to_numeric(row.get(stock_col, row.iloc[1]), errors="coerce")
+        else:
+            v = pd.to_numeric(row.iloc[1], errors="coerce")
+        if pd.notna(v) and float(v) > 0:
+            return float(v)
+    return 0.0
+
+
+def _parse_szse_stock_amount_yi(df: Optional[pd.DataFrame]) -> float:
+    """深交所每日概况：证券类别=股票 的成交金额（元→亿）。"""
+    if df is None or df.empty:
+        return 0.0
+    cat_col = df.columns[0]
+    amt_col = "成交金额" if "成交金额" in df.columns else df.columns[2]
+    for _, row in df.iterrows():
+        if str(row.get(cat_col, row.iloc[0])).strip() != "股票":
+            continue
+        v = pd.to_numeric(row.get(amt_col, row.iloc[2]), errors="coerce")
+        if pd.notna(v) and float(v) > 0:
+            return float(v) / 1e8
+    return 0.0
+
+
+def _bj_stock_codes() -> list[str]:
+    """北交所股票代码（当日缓存）。"""
+    key = f"bj_codes_{date_str(bj_now())}"
+    cached = _cache_get(key, 86400)
+    if cached is not None:
+        return list(cached)
+    codes: list[str] = []
+    try:
+        df = ak.stock_info_bj_name_code()
+        codes = df["证券代码"].astype(str).str.zfill(6).tolist()
+    except Exception:
+        pass
+    _cache_set(key, codes)
+    return codes
+
+
+def _fetch_bj_market_amount_em_clist() -> float:
+    """东财北交所列表分页汇总成交额（亿）。"""
+    headers = {"User-Agent": "Mozilla/5.0", "Referer": "https://quote.eastmoney.com/"}
+    params = {
+        "pn": "1",
+        "pz": "500",
+        "po": "1",
+        "np": "1",
+        "ut": "bd1d9ddb04089700cf9c27f6f7426281",
+        "fltt": "2",
+        "invt": "2",
+        "fid": "f3",
+        "fs": _EM_BJ_FS,
+        "fields": "f6",
+    }
+    total_yuan = 0.0
+    for url in _EM_A_SHARE_CLIST_URLS:
+        try:
+            r = requests.get(url, params=params, headers=headers, timeout=12)
+            data = r.json().get("data") or {}
+            total = int(data.get("total") or 0)
+            diff = data.get("diff") or []
+            rows = list(diff.values()) if isinstance(diff, dict) else list(diff)
+            if total <= 0 or not rows:
+                continue
+            amount = pd.to_numeric(pd.Series([row.get("f6") for row in rows]), errors="coerce")
+            total_yuan = float(amount.sum())
+            pages = max(1, math.ceil(total / int(params["pz"])))
+            for pn in range(2, pages + 1):
+                p = dict(params)
+                p["pn"] = str(pn)
+                r = requests.get(url, params=p, headers=headers, timeout=12)
+                diff = (r.json().get("data") or {}).get("diff") or []
+                rows = list(diff.values()) if isinstance(diff, dict) else list(diff)
+                if rows:
+                    amount = pd.to_numeric(pd.Series([row.get("f6") for row in rows]), errors="coerce")
+                    total_yuan += float(amount.sum())
+            if total_yuan > 0:
+                return round(total_yuan / 1e8, 1)
+        except Exception:
+            continue
+    return 0.0
+
+
+def _fetch_bj_market_amount_ulist() -> float:
+    """东财 ulist 按北交所代码批量汇总成交额（亿）。"""
+    codes = _bj_stock_codes()
+    if not codes:
+        return 0.0
+    headers = {"User-Agent": "Mozilla/5.0"}
+    url = "https://push2.eastmoney.com/api/qt/ulist.np/get"
+    total_yuan = 0.0
+    for i in range(0, len(codes), 50):
+        secids = ",".join(f"0.{c}" for c in codes[i : i + 50])
+        try:
+            r = requests.get(
+                url,
+                params={
+                    "fltt": "2",
+                    "fields": "f6",
+                    "secids": secids,
+                    "ut": "bd1d9ddb04089700cf9c27f6f7426281",
+                },
+                headers=headers,
+                timeout=20,
+            )
+            diff = (r.json().get("data") or {}).get("diff") or []
+            total_yuan += sum(float(x.get("f6") or 0) for x in diff)
+        except Exception:
+            continue
+    if total_yuan > 0:
+        return round(total_yuan / 1e8, 1)
+    return 0.0
+
+
+def _fetch_bj_market_amount_yi(trade_d: str) -> float:
+    """北交所 A 股当日成交额（亿）；仅当日。"""
+    trade_d = (trade_d or "")[:8]
+    if trade_d != date_str(bj_now()):
+        return 0.0
+    key = f"bj_amt_{trade_d}"
+    cached = _cache_get(key, 120)
+    if cached is not None:
+        return float(cached)
+
+    yi = _fetch_bj_market_amount_em_clist()
+    if yi < 50:
+        yi = _fetch_bj_market_amount_ulist()
+    _cache_set(key, yi)
+    return yi
+
+
+def _fetch_market_amount_exchange(trade_d: str) -> tuple[str, float]:
+    """沪深（+当日北交所）交易所股票成交额，口径贴近同花顺「市场量能」。"""
+    trade_d = (trade_d or "")[:8]
+    if not trade_d:
+        return "--", 0.0
+    total_yi = 0.0
+    try:
+        sse_df = ak.stock_sse_deal_daily(date=trade_d)
+        total_yi += _parse_sse_deal_stock_amount_yi(sse_df)
+    except Exception:
+        pass
+    try:
+        sz_df = ak.stock_szse_summary(trade_d)
+        total_yi += _parse_szse_stock_amount_yi(sz_df)
+    except Exception:
+        pass
+    try:
+        bj_yi = _fetch_bj_market_amount_yi(trade_d)
+        if bj_yi > 0:
+            total_yi += bj_yi
+    except Exception:
+        pass
+    if total_yi >= 3000:
+        yi = float(round(total_yi))
+        return f"{int(yi)}亿", yi
+    return "--", 0.0
+
+
 def _fetch_market_amount_tencent(trade_d: str) -> tuple[str, float]:
     """腾讯财经：当日实时两市成交额（历史日请用 Baostock）"""
     trade_d = (trade_d or "")[:8]
-    if trade_d != date_str(datetime.now()):
+    if trade_d != date_str(bj_now()):
         return "--", 0.0
     try:
         r = requests.get(
@@ -605,24 +934,40 @@ def _fetch_market_amount_akshare_em(trade_d: str) -> tuple[str, float]:
 
 
 def _fetch_daily_market_amount_with_raw(trade_d: str) -> tuple[str, float]:
-    """指定交易日 A 股两市成交额（亿）；优先腾讯 / Baostock，akshare 兜底"""
+    """指定交易日 A 股成交额（亿）；优先交易所沪深京股票口径，再东财聚合/指数兜底。"""
     trade_d = (trade_d or "")[:8]
     if not trade_d:
         return "--", 0.0
     key = f"market_amt_{trade_d}"
-    ttl = 90 if trade_d == date_str(datetime.now()) else 86400
+    ttl = 90 if trade_d == date_str(bj_now()) else 86400
     cached = _cache_get(key, ttl)
     if cached is not None:
         return cached
 
-    today = date_str(datetime.now())
+    today = date_str(bj_now())
     if trade_d == today:
+        amt, raw = _fetch_market_amount_exchange(trade_d)
+        if raw > 0:
+            result = (amt, raw)
+            _cache_set(key, result)
+            return result
+        snap = _fetch_em_a_share_snapshot()
+        raw = float(snap.get("amount_raw") or 0)
+        if raw > 0:
+            result = (f"{round(raw)}亿", raw)
+            _cache_set(key, result)
+            return result
         chain = (
             _fetch_market_amount_tencent,
             _fetch_market_amount_baostock,
             _fetch_market_amount_akshare_em,
         )
     else:
+        amt, raw = _fetch_market_amount_exchange(trade_d)
+        if raw > 0:
+            result = (amt, raw)
+            _cache_set(key, result)
+            return result
         chain = (_fetch_market_amount_baostock, _fetch_market_amount_akshare_em)
 
     for fn in chain:
@@ -644,13 +989,13 @@ def _fetch_daily_market_amount(trade_d: str) -> str:
 
 def _intraday_snap_hhmm(now: Optional[datetime] = None) -> str:
     """对齐 2 分钟刷新网格"""
-    now = now or datetime.now()
+    now = now or bj_now()
     minute = now.minute - (now.minute % 2)
     return f"{now.hour:02d}{minute:02d}"
 
 
 def _in_trading_minute_window(now: Optional[datetime] = None) -> bool:
-    now = now or datetime.now()
+    now = now or bj_now()
     hm = now.hour * 60 + now.minute
     return (9 * 60 + 30 <= hm <= 11 * 60 + 30) or (13 * 60 <= hm <= 15 * 60)
 
@@ -664,7 +1009,7 @@ def record_intraday_volume_snapshot(
     trade_d = (trade_d or "")[:8]
     if not trade_d or amount_raw <= 0:
         return
-    now = now or datetime.now()
+    now = now or bj_now()
     if not _in_trading_minute_window(now):
         return
     hhmm = _intraday_snap_hhmm(now)
@@ -774,7 +1119,7 @@ def fetch_ref_volume_at_same_time(
     ref_d = (ref_d or "")[:8]
     if not ref_d:
         return None
-    now = now or datetime.now()
+    now = now or bj_now()
     if not _in_trading_minute_window(now):
         return None
     hhmm = _intraday_snap_hhmm(now)
@@ -794,7 +1139,7 @@ def fetch_ref_volume_prev_label(
     """
     ref_metrics = ref_metrics or {}
     ref_d = (ref_d or ref_metrics.get("date") or "").replace("-", "")[:8]
-    now = now or datetime.now()
+    now = now or bj_now()
     if _in_trading_minute_window(now):
         same = fetch_ref_volume_at_same_time(ref_d, now)
         if same and same > 0:
@@ -817,7 +1162,7 @@ _SSE_INDEX_BS = "sh.000001"
 def _fetch_sse_chg_tencent(trade_d: str) -> Optional[float]:
     """腾讯财经：当日实时上证涨跌幅 %"""
     trade_d = (trade_d or "")[:8]
-    if trade_d != date_str(datetime.now()):
+    if trade_d != date_str(bj_now()):
         return None
     try:
         r = requests.get(
@@ -929,7 +1274,7 @@ def fetch_sse_index_change(trade_d: str) -> float:
     if cached is not None:
         return float(cached)
 
-    today = date_str(datetime.now())
+    today = date_str(bj_now())
     if trade_d == today:
         chain = (
             _fetch_sse_chg_tencent,
@@ -955,7 +1300,7 @@ def fetch_sse_index_change(trade_d: str) -> float:
 
 def _after_market_close(now: Optional[datetime] = None) -> bool:
     """A 股收盘后（15:00 及以后）"""
-    now = now or datetime.now()
+    now = now or bj_now()
     return now.hour > 15 or (now.hour == 15 and now.minute >= 0)
 
 
@@ -979,10 +1324,13 @@ def _fetch_market_breadth_live() -> tuple[int, int, str]:
         adv = int(parsed.get("advance") or 0)
         dec = int(parsed.get("decline") or 0)
         stat_d = _parse_legu_stat_date(df)
-        if adv or dec:
+        if _breadth_valid(adv, dec):
             return adv, dec, stat_d
     except Exception:
         pass
+    adv, dec = _fetch_market_breadth_spot()
+    if _breadth_valid(adv, dec):
+        return adv, dec, date_str(bj_now())
     return 0, 0, ""
 
 
@@ -1073,38 +1421,62 @@ def _fetch_market_breadth_baostock(trade_d: str) -> tuple[int, int]:
     return adv, dec
 
 
+def invalidate_market_breadth_cache(trade_d: Optional[str] = None) -> None:
+    """清涨跌家数内存缓存（warm-home / 日终快照前调用）。"""
+    if trade_d:
+        d = (trade_d or "")[:8]
+        _cache.pop(f"market_breadth_{d}", None)
+        _cache.pop(f"market_breadth_bs_{d}", None)
+        return
+    for key in list(_cache.keys()):
+        if key.startswith("market_breadth_"):
+            _cache.pop(key, None)
+
+
 def get_market_breadth(trade_d: str) -> tuple[int, int]:
     """
     指定交易日全市场上涨/下跌家数。
-    优先读缓存 / MySQL 归档；乐股按统计日期匹配；历史日兜底 Baostock。
+    当日优先乐股/东财实时；历史日读归档或 Baostock。
     """
     trade_d = (trade_d or "")[:8]
     if not trade_d:
         return 0, 0
 
+    today = date_str(bj_now())
     key = f"market_breadth_{trade_d}"
-    cached = _cache_get(key, 86400 * 30)
-    if cached is not None:
+    cache_ttl = 90 if trade_d == today else 86400 * 30
+    cached = _cache_get(key, cache_ttl)
+    if cached is not None and trade_d != today:
         adv = int(cached.get("advance", 0))
         dec = int(cached.get("decline", 0))
         if _breadth_valid(adv, dec):
             return adv, dec
+
+    if trade_d == today:
+        adv, dec, stat_d = _fetch_market_breadth_live()
+        if stat_d == trade_d and _breadth_valid(adv, dec):
+            _cache_set(key, {"advance": adv, "decline": dec})
+            return adv, dec
+        adv, dec = _fetch_market_breadth_spot()
+        if _breadth_valid(adv, dec):
+            _cache_set(key, {"advance": adv, "decline": dec})
+            return adv, dec
+        if cached is not None:
+            adv = int(cached.get("advance", 0))
+            dec = int(cached.get("decline", 0))
+            if _breadth_valid(adv, dec):
+                return adv, dec
 
     adv, dec = _breadth_from_daily_market(trade_d)
     if _breadth_valid(adv, dec):
         _cache_set(key, {"advance": adv, "decline": dec})
         return adv, dec
 
-    today = date_str(datetime.now())
-    adv, dec, stat_d = _fetch_market_breadth_live()
-    if stat_d == trade_d and _breadth_valid(adv, dec):
-        _cache_set(key, {"advance": adv, "decline": dec})
-        return adv, dec
-
-    if trade_d == today and _breadth_valid(adv, dec):
-        if _after_market_close():
+    if trade_d != today:
+        adv, dec, stat_d = _fetch_market_breadth_live()
+        if stat_d == trade_d and _breadth_valid(adv, dec):
             _cache_set(key, {"advance": adv, "decline": dec})
-        return adv, dec
+            return adv, dec
 
     adv, dec = _fetch_market_breadth_baostock(trade_d)
     if _breadth_valid(adv, dec):
@@ -1115,8 +1487,17 @@ def get_market_breadth(trade_d: str) -> tuple[int, int]:
 def _fill_metrics_breadth(metrics: dict, trade_d: str) -> dict:
     """补齐 metrics 中的上涨/下跌家数（避免 0 误写入前日对比）"""
     trade_d = (trade_d or "")[:8]
+    today = date_str(bj_now())
     adv = int(metrics.get("advance_count") or 0)
     dec = int(metrics.get("decline_count") or 0)
+    # 当日必须用实时涨跌家数，不能用 MySQL 里未刷新的归档值
+    if trade_d == today:
+        adv2, dec2 = get_market_breadth(trade_d)
+        if _breadth_valid(adv2, dec2):
+            metrics = dict(metrics)
+            metrics["advance_count"] = adv2
+            metrics["decline_count"] = dec2
+        return metrics
     if _breadth_valid(adv, dec):
         return metrics
     adv2, dec2 = get_market_breadth(trade_d)
@@ -1177,20 +1558,60 @@ def build_yesterday_sentiment(metrics: dict, prev_metrics: Optional[dict] = None
         {"key": "limitUp", "label": "涨停家数", "value": str(metrics["limit_up_count"]), "yesterday": str(_y("limit_up_count")), "trend": _trend(metrics["limit_up_count"], prev.get("limit_up_count"))},
         {"key": "seal", "label": "封板率", "value": f"{metrics['seal_rate']:.0f}%", "yesterday": f"{_y('seal_rate')}%", "trend": _trend(metrics["seal_rate"], prev.get("seal_rate"))},
         {"key": "promote", "label": "晋级率", "value": f"{metrics['promote_rate']:.0f}%", "yesterday": f"{_y('promote_rate')}%", "trend": _trend(metrics["promote_rate"], prev.get("promote_rate"))},
-        {"key": "limitDown", "label": "跌停家数", "value": str(metrics["limit_down_count"]), "yesterday": str(_y("limit_down_count")), "trend": _trend(metrics["limit_down_count"], prev.get("limit_down_count"), inverse=True)},
-        {"key": "break", "label": "炸板率", "value": f"{metrics['break_rate']:.0f}%", "yesterday": f"{_y('break_rate')}%", "trend": _trend(metrics["break_rate"], prev.get("break_rate"), inverse=True)},
+        {"key": "limitDown", "label": "跌停家数", "value": str(metrics["limit_down_count"]), "yesterday": str(_y("limit_down_count")), "trend": _trend(metrics["limit_down_count"], prev.get("limit_down_count"))},
+        {"key": "break", "label": "炸板率", "value": f"{metrics['break_rate']:.0f}%", "yesterday": f"{_y('break_rate')}%", "trend": _trend(metrics["break_rate"], prev.get("break_rate"))},
         {"key": "oneWord", "label": "一字板", "value": str(metrics.get("one_word_count", 0)), "yesterday": str(_y("one_word_count")), "trend": _trend(metrics.get("one_word_count", 0), prev.get("one_word_count"))},
         {"key": "volume", "label": "市场量能", "value": str(vol), "yesterday": str(vol_prev), "trend": _trend(metrics.get("volume_raw", 0), prev.get("volume_raw")) if prev.get("volume_raw") else "flat"},
         {
             "key": "advance",
             "label": "上涨家数",
-            "value": str(adv) if _breadth_valid(adv, dec) else str(adv or "--"),
+            "value": str(adv) if _breadth_valid(adv, dec) else "--",
             "yesterday": prev_adv_s,
             "advance_up": adv,
             "prev_advance_up": prev_adv_cmp if prev_adv_cmp not in (None, "-") else prev_adv_s,
             "trend": _trend(adv, prev_adv_cmp),
         },
     ]
+
+
+def patch_grid9_live_breadth(
+    grid9: list,
+    metrics: dict,
+    *,
+    ref_d: str,
+    advice_d: str,
+) -> list:
+    """
+    盘中 ref 日仍为上一交易日时，仅「上涨家数」展示当日乐股/东财实时，昨=ref 日收盘。
+    """
+    ref_d = (ref_d or "")[:8]
+    advice_d = (advice_d or "")[:8]
+    today = date_str(bj_now())
+    if advice_d != today or ref_d == today or not grid9:
+        return grid9
+
+    adv, dec, stat_d = _fetch_market_breadth_live()
+    if stat_d != today or not _breadth_valid(adv, dec):
+        adv, dec = _fetch_market_breadth_spot()
+    if not _breadth_valid(adv, dec):
+        return grid9
+
+    ref_adv = int(metrics.get("advance_count") or 0)
+    ref_dec = int(metrics.get("decline_count") or 0)
+    prev_adv_s = _fmt_prev_breadth(ref_adv, ref_dec)
+    prev_cmp = None if prev_adv_s == "--" else ref_adv
+
+    out = []
+    for item in grid9:
+        cell = dict(item)
+        if cell.get("key") == "advance":
+            cell["value"] = str(adv)
+            cell["yesterday"] = prev_adv_s
+            cell["advance_up"] = adv
+            cell["prev_advance_up"] = prev_cmp if prev_cmp is not None else prev_adv_s
+            cell["trend"] = _trend(adv, prev_cmp)
+        out.append(cell)
+    return out
 
 
 def build_grid_nine(metrics: dict, prev_metrics: Optional[dict] = None) -> list:
@@ -1397,27 +1818,47 @@ def _auction_zero_placeholder(val) -> bool:
 
 def _auction_pct_display(v: Optional[float]) -> str:
     f = _safe_float(v)
-    if f is None or abs(f) < 1e-9:
+    if f is None:
         return "--"
     return f"{f:+.2f}%"
 
 
+_AUCTION_VALUE_KEYS = (
+    "auctionVolume",
+    "yesterdayFirst",
+    "yesterdayMulti",
+    "recentMulti",
+    "top10AuctionChg",
+)
+
+
+def auction_items_incomplete(items: list) -> bool:
+    """竞价 6 项中有效主值过少则视为未归档完整，需重算。"""
+    if not items:
+        return True
+    by_key = {it.get("key"): it for it in items if it and it.get("key")}
+    filled = 0
+    for key in _AUCTION_VALUE_KEYS:
+        val = _display_text((by_key.get(key) or {}).get("value"))
+        if val != "--":
+            filled += 1
+    ow = _display_text((by_key.get("auctionOneWord") or {}).get("value"))
+    if ow != "--":
+        filled += 1
+    return filled < 2
+
+
 def sanitize_auction_items(items: list) -> list:
-    """竞价块展示清洗：未获取到的 0 / 0% 统一为 --"""
+    """竞价块展示清洗：仅把真正缺失的值展示为 --，0% 是有效中性值。"""
     if not items:
         return items
     vol_item = next((it for it in items if it.get("key") == "auctionVolume"), None)
     vol_missing = _display_text((vol_item or {}).get("value")) == "--"
-    pct_keys = frozenset(
-        {"yesterdayFirst", "yesterdayMulti", "recentMulti", "top10AuctionChg"}
-    )
     out = []
     for it in items:
         row = dict(it)
         key = row.get("key")
         val = _display_text(row.get("value"))
-        if key in pct_keys and _auction_zero_placeholder(val):
-            val = "--"
         if key == "auctionOneWord" and vol_missing and val in ("0", "0.0"):
             val = "--"
         prev = _auction_prev_display(row.get("prev") or row.get("yesterday"))
@@ -1441,7 +1882,7 @@ def _auction_prev_display(val) -> str:
 
 def _after_auction_925(now: Optional[datetime] = None) -> bool:
     """是否已过当日 9:25 竞价撮合"""
-    now = now or datetime.now()
+    now = now or bj_now()
     return now.hour > 9 or (now.hour == 9 and now.minute >= 25)
 
 
@@ -1527,7 +1968,7 @@ def get_market_auction_volume_yi(trade_d: str) -> Optional[float]:
     if cached is not None:
         return float(cached)
 
-    today = date_str(datetime.now())
+    today = date_str(bj_now())
     if trade_d > today:
         return None
     if trade_d == today and not _after_auction_925():
@@ -1550,8 +1991,12 @@ def build_auction_sentiment(
     """今日竞价情绪 6 项；yesterday 为 ref 日归档竞价（MySQL）同项主值"""
     metrics = metrics or {}
     prev_metrics = prev_metrics or {}
+    advice_d = (advice_d or date_str(bj_now()))[:8]
+    today = date_str(bj_now())
 
-    df_ref = fetch_limit_up(ref_d)
+    # 收盘后 ref_d 会切到今天，但“今日竞价”的股票池仍应来自昨日涨停池。
+    pool_d = prev_d if advice_d == ref_d and prev_d else ref_d
+    df_ref = fetch_limit_up(pool_d)
     first_codes = _pool_codes_by_board(df_ref, False)
     multi_codes = _pool_codes_by_board(df_ref, True)
     max_board_codes = _pool_codes_by_max_board(df_ref)
@@ -1566,12 +2011,20 @@ def build_auction_sentiment(
     except Exception:
         spot_df = None
 
-    advice_d = (advice_d or date_str(datetime.now()))[:8]
-    today = date_str(datetime.now())
+    now = bj_now()
     live_auction = advice_d == today and _after_auction_925()
-    live_ready = live_auction and spot_ok
+    # 15:00 后不再依赖盘中 spot，避免收盘后接口抖动导致今日竞价整块为 --
+    live_ready = live_auction and spot_ok and now.hour < 15
 
     if spot_ok and spot_df is not None:
+        top10_codes = _normalize_code_list(metrics.get("top10_codes"))
+        if not top10_codes:
+            top10_codes = _load_top10_codes_for_date(pool_d)
+        top10_avg = _avg_open_pct_for_top_amount(spot_df, top10_codes)
+        if top10_avg is None:
+            top10_avg = _avg_open_pct_for_top_amount(spot_df)
+
+    if spot_ok and spot_df is not None and top10_avg is None:
         try:
             if "成交额" in spot_df.columns:
                 top10 = spot_df.nlargest(10, "成交额")
@@ -1591,21 +2044,63 @@ def build_auction_sentiment(
             pass
 
     auction_one_word = _auction_one_word_count(advice_d, spot_df)
-    if live_auction and not live_ready:
+    if live_auction and not live_ready and now.hour < 15:
         auction_one_word = None
         top10_avg = None
+    if auction_one_word is None:
+        for k in ("auction_one_word_count", "one_word_count", "auction_up"):
+            v = metrics.get(k)
+            if v is not None:
+                try:
+                    auction_one_word = int(float(v))
+                    break
+                except (TypeError, ValueError):
+                    pass
+    if top10_avg is None and metrics.get("auction_median") is not None:
+        try:
+            top10_avg = float(metrics.get("auction_median"))
+        except (TypeError, ValueError):
+            top10_avg = None
+    if top10_avg is None and metrics.get("top10_avg_chg") is not None:
+        top10_avg = _safe_float(metrics.get("top10_avg_chg"))
 
-    first_board_chg = _avg_auction_chg_from_spot(first_codes, spot_df) if live_ready or advice_d != today else None
-    multi_board_chg = _avg_auction_chg_from_spot(multi_codes, spot_df) if live_ready or advice_d != today else None
-    recent_multi_chg = _avg_auction_chg_from_spot(max_board_codes, spot_df) if live_ready or advice_d != today else None
-    if live_auction and not live_ready:
-        first_board_chg = multi_board_chg = recent_multi_chg = None
-
+    first_board_chg = _avg_auction_chg_from_spot(first_codes, spot_df) if live_ready else None
+    multi_board_chg = _avg_auction_chg_from_spot(multi_codes, spot_df) if live_ready else None
+    recent_multi_chg = _avg_auction_chg_from_spot(max_board_codes, spot_df) if live_ready else None
+    if advice_d <= today:
+        if first_board_chg is None:
+            first_board_chg = _avg_board_auction_chg_historical(pool_d, False, advice_d)
+        if multi_board_chg is None:
+            multi_board_chg = _avg_board_auction_chg_historical(pool_d, True, advice_d)
+        if recent_multi_chg is None:
+            recent_multi_chg = _avg_max_board_auction_chg_historical(pool_d, advice_d)
+    if first_board_chg is None:
+        first_board_chg = _safe_float(metrics.get("first_board_auction_chg"))
+    if multi_board_chg is None:
+        multi_board_chg = _safe_float(metrics.get("multi_board_auction_chg"))
+    if recent_multi_chg is None:
+        recent_multi_chg = _safe_float(metrics.get("max_board_auction_chg"))
+    if top10_avg is None:
+        try:
+            board = fetch_intraday_board_stats(pool_d, metrics, live=True)
+            live_top10 = board.get("top10_avg_live")
+            if live_top10 is not None:
+                top10_avg = float(live_top10)
+        except Exception:
+            pass
+    prefer_prev_auction = bool(advice_d and ref_d and advice_d <= ref_d)
     auction_yi = get_market_auction_volume_yi(advice_d)
     if auction_yi is None:
         stored = metrics.get("auction_volume_yi")
-        if advice_d == ref_d and stored:
-            auction_yi = float(stored)
+        if stored:
+            try:
+                auction_yi = float(stored)
+            except (TypeError, ValueError):
+                auction_yi = None
+    if auction_yi is None and advice_d:
+        cached_yi = _cache_get(f"auction_vol_yi_{advice_d}", 86400 * 30)
+        if cached_yi is not None:
+            auction_yi = float(cached_yi)
     prev_yi = get_market_auction_volume_yi(ref_d)
     if prev_yi is None:
         stored_prev = metrics.get("auction_volume_yi")
@@ -1613,18 +2108,18 @@ def build_auction_sentiment(
             prev_yi = float(stored_prev)
     auction_volume = _yi_display(auction_yi)
     prev_volume = _auction_ref_prev_display(
-        ref_d, "auctionVolume", _yi_display(get_market_auction_volume_yi(ref_d)), prev_d=prev_d
+        ref_d, "auctionVolume", _yi_display(get_market_auction_volume_yi(ref_d)), prev_d=prev_d, prefer_prev=prefer_prev_auction
     )
 
     prev_one_word = _auction_ref_prev_display(
-        ref_d, "auctionOneWord", metrics.get("one_word_count"), prev_d=prev_d
+        ref_d, "auctionOneWord", metrics.get("one_word_count"), prev_d=prev_d, prefer_prev=prefer_prev_auction
     )
     if prev_one_word == "--":
-        ow = _auction_one_word_count(ref_d)
+        ow = _auction_one_word_count(prev_d if prefer_prev_auction else ref_d)
         prev_one_word = str(ow) if ow is not None else "--"
 
     prev_top10 = metrics.get("auction_median")
-    prev_top10_s = _auction_ref_prev_display(ref_d, "top10AuctionChg", prev_d=prev_d)
+    prev_top10_s = _auction_ref_prev_display(ref_d, "top10AuctionChg", prev_d=prev_d, prefer_prev=prefer_prev_auction)
     if prev_top10_s == "--":
         archived = _auction_items_by_key(ref_d).get("top10AuctionChg")
         if archived and not _auction_zero_placeholder(archived.get("value")):
@@ -1644,7 +2139,7 @@ def build_auction_sentiment(
         except Exception:
             prev_top10_num = None
 
-    prev_first_s = _auction_ref_prev_display(ref_d, "yesterdayFirst", prev_d=prev_d)
+    prev_first_s = _auction_ref_prev_display(ref_d, "yesterdayFirst", prev_d=prev_d, prefer_prev=prefer_prev_auction)
     prev_first_chg = None
     if prev_first_s not in ("", "--"):
         try:
@@ -1654,7 +2149,7 @@ def build_auction_sentiment(
     elif prev_d:
         prev_first_chg = _avg_board_auction_chg_historical(prev_d, False, ref_d)
 
-    prev_multi_s = _auction_ref_prev_display(ref_d, "yesterdayMulti", prev_d=prev_d)
+    prev_multi_s = _auction_ref_prev_display(ref_d, "yesterdayMulti", prev_d=prev_d, prefer_prev=prefer_prev_auction)
     prev_multi_chg = None
     if prev_multi_s not in ("", "--"):
         try:
@@ -1664,7 +2159,7 @@ def build_auction_sentiment(
     elif prev_d:
         prev_multi_chg = _avg_board_auction_chg_historical(prev_d, True, ref_d)
 
-    prev_recent_s = _auction_ref_prev_display(ref_d, "recentMulti", prev_d=prev_d)
+    prev_recent_s = _auction_ref_prev_display(ref_d, "recentMulti", prev_d=prev_d, prefer_prev=prefer_prev_auction)
     prev_recent_chg = None
     if prev_recent_s not in ("", "--"):
         try:
@@ -1690,7 +2185,7 @@ def build_auction_sentiment(
         return row
 
     one_word_val = _count_display(auction_one_word)
-    if auction_volume == "--" and (auction_one_word is None or auction_one_word == 0):
+    if auction_volume == "--" and auction_one_word is None:
         one_word_val = "--"
     top10_val = _auction_pct_display(top10_avg)
     top10_num = top10_avg if top10_avg is not None else None
@@ -1756,9 +2251,11 @@ def _auction_ref_prev_display(
     fallback=None,
     *,
     prev_d: Optional[str] = None,
+    prefer_prev: bool = False,
 ) -> str:
-    """昨：ref 日竞价归档同 key 主值；缺则试 prev_d 归档"""
-    for d in ((ref_d or "")[:8], (prev_d or "")[:8]):
+    """昨：根据当前展示日选择 ref 或 prev 日竞价归档同 key 主值。"""
+    dates = ((prev_d or "")[:8], (ref_d or "")[:8]) if prefer_prev else ((ref_d or "")[:8], (prev_d or "")[:8])
+    for d in dates:
         if not d:
             continue
         item = _auction_items_by_key(d).get(key)
@@ -1775,8 +2272,9 @@ def _apply_auction_prev_from_ref(
     auction: list,
     ref_d: str,
     prev_d: Optional[str] = None,
+    prefer_prev: bool = False,
 ) -> list:
-    """将竞价块对比列统一为 ref / prev 日 DB 归档值"""
+    """将竞价块对比列统一为 ref / prev 日 DB 归档同 key 主值。"""
     ref_d = (ref_d or "")[:8]
     if not auction or not ref_d:
         return auction
@@ -1785,7 +2283,7 @@ def _apply_auction_prev_from_ref(
         key = it.get("key")
         row = dict(it)
         if key:
-            prev_s = _auction_ref_prev_display(ref_d, key, prev_d=prev_d)
+            prev_s = _auction_ref_prev_display(ref_d, key, prev_d=prev_d, prefer_prev=prefer_prev)
             if prev_s != "--":
                 prev_s = _auction_prev_display(prev_s)
                 row["yesterday"] = prev_s
@@ -1825,7 +2323,7 @@ def build_section_metas(
     advice_metrics: Optional[dict] = None,
 ) -> tuple[dict, str, str]:
     """各板块 meta 与仪表盘综合更新时间"""
-    now = datetime.now()
+    now = bj_now()
     now_hm = now.strftime("%H:%M")
     today = date_str(now)
     ref_d = (ref_d or "")[:8]
@@ -1872,6 +2370,8 @@ def build_section_metas(
                 intraday_meta = f"{adv_label} {now_hm} 更新"
             elif phase == "closed":
                 intraday_meta = f"{adv_label} 15:00 已收盘"
+            elif phase == "night":
+                intraday_meta = "下个交易日 9:30 起更新"
             else:
                 intraday_meta = f"{adv_label} 9:30 起更新"
         except Exception:
@@ -1893,6 +2393,216 @@ def build_section_metas(
     return metas, gauge_label, gauge_hm
 
 
+def _pool_codes_all(df_up: pd.DataFrame) -> list[str]:
+    if df_up is None or df_up.empty:
+        return []
+    col = _df_col(df_up, "\u4ee3\u7801")
+    if not col:
+        return []
+    return _normalize_code_list(df_up[col].tolist())
+
+
+def build_longkong_risk_items(
+    ref_d: str,
+    prev_d: Optional[str],
+    metrics: Optional[dict] = None,
+    prev_metrics: Optional[dict] = None,
+    *,
+    advice_d: str = "",
+) -> list[dict]:
+    metrics = metrics or {}
+    prev_metrics = prev_metrics or {}
+    ref_d = (ref_d or "")[:8]
+
+    df_ref_up = fetch_limit_up(ref_d)
+    df_ref_broken = fetch_broken_board(ref_d)
+    df_ref_down = fetch_limit_down(ref_d)
+    ref_codes = _pool_codes_all(df_ref_up)
+    try:
+        spot_df = ak.stock_zh_a_spot_em()
+    except Exception:
+        spot_df = None
+
+    ref_max_board = int(metrics.get("max_board") or _max_board(df_ref_up) or 0)
+    prev_max_board = int(prev_metrics.get("max_board") or 0)
+    high_break = max(prev_max_board - ref_max_board, 0) if prev_max_board else 0
+
+    premium = _avg_pct_chg(spot_df, ref_codes) if ref_codes else None
+    promote_rate = float(metrics.get("promote_rate") or 0)
+    multi_fail_rate = round(max(0.0, 100.0 - promote_rate), 1)
+
+    broken_n = len(df_ref_broken) if df_ref_broken is not None else 0
+    fallback_up_n = len(df_ref_up) if df_ref_up is not None else 0
+    limit_up_n = int(metrics.get("limit_up_count") or fallback_up_n)
+    reseal_rate = round(limit_up_n / (limit_up_n + broken_n) * 100, 1) if limit_up_n + broken_n > 0 else 0.0
+
+    limit_down_n = int(metrics.get("limit_down_count") or (len(df_ref_down) if df_ref_down is not None else 0))
+    big_loss = 0
+    try:
+        pct_col = _df_col(spot_df, "\u6da8\u8dcc\u5e45")
+        if spot_df is not None and not spot_df.empty and pct_col:
+            big_loss = int((pd.to_numeric(spot_df[pct_col], errors="coerce") <= -7).sum())
+    except Exception:
+        big_loss = 0
+
+    prev_limit_down = prev_metrics.get("limit_down_count")
+    prev_break_rate = prev_metrics.get("break_rate")
+    prev_promote = prev_metrics.get("promote_rate")
+
+    def item(key: str, label: str, value, yesterday, trend, desc: str = "") -> dict:
+        return {
+            "key": key,
+            "label": label,
+            "value": value,
+            "yesterday": yesterday if yesterday not in (None, "") else "--",
+            "trend": trend,
+            "desc": desc,
+        }
+
+    return [
+        item("highBreakFeedback", "\u9ad8\u6807\u65ad\u677f\u8d1f\u53cd\u9988", f"{high_break}\u677f" if high_break > 0 else "0\u677f", f"{prev_max_board}\u677f" if prev_max_board else "--", _trend(high_break, 0, inverse=True), "\u9ad8\u6807\u9ad8\u5ea6\u56de\u843d\u8d8a\u591a\uff0c\u63a5\u529b\u8d1f\u53cd\u9988\u8d8a\u91cd"),
+        item("limitUpPremium", "\u6628\u65e5\u6da8\u505c\u6ea2\u4ef7", f"{float(premium):+.2f}%" if premium is not None else "--", "--", "up" if premium is not None and float(premium) >= 0 else "down" if premium is not None else "flat", "\u6628\u65e5\u6da8\u505c\u6c60\u4eca\u65e5\u5e73\u5747\u8868\u73b0"),
+        item("multiFailRate", "\u8fde\u677f\u664b\u7ea7\u5931\u8d25\u7387", f"{multi_fail_rate:.0f}%", f"{max(0.0, 100.0 - float(prev_promote or 0)):.0f}%" if prev_promote is not None else "--", _trend(multi_fail_rate, max(0.0, 100.0 - float(prev_promote or 0)) if prev_promote is not None else None, inverse=True), "\u664b\u7ea7\u7387\u7684\u53cd\u5411\u98ce\u9669\u53e3\u5f84"),
+        item("resealRate", "\u70b8\u677f\u540e\u56de\u5c01\u7387", f"{reseal_rate:.0f}%", f"{max(0.0, 100.0 - float(prev_break_rate or 0)):.0f}%" if prev_break_rate is not None else "--", _trend(reseal_rate, max(0.0, 100.0 - float(prev_break_rate or 0)) if prev_break_rate is not None else None), "\u6da8\u505c\u5c01\u4f4f\u5360\u6da8\u505c\u52a0\u70b8\u677f\u7684\u6bd4\u4f8b"),
+        item("limitDownRisk", "\u8dcc\u505c\u5bb6\u6570", str(limit_down_n), str(prev_limit_down) if prev_limit_down is not None else "--", _trend(limit_down_n, prev_limit_down, inverse=True), "\u6781\u7aef\u4e8f\u94b1\u6548\u5e94\u6e29\u5ea6"),
+        item("bigLossCount", "\u5927\u9762\u5bb6\u6570", str(big_loss), "--", "down" if big_loss > 20 else "flat", "\u5b9e\u65f6\u8dcc\u5e45\u4e0d\u5c0f\u4e8e 7% \u7684\u4e2a\u80a1\u6570"),
+    ]
+
+
+LONGKONG_RISK_KEYS = (
+    "highBreakFeedback",
+    "limitUpPremium",
+    "multiFailRate",
+    "resealRate",
+    "limitDownRisk",
+    "bigLossCount",
+)
+
+
+def _section_items_complete(items: list, required_keys: tuple[str, ...]) -> bool:
+    by_key = {it.get("key"): it for it in (items or []) if it and it.get("key")}
+    for key in required_keys:
+        val = str((by_key.get(key) or {}).get("value") or (by_key.get(key) or {}).get("displayValue") or "").strip()
+        if not val or val in ("--", "-", "None", "null"):
+            return False
+    return bool(by_key)
+
+
+def _longkong_from_detail(detail: Optional[dict]) -> list:
+    if not detail:
+        return []
+    for sec in detail.get("indicatorSections") or []:
+        if sec.get("id") == "longkongRisk":
+            items = sec.get("items") or []
+            if _section_items_complete(items, LONGKONG_RISK_KEYS):
+                return items
+    return []
+
+
+_longkong_read_cache: dict = {"key": "", "at": 0.0, "items": None}
+
+
+def _longkong_read_ttl_sec() -> int:
+    return int(os.getenv("LONGKONG_READ_TTL_SEC", os.getenv("INTRADAY_READ_TTL_SEC", "90")))
+
+
+def invalidate_longkong_read_cache() -> None:
+    _longkong_read_cache.update({"key": "", "at": 0.0, "items": None})
+
+
+def get_longkong_risk_payload_cached(
+    ref_d: str,
+    prev_d: Optional[str],
+    metrics: Optional[dict] = None,
+    prev_metrics: Optional[dict] = None,
+    *,
+    advice_d: str = "",
+    force: bool = False,
+) -> list[dict]:
+    """盘中实时龙空风控：API 读取时节流重算；定时任务 force=True 强制刷新。"""
+    key = f"{(ref_d or '')[:8]}:{(advice_d or '')[:8]}:{date_str(bj_now())}"
+    now = time.time()
+    if not force:
+        cached = _longkong_read_cache.get("items")
+        if cached and _longkong_read_cache.get("key") == key:
+            age = now - float(_longkong_read_cache.get("at") or 0)
+            if age < _longkong_read_ttl_sec():
+                return cached
+    items = build_longkong_risk_items(
+        ref_d, prev_d, metrics, prev_metrics, advice_d=advice_d
+    )
+    _longkong_read_cache.update({"key": key, "at": now, "items": items})
+    return items
+
+
+def load_longkong_risk_cached(
+    ref_d: str,
+    prev_d: Optional[str],
+    metrics: Optional[dict] = None,
+    prev_metrics: Optional[dict] = None,
+    *,
+    advice_d: str = "",
+    live: bool = False,
+    force: bool = False,
+) -> list[dict]:
+    """龙空风控：收盘后读 daily_market；盘中 live=True 时实时重算（带节流）。"""
+    if live:
+        return get_longkong_risk_payload_cached(
+            ref_d,
+            prev_d,
+            metrics,
+            prev_metrics,
+            advice_d=advice_d,
+            force=force,
+        )
+    try:
+        from history_store import fetch_daily_detail
+    except Exception:
+        fetch_daily_detail = None  # type: ignore
+
+    if fetch_daily_detail:
+        for d in dict.fromkeys([(advice_d or "")[:8], (ref_d or "")[:8]]):
+            if len(d) != 8:
+                continue
+            items = _longkong_from_detail(fetch_daily_detail(d))
+            if items:
+                return items
+    return build_longkong_risk_items(
+        ref_d, prev_d, metrics, prev_metrics, advice_d=advice_d
+    )
+
+
+def load_peripheral_snapshot(advice_d: str) -> list:
+    """外围 3 项：9:00 入库后盘中不变，直接读 MySQL。"""
+    advice_d = (advice_d or "")[:8]
+    if len(advice_d) != 8:
+        return []
+    try:
+        from history_store import fetch_daily_detail
+    except Exception:
+        return []
+    detail = fetch_daily_detail(advice_d)
+    if not detail:
+        return []
+    items = detail.get("peripheral") or []
+    if not items:
+        for sec in detail.get("indicatorSections") or []:
+            if sec.get("id") == "peripheral" and sec.get("items"):
+                items = sec["items"]
+                break
+    if not items:
+        return []
+    m = detail.get("metrics") or {}
+    if m.get("peripheral_db_phase") == "0900":
+        return items
+    if any(
+        str(it.get("price") or it.get("value") or "").strip() not in ("", "--")
+        for it in items
+    ):
+        return items
+    return []
+
+
 def build_indicator_sections(
     ref_d: str,
     prev_d: Optional[str],
@@ -1901,13 +2611,14 @@ def build_indicator_sections(
     *,
     advice_d: str = "",
     is_ready: bool = True,
+    live_longkong: bool = False,
 ) -> list[dict]:
     """三大类共 18 项指标"""
     if not advice_d:
         advice_d = ref_d
     metas, _, _ = build_section_metas(ref_d, advice_d, is_ready, ref_metrics=metrics)
-    ref_label = _relative_day_label(ref_d, date_str(datetime.now()))
-    adv_label = _relative_day_label(advice_d, date_str(datetime.now()))
+    ref_label = _relative_day_label(ref_d, date_str(bj_now()))
+    adv_label = _relative_day_label(advice_d, date_str(bj_now()))
     return [
         {
             "id": "yesterday",
@@ -1923,7 +2634,7 @@ def build_indicator_sections(
             "meta": metas["peripheral"],
             "layout": "row3",
             "cols": 3,
-            "items": fetch_peripheral_sentiment(),
+            "items": load_peripheral_snapshot(advice_d) or fetch_peripheral_sentiment(),
         },
         {
             "id": "auction",
@@ -1933,6 +2644,21 @@ def build_indicator_sections(
             "cols": 3,
             "items": build_auction_sentiment(
                 ref_d, metrics, prev_metrics, prev_d, advice_d=advice_d
+            ),
+        },
+        {
+            "id": "longkongRisk",
+            "title": "\u9f99\u7a7a\u9f99\u4e13\u5c5e\u98ce\u63a7",
+            "meta": metas["intraday"],
+            "layout": "grid3",
+            "cols": 3,
+            "items": load_longkong_risk_cached(
+                ref_d,
+                prev_d,
+                metrics,
+                prev_metrics,
+                advice_d=advice_d,
+                live=live_longkong,
             ),
         },
     ]
@@ -1998,10 +2724,12 @@ def display_level_label(score: int) -> str:
         return "高潮"
     if score >= 60:
         return "偏乐观"
-    if score >= 40:
+    if score >= 50:
         return "中性"
-    if score >= 20:
+    if score >= 40:
         return "偏谨慎"
+    if score >= 30:
+        return "偏冷"
     return "冰点"
 
 
@@ -2012,10 +2740,12 @@ def display_level_class(score: int) -> str:
         return "climax"
     if score >= 60:
         return "optimistic"
-    if score >= 40:
+    if score >= 50:
         return "neutral"
-    if score >= 20:
+    if score >= 40:
         return "caution"
+    if score >= 30:
+        return "weak"
     return "cold"
 
 
@@ -2114,7 +2844,7 @@ def fetch_high10_stats(ref_metrics: Optional[dict] = None, *, live: bool = False
     if cached:
         return cached
 
-    today_d = date_str(datetime.now())
+    today_d = date_str(bj_now())
     prev_d = None
     dates = get_recent_trade_dates(5)
     if today_d in dates:
@@ -2255,7 +2985,136 @@ def _load_top10_codes_for_date(trade_d: str) -> list[str]:
     cached = _cache_get(f"top10_codes_{trade_d}", 86400 * 30)
     if cached:
         return list(cached)
-    if trade_d == date_str(datetime.now()):
+    if trade_d == date_str(bj_now()):
+        codes = _snapshot_top10_codes()
+        if codes:
+            _cache_set(f"top10_codes_{trade_d}", codes)
+        return codes
+    return []
+
+
+def _df_col(df: Optional[pd.DataFrame], name: str) -> Optional[str]:
+    if df is None or df.empty:
+        return None
+    if name in df.columns:
+        return name
+    for col in df.columns:
+        if str(col).strip() == name:
+            return col
+    return None
+
+
+def _normalize_code_list(codes) -> list[str]:
+    if not codes:
+        return []
+    if isinstance(codes, str):
+        codes = re.split(r"[,，\s]+", codes)
+    out: list[str] = []
+    for code in codes:
+        c = re.sub(r"\D", "", str(code or "")).zfill(6)
+        if len(c) == 6 and c not in out:
+            out.append(c)
+    return out
+
+
+def _snapshot_top10_codes(spot_df: Optional[pd.DataFrame] = None) -> list[str]:
+    try:
+        df = spot_df if spot_df is not None else ak.stock_zh_a_spot_em()
+        amount_col = _df_col(df, "\u6210\u4ea4\u989d")
+        code_col = _df_col(df, "\u4ee3\u7801")
+        if df is None or df.empty or not amount_col or not code_col:
+            return []
+        return (
+            df.nlargest(10, amount_col)[code_col]
+            .astype(str)
+            .str.replace(r"\D", "", regex=True)
+            .str.zfill(6)
+            .tolist()
+        )
+    except Exception:
+        return []
+
+
+def _avg_pct_chg(spot_df: Optional[pd.DataFrame], codes: Optional[list[str]] = None) -> Optional[float]:
+    pct_col = _df_col(spot_df, "\u6da8\u8dcc\u5e45")
+    if spot_df is None or spot_df.empty or not pct_col:
+        return None
+    df = spot_df
+    if codes:
+        code_col = _df_col(df, "\u4ee3\u7801")
+        if not code_col:
+            return None
+        norm = df[code_col].astype(str).str.replace(r"\D", "", regex=True).str.zfill(6)
+        sub = df[norm.isin(_normalize_code_list(codes))]
+        if sub.empty:
+            return None
+        df = sub
+    else:
+        amount_col = _df_col(df, "\u6210\u4ea4\u989d")
+        if amount_col:
+            df = df.nlargest(10, amount_col)
+    val = pd.to_numeric(df[pct_col], errors="coerce").mean(skipna=True)
+    if pd.isna(val):
+        return None
+    return round(float(val), 2)
+
+
+def _avg_open_pct_for_top_amount(
+    spot_df: Optional[pd.DataFrame],
+    codes: Optional[list[str]] = None,
+) -> Optional[float]:
+    open_col = _df_col(spot_df, "\u4eca\u5f00")
+    prev_col = _df_col(spot_df, "\u6628\u6536")
+    if spot_df is None or spot_df.empty or not open_col or not prev_col:
+        return None
+    df = spot_df
+    if codes:
+        code_col = _df_col(df, "\u4ee3\u7801")
+        if not code_col:
+            return None
+        norm = df[code_col].astype(str).str.replace(r"\D", "", regex=True).str.zfill(6)
+        sub = df[norm.isin(_normalize_code_list(codes))]
+        if sub.empty:
+            return None
+        df = sub
+    else:
+        amount_col = _df_col(df, "\u6210\u4ea4\u989d")
+        if amount_col:
+            df = df.nlargest(10, amount_col)
+    o = pd.to_numeric(df[open_col], errors="coerce")
+    p = pd.to_numeric(df[prev_col], errors="coerce").replace(0, pd.NA)
+    val = ((o - p) / p * 100).mean(skipna=True)
+    if pd.isna(val):
+        return None
+    return round(float(val), 2)
+
+
+def _load_top10_codes_from_daily_market(trade_d: str) -> list[str]:
+    trade_d = (trade_d or "").replace("-", "")[:8]
+    if not trade_d:
+        return []
+    try:
+        from history_store import fetch_daily_detail
+
+        detail = fetch_daily_detail(trade_d)
+        codes = ((detail or {}).get("metrics") or {}).get("top10_codes")
+        return _normalize_code_list(codes)
+    except Exception:
+        return []
+
+
+def _load_top10_codes_for_date(trade_d: str) -> list[str]:
+    trade_d = (trade_d or "")[:8]
+    if not trade_d:
+        return []
+    cached = _cache_get(f"top10_codes_{trade_d}", 86400 * 30)
+    if cached:
+        return _normalize_code_list(cached)
+    stored = _load_top10_codes_from_daily_market(trade_d)
+    if stored:
+        _cache_set(f"top10_codes_{trade_d}", stored)
+        return stored
+    if trade_d == date_str(bj_now()):
         codes = _snapshot_top10_codes()
         if codes:
             _cache_set(f"top10_codes_{trade_d}", codes)
@@ -2304,7 +3163,7 @@ def fetch_intraday_board_stats(
     """
     ref_metrics = ref_metrics or {}
     ref_d = (ref_d or "")[:8]
-    today = date_str(datetime.now())
+    today = date_str(bj_now())
 
     cache_ttl = INTRADAY_CACHE_TTL if live else 90
     cached = _cache_get("intraday_board_stats_v1", cache_ttl)
@@ -2317,12 +3176,12 @@ def fetch_intraday_board_stats(
     except Exception:
         pass
 
-    ref_codes = ref_metrics.get("top10_codes") or []
-    if isinstance(ref_codes, str):
-        ref_codes = [c.strip() for c in ref_codes.split(",") if c.strip()]
+    ref_codes = _normalize_code_list(ref_metrics.get("top10_codes") or [])
     if not ref_codes:
         ref_codes = _load_top10_codes_for_date(ref_d)
     top10_live = _avg_pct_chg(spot_df, ref_codes if ref_codes else None)
+    if top10_live is None and ref_codes:
+        top10_live = _avg_open_pct_for_top_amount(spot_df, ref_codes)
     prev_top10_f = _resolve_prev_top10_avg(ref_metrics, ref_d)
 
     promote_live = _promote_rate(ref_d, today) if ref_d and ref_d != today else None
@@ -2391,7 +3250,7 @@ def build_ref_day_metrics(trade_d: str, prev_d: Optional[str] = None) -> dict:
 
     top10_codes: list[str] = []
     top10_avg_chg = None
-    if trade_d == date_str(datetime.now()):
+    if trade_d == date_str(bj_now()):
         try:
             spot_df = ak.stock_zh_a_spot_em()
             top10_codes = _snapshot_top10_codes(spot_df)
@@ -2401,9 +3260,7 @@ def build_ref_day_metrics(trade_d: str, prev_d: Optional[str] = None) -> dict:
         except Exception:
             pass
     else:
-        cached_codes = _cache_get(f"top10_codes_{trade_d}", 86400 * 30)
-        if cached_codes:
-            top10_codes = list(cached_codes)
+        top10_codes = _load_top10_codes_for_date(trade_d)
 
     return {
         "date": f"{trade_d[:4]}-{trade_d[4:6]}-{trade_d[6:8]}",
@@ -2440,13 +3297,14 @@ def load_ref_day_snapshot(ref_d: str, prev_d: Optional[str] = None) -> tuple[dic
 
     ref_detail = fetch_daily_detail(ref_d) if fetch_daily_detail else None
     if ref_detail and _snapshot_grid9_complete(ref_detail.get("metrics"), ref_detail.get("grid9")):
-        metrics = ref_detail["metrics"]
-        grid9 = ref_detail["grid9"]
+        raw_metrics = ref_detail["metrics"]
         prev_metrics = None
         if prev_d and fetch_daily_detail:
             prev_detail = fetch_daily_detail(prev_d)
             if prev_detail and prev_detail.get("metrics"):
-                prev_metrics = prev_detail["metrics"]
+                prev_metrics = _fill_metrics_breadth(prev_detail["metrics"], prev_d)
+        metrics = _fill_metrics_breadth(raw_metrics, ref_d)
+        grid9 = build_yesterday_sentiment(metrics, prev_metrics)
         return metrics, prev_metrics, grid9
 
     if em_pool_available(ref_d):
@@ -2460,13 +3318,16 @@ def load_ref_day_snapshot(ref_d: str, prev_d: Optional[str] = None) -> tuple[dic
         return metrics, prev_metrics, grid9
 
     if ref_detail:
-        metrics = ref_detail.get("metrics") or build_ref_day_metrics(ref_d, prev_d)
+        metrics = _fill_metrics_breadth(
+            ref_detail.get("metrics") or build_ref_day_metrics(ref_d, prev_d),
+            ref_d,
+        )
         prev_metrics = None
         if prev_d and fetch_daily_detail:
             prev_detail = fetch_daily_detail(prev_d)
             if prev_detail and prev_detail.get("metrics"):
-                prev_metrics = prev_detail["metrics"]
-        grid9 = ref_detail.get("grid9") or build_yesterday_sentiment(metrics, prev_metrics)
+                prev_metrics = _fill_metrics_breadth(prev_detail["metrics"], prev_d)
+        grid9 = build_yesterday_sentiment(metrics, prev_metrics)
         return metrics, prev_metrics, grid9
 
     metrics = _fill_metrics_breadth(build_ref_day_metrics(ref_d, prev_d), ref_d)
@@ -2520,11 +3381,13 @@ def load_auction_snapshot(
     """今日竞价情绪：固化后读 MySQL，否则实时计算。"""
     advice_d = (advice_d or "")[:8]
     ref_d = (ref_d or "")[:8]
-    today = date_str(datetime.now())
+    today = date_str(bj_now())
     trade_dates = get_recent_trade_dates(15)
+    adv_metrics = load_advice_metrics(advice_d) if advice_d else {}
+    merged_metrics = {**dict(metrics or {}), **adv_metrics}
 
     frozen = _try_load_frozen_auction(advice_d, ref_d, prev_d)
-    if frozen:
+    if frozen and not auction_items_incomplete(frozen):
         return frozen
 
     # 非交易日：展示最近一个交易日的竞价归档
@@ -2538,7 +3401,7 @@ def load_auction_snapshot(
     # 9:25 前也返回 6 项占位（--），避免缓存写入空 items 后无法恢复
     return sanitize_auction_items(
         build_auction_sentiment(
-            ref_d, metrics, prev_metrics, prev_d, advice_d=advice_d
+            ref_d, merged_metrics, prev_metrics, prev_d, advice_d=advice_d
         )
     )
 
@@ -2564,7 +3427,7 @@ def build_day_metrics(trade_d: str, prev_d: Optional[str] = None) -> dict:
     df_up = fetch_limit_up(trade_d)
     limit_up = int(base.get("limit_up_count") or 0)
 
-    activity = fetch_market_activity() if trade_d == date_str(datetime.now()) else {}
+    activity = fetch_market_activity() if trade_d == date_str(bj_now()) else {}
     volume_amount = base.get("volume_amount", "--")
     volume_raw = float(base.get("volume_raw") or 0)
     if not volume_raw and activity.get("amount_raw"):
@@ -2573,7 +3436,7 @@ def build_day_metrics(trade_d: str, prev_d: Optional[str] = None) -> dict:
             volume_amount = f"{round(volume_raw)}亿"
 
     auction_up = 0
-    if trade_d == date_str(datetime.now()) and datetime.now().hour >= 9:
+    if trade_d == date_str(bj_now()) and bj_now().hour >= 9:
         auction_up = min(limit_up, _auction_up_estimate()) if limit_up else _auction_up_estimate()
     elif limit_up:
         auction_up = min(limit_up, max(3, limit_up // 3))
@@ -2613,7 +3476,7 @@ def build_indicators(metrics: dict, prev_metrics: Optional[dict] = None) -> list
         ("limitUp", "🔴", "涨停家数", str(metrics["limit_up_count"]), str(prev.get("limit_up_count", "-")), metrics["limit_up_count"], trend(metrics["limit_up_count"], prev.get("limit_up_count"))),
         ("limitDown", "🟢", "跌停家数", str(metrics["limit_down_count"]), str(prev.get("limit_down_count", "-")), metrics["limit_down_count"], trend(metrics["limit_down_count"], prev.get("limit_down_count"))),
         ("auction", "⏰", "竞价涨幅中位数", f"{metrics.get('auction_median', 0):.2f}%", f"{prev.get('auction_median', 0):.2f}%", 30, "flat"),
-        ("auctionUp", "🚀", "竞价涨停数", str(metrics["auction_up"]), str(prev.get("auction_up", "-")), metrics["auction_up"], trend(metrics["auction_up"], prev.get("auction_up"))),
+        ("auctionUp", "🚀", "竞价涨停数", str(metrics.get("auction_up", 0)), str(prev.get("auction_up", "-")), metrics.get("auction_up", 0), trend(metrics.get("auction_up", 0), prev.get("auction_up"))),
         ("seal", "🔒", "封板率", f"{metrics['seal_rate']:.0f}%", f"{prev.get('seal_rate', 0):.0f}%", metrics["seal_rate"], trend(metrics["seal_rate"], prev.get("seal_rate"))),
         ("break", "💥", "炸板率", f"{metrics['break_rate']:.0f}%", f"{prev.get('break_rate', 0):.0f}%", metrics["break_rate"], trend(metrics["break_rate"], prev.get("break_rate"))),
     ]

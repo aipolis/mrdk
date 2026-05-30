@@ -150,15 +150,12 @@ function sanitizeAuctionList(items) {
   if (!Array.isArray(items) || !items.length) return items
   const volItem = items.find(i => i.key === 'auctionVolume')
   const volMissing = displayText(volItem && (volItem.value || volItem.displayValue)) === '--'
-  const pctKeys = new Set(['yesterdayFirst', 'yesterdayMulti', 'recentMulti', 'top10AuctionChg'])
   const zeroPct = new Set(['+0.00%', '-0.00%', '0.00%', '0%', '0', '0.0'])
   return items.map(item => {
     const out = { ...item }
     let val = displayText(out.value)
-    if (pctKeys.has(out.key) && zeroPct.has(val)) val = '--'
     if (out.key === 'auctionOneWord' && volMissing && (val === '0' || val === '0.0')) val = '--'
     let prev = displayText(out.prev != null ? out.prev : out.yesterday)
-    if (zeroPct.has(prev) || prev === '+0.00%' || prev === '-0.00%') prev = '--'
     out.value = val
     out.displayValue = val
     out.prev = prev
@@ -174,10 +171,7 @@ function sanitizeAuctionList(items) {
 const ZERO_PCT = new Set(['+0.00%', '-0.00%', '0.00%', '0%', '0', '0.0'])
 
 function shouldShowAuctionTodayValues() {
-  const now = new Date()
-  const wd = now.getDay()
-  if (wd === 0 || wd === 6) return false
-  return now.getHours() * 60 + now.getMinutes() >= 9 * 60 + 15
+  return true
 }
 
 function pickPrevMany(...candidates) {
@@ -248,7 +242,14 @@ function buildAuctionPrevMap(data) {
 
 function mergeAuctionItems(rawItems, data) {
   const prevMap = buildAuctionPrevMap(data)
+  const hasServerValue = (list) => (list || []).some(it => {
+    const v = displayText(it && (it.displayValue != null ? it.displayValue : it.value))
+    return v !== '--' && !ZERO_PCT.has(v)
+  })
   const showToday = shouldShowAuctionTodayValues()
+    || data.isReportReady !== false
+    || hasServerValue(data && data.auction)
+    || hasServerValue(rawItems)
   const byKey = {}
   ;((data && data.auction) || []).forEach(it => { if (it && it.key) byKey[it.key] = it })
   ;(rawItems || []).forEach(it => { if (it && it.key) byKey[it.key] = it })
@@ -260,7 +261,6 @@ function mergeAuctionItems(rawItems, data) {
     if (showToday && it) {
       value = it.displayValue != null ? it.displayValue : it.value
       value = value != null && String(value).trim() !== '' ? String(value) : '--'
-      if (ZERO_PCT.has(value)) value = '--'
       if (key === 'auctionOneWord' && value === '0') value = '--'
     }
     return mapItem({
@@ -377,6 +377,10 @@ function normalizeAuction(data) {
 
 
 function resolveSsePrev(data, byKey) {
+  const pm = (data && data.prevMetrics) || {}
+  if (pm.index_chg != null && !Number.isNaN(Number(pm.index_chg))) {
+    return formatPct(pm.index_chg)
+  }
   const m = (data && data.metrics) || {}
   if (m.index_chg != null && !Number.isNaN(Number(m.index_chg))) {
     return formatPct(m.index_chg)
@@ -439,19 +443,33 @@ function resolveHigh10Prev(data) {
   return '--'
 }
 
+function dateKey(raw) {
+  return String(raw || '').replace(/\D/g, '').slice(0, 8)
+}
+
+function getIntradayCompareMetrics(data) {
+  const ref = dateKey(data && data.refDate)
+  const advice = dateKey(data && (data.adviceDate || data.date))
+  const prev = data && data.prevMetrics
+  if (ref && advice && ref === advice && prev && Object.keys(prev).length) return prev
+  return (data && data.metrics) || {}
+}
+
 function buildIntradayPrevMap(data) {
   const grid = normalizeGrid9(data || {})
   const byKey = {}
   grid.forEach(c => { byKey[c.key || c.name] = c })
-  const m = (data && data.metrics) || {}
+  const m = getIntradayCompareMetrics(data)
   const prevAdv = m.advance_count != null ? m.advance_count : parseAdvanceFromCell(byKey.advance)
   const prevDec = m.decline_count
   const prevLu = m.limit_up_count != null ? m.limit_up_count : (byKey.limitUp && byKey.limitUp.value)
   const prevLd = m.limit_down_count != null ? m.limit_down_count : (byKey.limitDown && byKey.limitDown.value)
   let prevRatio = '--'
   if (prevAdv != null && prevDec != null) {
-    const total = Number(prevAdv) + Number(prevDec)
-    if (total >= 50) prevRatio = `${(Number(prevAdv) / total * 100).toFixed(1)}%`
+    const advN = Number(prevAdv)
+    const decN = Number(prevDec)
+    const total = advN + decN
+    if (advN > 0 && decN > 0 && total >= 500) prevRatio = `${(advN / total * 100).toFixed(1)}%`
   }
   return {
     sseIndex: resolveSsePrev(data, byKey),
@@ -471,6 +489,9 @@ function enrichIntradayPrev(items, data) {
   return (items || []).map(it => {
     const fallback = prevMap[it.key]
     const prev = pickPrev(it.prev || it.yesterday, fallback)
+    if (it.key === 'upRatio' && Number(((data && data.metrics) || {}).decline_count || 0) <= 0) {
+      return { ...it, value: '--', prev, yesterday: prev }
+    }
     return { ...it, prev, yesterday: prev }
   })
 }
@@ -531,8 +552,30 @@ function isIntradayPinnedWindow(date = new Date()) {
   return hm >= 9 * 60 && hm <= 15 * 60 + 30
 }
 
+const TRADING_SECTION_ORDER = [
+  'intraday',
+  'longkongRisk',
+  'auction',
+  'yesterday',
+  'peripheral',
+]
+
 function orderIndicatorSections(sections) {
   if (!Array.isArray(sections) || !sections.length) return sections || []
+  if (isIntradayPinnedWindow()) {
+    const byId = {}
+    sections.forEach(sec => {
+      if (sec && sec.id) byId[sec.id] = sec
+    })
+    const ordered = TRADING_SECTION_ORDER
+      .filter(id => byId[id])
+      .map(id => byId[id])
+    const known = new Set(TRADING_SECTION_ORDER)
+    sections.forEach(sec => {
+      if (sec && sec.id && !known.has(sec.id)) ordered.push(sec)
+    })
+    return ordered.length ? ordered : sections
+  }
   let intraday = null
   const rest = []
   sections.forEach(sec => {
@@ -540,7 +583,6 @@ function orderIndicatorSections(sections) {
     else rest.push(sec)
   })
   if (!intraday) return sections
-  if (isIntradayPinnedWindow()) return [intraday, ...rest]
   return [...rest, intraday]
 }
 
@@ -684,5 +726,3 @@ module.exports = {
   AUCTION_DEFS
 
 }
-
-

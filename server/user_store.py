@@ -6,6 +6,7 @@ import logging
 from datetime import datetime
 from typing import Any, Optional
 
+from config import bj_now
 from db_store import MYSQL_CHARSET, MYSQL_COLLATE, ensure_schema, mysql_enabled, with_retry
 
 log = logging.getLogger("mingri.user")
@@ -99,7 +100,7 @@ def upsert_user_login(
 
     nick = (nick_name or "").strip()[:64]
     avatar = _safe_avatar(avatar_url)
-    now = datetime.now()
+    now = bj_now()
     theme = (ui_theme or "").strip()[:16] or None
     ps = int(bool(push_sentiment)) if push_sentiment is not None else None
     pe = int(bool(push_empty)) if push_empty is not None else None
@@ -196,7 +197,7 @@ def register_user_push(openid: str, subscribe_type: str) -> None:
                 VALUES (%s, %s, 1, %s)
                 ON DUPLICATE KEY UPDATE {col}=1, last_login_at=VALUES(last_login_at)
                 """,
-                (openid, "微信用户", datetime.now()),
+                (openid, "微信用户", bj_now()),
             )
         conn.commit()
 

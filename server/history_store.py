@@ -6,11 +6,17 @@ import json
 import logging
 from typing import Any, Optional
 
-from db_store import ensure_schema, mysql_enabled, with_retry
+from db_store import TABLE_INTRADAY, ensure_schema, mysql_enabled, with_retry
 
 log = logging.getLogger("mingri.history")
 
 TABLE_DAILY = "daily_market"
+
+
+def _json_blob(value: Any, fallback):
+    if value is None:
+        value = fallback
+    return json.dumps(value, ensure_ascii=False)
 
 
 def _trade_d_from_metrics(metrics: dict) -> str:
@@ -157,6 +163,89 @@ def save_daily_record(
         return True
     except Exception:
         log.exception("save daily record failed trade_d=%s", trade_d)
+        return False
+
+
+def save_intraday_snapshot(
+    trade_d: str,
+    snap_time: str,
+    *,
+    ref_d: str = "",
+    advice_d: str = "",
+    baseline_score: int = 0,
+    intraday_score: Optional[int] = None,
+    display_score: int = 0,
+    score_mode: str = "",
+    longkong_signal: str = "",
+    empty_warning: bool = False,
+    items: Optional[list] = None,
+    snap: Optional[dict] = None,
+    sub_scores: Optional[dict] = None,
+    source_status: Optional[dict] = None,
+) -> bool:
+    """Persist a one-minute/two-minute intraday sentiment snapshot."""
+    if not mysql_enabled() or not ensure_schema():
+        return False
+    trade_d = (trade_d or "").replace("-", "")[:8]
+    ref_d = (ref_d or "").replace("-", "")[:8]
+    advice_d = (advice_d or "").replace("-", "")[:8]
+    snap_time = str(snap_time or "").strip()[:5]
+    if len(trade_d) != 8 or len(snap_time) < 4:
+        return False
+
+    def _run(conn):
+        with conn.cursor() as cur:
+            cur.execute(
+                f"""
+                INSERT INTO `{TABLE_INTRADAY}` (
+                    trade_date, snap_time, ref_trade_date, advice_date,
+                    baseline_score, intraday_score, display_score, score_mode,
+                    longkong_signal, empty_warning,
+                    items_json, snap_json, sub_scores_json, source_status_json
+                ) VALUES (
+                    %s, %s, %s, %s,
+                    %s, %s, %s, %s,
+                    %s, %s,
+                    %s, %s, %s, %s
+                )
+                ON DUPLICATE KEY UPDATE
+                    ref_trade_date=VALUES(ref_trade_date),
+                    advice_date=VALUES(advice_date),
+                    baseline_score=VALUES(baseline_score),
+                    intraday_score=VALUES(intraday_score),
+                    display_score=VALUES(display_score),
+                    score_mode=VALUES(score_mode),
+                    longkong_signal=VALUES(longkong_signal),
+                    empty_warning=VALUES(empty_warning),
+                    items_json=VALUES(items_json),
+                    snap_json=VALUES(snap_json),
+                    sub_scores_json=VALUES(sub_scores_json),
+                    source_status_json=VALUES(source_status_json)
+                """,
+                (
+                    trade_d,
+                    snap_time,
+                    ref_d or None,
+                    advice_d or None,
+                    int(baseline_score or 0),
+                    int(intraday_score) if intraday_score is not None else None,
+                    int(display_score or 0),
+                    score_mode or "",
+                    longkong_signal or "",
+                    1 if empty_warning else 0,
+                    _json_blob(items, []),
+                    _json_blob(snap, {}),
+                    _json_blob(sub_scores, {}),
+                    _json_blob(source_status, {}),
+                ),
+            )
+        conn.commit()
+
+    try:
+        with_retry(_run)
+        return True
+    except Exception:
+        log.exception("save intraday snapshot failed trade_d=%s time=%s", trade_d, snap_time)
         return False
 
 
@@ -369,11 +458,35 @@ def count_daily_with_sections() -> int:
         return 0
 
 
+def count_intraday_snapshots(trade_d: str = "") -> int:
+    if not mysql_enabled() or not ensure_schema():
+        return 0
+    trade_d = (trade_d or "").replace("-", "")[:8]
+
+    def _run(conn):
+        with conn.cursor() as cur:
+            if trade_d:
+                cur.execute(
+                    f"SELECT COUNT(*) AS c FROM `{TABLE_INTRADAY}` WHERE trade_date=%s",
+                    (trade_d,),
+                )
+            else:
+                cur.execute(f"SELECT COUNT(*) AS c FROM `{TABLE_INTRADAY}`")
+            row = cur.fetchone()
+        return int((row or {}).get("c") or 0)
+
+    try:
+        return with_retry(_run) or 0
+    except Exception:
+        return 0
+
+
 def history_db_status() -> dict:
     return {
         "enabled": mysql_enabled(),
         "table": TABLE_DAILY,
         "rowCount": count_daily_records(),
         "sectionsRowCount": count_daily_with_sections(),
+        "intradaySnapshotRowCount": count_intraday_snapshots(),
         "latest": (list_stored_trade_dates(1) or [None])[0],
     }
