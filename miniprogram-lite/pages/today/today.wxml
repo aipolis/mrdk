@@ -120,7 +120,7 @@
         class="subscribe-btn"
         bindtap="onSubscribe"
       >
-        <text class="subscribe-text">订阅提醒，每日早上8:30推送今日天气</text>
+        <text class="subscribe-text">订阅提醒，每日早上9:10推送今日天气</text>
         <view class="subscribe-bell">
           <image class="subscribe-icon" src="/images/icon-bell.png" mode="aspectFit"/>
           <text class="subscribe-bell-text">立即订阅</text>

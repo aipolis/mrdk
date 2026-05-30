@@ -70,9 +70,9 @@ def start_internal_cron(
         replace_existing=True,
     )
     sched.add_job(
-        lambda: _safe("warm-home-0820", warm_fn),
-        CronTrigger(day_of_week=weekday, hour=8, minute=20),
-        id="warm-home-0820",
+        lambda: _safe("warm-home-0855", warm_fn),
+        CronTrigger(day_of_week=weekday, hour=8, minute=55),
+        id="warm-home-0855",
         replace_existing=True,
     )
     sched.add_job(
@@ -94,9 +94,9 @@ def start_internal_cron(
         replace_existing=True,
     )
     sched.add_job(
-        lambda: _safe("subscribe-daily-0830", daily_push_fn),
-        CronTrigger(day_of_week=weekday, hour=8, minute=30),
-        id="subscribe-daily-0830",
+        lambda: _safe("subscribe-daily-0910", daily_push_fn),
+        CronTrigger(day_of_week=weekday, hour=9, minute=10),
+        id="subscribe-daily-0910",
         replace_existing=True,
     )
     sched.add_job(
