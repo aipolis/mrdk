@@ -1589,6 +1589,32 @@ def build_yesterday_sentiment(metrics: dict, prev_metrics: Optional[dict] = None
             "limit_up_count": lu,
             "trend": _trend(mb / lu if lu else 0, mb_prev / lu_prev if lu_prev else None),
         })
+
+    # 10日新高数（可选）
+    high10 = metrics.get("high10_count")
+    if high10 is not None:
+        high10_prev = prev.get("high10_count")
+        rows.append({
+            "key": "high10",
+            "label": "10日新高",
+            "value": str(int(high10)),
+            "yesterday": str(int(high10_prev)) if high10_prev is not None else "--",
+            "trend": _trend(high10, high10_prev),
+        })
+
+    # 成交额前10均涨幅（可选）
+    top10_chg = metrics.get("top10_avg_chg")
+    if top10_chg is not None:
+        top10_chg_f = _safe_float(top10_chg)
+        top10_prev = prev.get("top10_avg_chg")
+        top10_prev_f = _safe_float(top10_prev)
+        rows.append({
+            "key": "top10AvgChg",
+            "label": "龙头平均涨幅",
+            "value": f"{top10_chg_f:+.2f}%" if top10_chg_f is not None else "--",
+            "yesterday": f"{top10_prev_f:+.2f}%" if top10_prev_f is not None else "--",
+            "trend": _trend(top10_chg_f, top10_prev_f),
+        })
     # 板块集中度（如 metrics 中有数据）
     sc = metrics.get("sector_concentration") or {}
     if sc.get("total", 0) >= 10:
@@ -1654,38 +1680,65 @@ def build_grid_nine(metrics: dict, prev_metrics: Optional[dict] = None) -> list:
 
 def calc_sector_concentration(trade_d: str) -> dict:
     """
-    计算涨停板块集中度。
-    使用 akshare 涨停池的「所属行业」字段，计算 HHI 及前三板块占比。
-    返回 {topSectors, top3Ratio, hhi, total, topSector}。
-    集中度高（热点聚焦）→ 对接力有利；分散 → 主题扩散，接力难度大。
+    计算涨停概念集中度。
+    使用概念资金流（stock_fund_flow_concept）识别当日热点概念：
+    领涨股涨停（涨跌幅≥9.8%）的概念即为热点概念，按概念涨跌幅排序。
+    集中度（top3Ratio）= 前三概念涨幅之和 / 全部热点概念涨幅之和，反映热点聚焦程度。
     """
     key = f"sector_conc_{trade_d}"
     cached = _cache_get(key, 900)
     if cached is not None:
         return cached
 
-    empty = {"topSectors": [], "top3Ratio": 0.0, "hhi": 0.0, "total": 0, "topSector": ""}
+    empty = {"topSectors": [], "top3Ratio": 0.0, "hhi": 0.0, "total": 0, "topSector": "",
+             "hotConceptCount": 0}
     try:
-        df = fetch_limit_up(trade_d)
-        if df is None or df.empty or "所属行业" not in df.columns:
-            return empty
-        total = len(df)
-        if total == 0:
-            return empty
-        counts = df["所属行业"].value_counts()
-        top_sectors = [
-            {"name": str(s), "count": int(c), "ratio": round(int(c) / total * 100, 1)}
-            for s, c in counts.items()
-        ]
-        top3_count = sum(d["count"] for d in top_sectors[:3])
-        top3_ratio = round(top3_count / total * 100, 1)
-        hhi = round(sum((d["count"] / total) ** 2 for d in top_sectors) * 100, 1)
+        # 涨停池：获取总数与涨停股名称集合
+        lu_df = fetch_limit_up(trade_d)
+        total = len(lu_df) if lu_df is not None and not lu_df.empty else 0
+        lu_names: set[str] = set(lu_df["名称"].tolist()) if total > 0 else set()
+
+        # 概念资金流：单次调用，返回全部概念的领涨股信息
+        import akshare as ak
+        concept_df = ak.stock_fund_flow_concept(symbol="即时")
+
+        # 筛选热点概念：领涨股涨幅≥9.8% 视为涨停（含科创/创业板高涨幅）
+        # 或领涨股名称在今日涨停池中
+        hot: list[dict] = []
+        for _, row in concept_df.iterrows():
+            leader = str(row.get("领涨股", "") or "").strip()
+            leader_chg = _safe_float(row.get("领涨股-涨跌幅"))
+            concept_chg = _safe_float(row.get("行业-涨跌幅"))
+            concept_name = str(row.get("行业", "") or "").strip()
+            if not concept_name:
+                continue
+            is_hot = (leader_chg is not None and leader_chg >= 9.8) or (leader and leader in lu_names)
+            if is_hot and concept_chg is not None and concept_chg > 0:
+                hot.append({
+                    "name": concept_name,
+                    "chg": round(concept_chg, 2),
+                    "leader": leader,
+                    "count": 1,
+                    "ratio": round(concept_chg, 2),  # ratio field reused for chg display
+                })
+
+        hot.sort(key=lambda x: x["chg"], reverse=True)
+
+        # 集中度：前三概念涨幅占全部热点概念涨幅之和的比例
+        all_chg = sum(h["chg"] for h in hot)
+        top3_chg = sum(h["chg"] for h in hot[:3])
+        top3_ratio = round(top3_chg / all_chg * 100, 1) if all_chg > 0 else 0.0
+
+        # HHI：热点概念涨幅分布的集中度
+        hhi = round(sum((h["chg"] / all_chg) ** 2 for h in hot) * 100, 1) if all_chg > 0 else 0.0
+
         result = {
-            "topSectors": top_sectors[:5],
+            "topSectors": hot[:5],
             "top3Ratio": top3_ratio,
             "hhi": hhi,
             "total": total,
-            "topSector": top_sectors[0]["name"] if top_sectors else "",
+            "topSector": hot[0]["name"] if hot else "",
+            "hotConceptCount": len(hot),
         }
         _cache_set(key, result, 900)
         return result
