@@ -1128,18 +1128,39 @@ async def _run_daily_subscribe_push() -> dict:
     ref_d, prev_d, advice_d, is_ready = resolve_advice_dates()
     metrics = build_day_metrics(ref_d, prev_d)
     sentiment = calc_sentiment(metrics)
+
+    # 推送分与首页展示分保持一致：优先用首页缓存的 displayScore
+    # 首页缓存含速度修正 kicker（±8分），裸基准分不含，两者会有差异
+    ensure_memory_loaded()
+    snap = get_snapshot()
+    snap_payload = snap.get("payload") if snap else None
+    if snap_payload and snap_payload.get("displayScore") is not None:
+        display_score = int(snap_payload["displayScore"])
+    else:
+        # 缓存不可用时，用 calc_display_score 手动补齐速度修正
+        prev_metrics = build_day_metrics(prev_d, None) if prev_d else {}
+        prev_baseline = int(calc_sentiment(prev_metrics)["score"]) if prev_metrics else None
+        display_score, _ = calc_display_score(
+            int(sentiment["score"]), None, prev_baseline=prev_baseline
+        )
+
+    # 将 displayScore 注入 sentiment，让订阅消息内容与首页一致
+    sentiment_for_push = {**sentiment, "displayScore": display_score, "score": display_score}
+
     daily = await broadcast_daily_sentiment(
-        sentiment, metrics["date"], _fmt_date(advice_d), only_empty=False
+        sentiment_for_push, metrics["date"], _fmt_date(advice_d), only_empty=False
     )
     empty_result = None
     if sentiment.get("emptyWarning"):
         empty_result = await broadcast_daily_sentiment(
-            sentiment, metrics["date"], _fmt_date(advice_d), only_empty=True
+            sentiment_for_push, metrics["date"], _fmt_date(advice_d), only_empty=True
         )
     return {
         "isReportReady": is_ready,
         "refDate": metrics["date"],
         "adviceDate": _fmt_date(advice_d),
+        "baselineScore": sentiment["score"],
+        "displayScore": display_score,
         "daily": daily,
         "emptyAlert": empty_result,
     }
