@@ -6,7 +6,8 @@ if (Test-Path $zipPath) { Remove-Item $zipPath -Force }
 
 $files = @(
     "Dockerfile", "requirements.txt", "app.py", "config.py",
-    "fetcher.py", "home_cache.py", "db_store.py", "daily_sections.py", "scheduler.py",
+    "fetcher.py", "home_cache.py", "home_archive.py", "db_store.py",
+    "daily_sections.py", "scheduler.py", "update_schedule.py",
     "history_store.py", "history_sync.py", "intraday.py",
     "sentiment.py", "subscribe_msg.py", "user_store.py", "wxacode.py", "ocr.py", ".dockerignore"
 )
