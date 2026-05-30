@@ -19,6 +19,35 @@
   --amber: #fbbf24;
   --blue: #60a5fa;
   --max-w: 480px;
+  /* Named state color tokens (hex so rgba() can reference the names) */
+  --state-frenzy: #ef4444;
+  --state-weak: #38bdf8;
+}
+
+/* ── Per-state color token ───────────────────────────────────────
+   Set --s-color on any element carrying a state class.
+   Elements that use color: var(--s-color) pick it up automatically.
+   ──────────────────────────────────────────────────────────────── */
+.frenzy                { --s-color: var(--state-frenzy); }
+.climax, .optimistic   { --s-color: var(--red); }
+.neutral               { --s-color: var(--amber); }
+.caution               { --s-color: var(--green); }
+.weak                  { --s-color: var(--state-weak); }
+.cold                  { --s-color: var(--blue); }
+.calculating           { --s-color: var(--muted); }
+
+/* Consolidated state-color rule — replaces ~50 lines of repetitive selectors */
+.gauge-level,
+.longkong-state-hero,
+.longkong-state-active,
+.longkong-state-level,
+.longkong-state-desc,
+.longkong-state-subdesc,
+.gauge-score,
+.history-table .score,
+.history-table .level,
+.longkong-light.is-active {
+  color: var(--s-color, inherit);
 }
 
 html {
@@ -207,17 +236,7 @@ a {
   font-weight: 700;
 }
 
-.gauge-level.optimistic,
-.gauge-level.climax { color: var(--red); }
-.gauge-level.frenzy { color: #ef4444; }
-.gauge-level.neutral { color: var(--amber); }
-.gauge-level.caution { color: var(--green); }
-.gauge-level.weak { color: #38bdf8; }
-.gauge-level.cold { color: var(--blue); }
-
-.gauge-level.calculating {
-  color: var(--muted);
-}
+/* gauge-level colors now handled by the consolidated --s-color rule above */
 
 .gauge-desc {
   display: block;
@@ -294,30 +313,26 @@ a {
   border: 1px solid rgba(255, 255, 255, 0.06);
 }
 
+/* color on .longkong-state-hero.{state} is now handled by --s-color; only backgrounds & borders remain */
 .longkong-state-hero.frenzy,
 .longkong-state-hero.climax,
 .longkong-state-hero.optimistic {
-  color: var(--red);
   background: linear-gradient(135deg, rgba(248, 113, 113, 0.14), rgba(248, 113, 113, 0.04));
   border-color: rgba(248, 113, 113, 0.22);
 }
 .longkong-state-hero.neutral {
-  color: var(--amber);
   background: linear-gradient(135deg, rgba(251, 191, 36, 0.14), rgba(251, 191, 36, 0.04));
   border-color: rgba(251, 191, 36, 0.22);
 }
 .longkong-state-hero.caution {
-  color: var(--green);
   background: linear-gradient(135deg, rgba(74, 222, 128, 0.12), rgba(74, 222, 128, 0.04));
   border-color: rgba(74, 222, 128, 0.22);
 }
 .longkong-state-hero.weak {
-  color: #38bdf8;
   background: linear-gradient(135deg, rgba(56, 189, 248, 0.14), rgba(56, 189, 248, 0.04));
   border-color: rgba(56, 189, 248, 0.22);
 }
 .longkong-state-hero.cold {
-  color: var(--blue);
   background: linear-gradient(135deg, rgba(96, 165, 250, 0.14), rgba(96, 165, 250, 0.04));
   border-color: rgba(96, 165, 250, 0.22);
 }
@@ -349,13 +364,7 @@ a {
   letter-spacing: 0.12em;
 }
 
-.longkong-state-active.frenzy { color: #ef4444; }
-.longkong-state-active.climax,
-.longkong-state-active.optimistic { color: var(--red); }
-.longkong-state-active.neutral { color: var(--amber); }
-.longkong-state-active.caution { color: var(--green); }
-.longkong-state-active.weak { color: #38bdf8; }
-.longkong-state-active.cold { color: var(--blue); }
+/* .longkong-state-active colors handled by --s-color consolidated rule */
 
 .longkong-state-level {
   display: inline;
@@ -366,14 +375,7 @@ a {
   opacity: 0.92;
 }
 
-.longkong-state-level.calculating { color: var(--muted); }
-.longkong-state-level.frenzy { color: #ef4444; }
-.longkong-state-level.climax,
-.longkong-state-level.optimistic { color: var(--red); }
-.longkong-state-level.neutral { color: var(--amber); }
-.longkong-state-level.caution { color: var(--green); }
-.longkong-state-level.weak { color: #38bdf8; }
-.longkong-state-level.cold { color: var(--blue); }
+/* .longkong-state-level colors handled by --s-color consolidated rule */
 
 .longkong-lights {
   display: grid;
@@ -407,30 +409,26 @@ a {
   background: rgba(255, 255, 255, 0.05);
 }
 
+/* color on .longkong-light.is-active.{state} handled by --s-color; only backgrounds & borders remain */
 .longkong-light.is-active.frenzy,
 .longkong-light.is-active.climax,
 .longkong-light.is-active.optimistic {
-  color: var(--red);
   border-color: rgba(248, 113, 113, 0.45);
   background: rgba(248, 113, 113, 0.1);
 }
 .longkong-light.is-active.neutral {
-  color: var(--amber);
   border-color: rgba(251, 191, 36, 0.45);
   background: rgba(251, 191, 36, 0.1);
 }
 .longkong-light.is-active.caution {
-  color: var(--green);
   border-color: rgba(74, 222, 128, 0.4);
   background: rgba(74, 222, 128, 0.08);
 }
 .longkong-light.is-active.weak {
-  color: #38bdf8;
   border-color: rgba(56, 189, 248, 0.45);
   background: rgba(56, 189, 248, 0.1);
 }
 .longkong-light.is-active.cold {
-  color: var(--blue);
   border-color: rgba(96, 165, 250, 0.45);
   background: rgba(96, 165, 250, 0.1);
 }
@@ -474,13 +472,7 @@ a {
   opacity: 0.88;
 }
 
-.longkong-state-desc.frenzy { color: #ef4444; }
-.longkong-state-desc.climax,
-.longkong-state-desc.optimistic { color: #fca5a5; }
-.longkong-state-desc.neutral { color: #fcd34d; }
-.longkong-state-desc.caution { color: #86efac; }
-.longkong-state-desc.weak { color: #7dd3fc; }
-.longkong-state-desc.cold { color: #93c5fd; }
+/* .longkong-state-desc colors handled by --s-color consolidated rule */
 
 .longkong-state-subdesc {
   margin: 0;
@@ -491,13 +483,7 @@ a {
   opacity: 0.72;
 }
 
-.longkong-state-subdesc.frenzy { color: #ef4444; }
-.longkong-state-subdesc.climax,
-.longkong-state-subdesc.optimistic { color: #fca5a5; }
-.longkong-state-subdesc.neutral { color: #fcd34d; }
-.longkong-state-subdesc.caution { color: #86efac; }
-.longkong-state-subdesc.weak { color: #7dd3fc; }
-.longkong-state-subdesc.cold { color: #93c5fd; }
+/* .longkong-state-subdesc colors handled by --s-color consolidated rule */
 
 .gauge-body {
   position: relative;
@@ -560,13 +546,7 @@ a {
   font-variant-numeric: tabular-nums;
 }
 
-.gauge-score.optimistic,
-.gauge-score.climax { color: var(--red); }
-.gauge-score.frenzy { color: #ef4444; }
-.gauge-score.neutral { color: var(--amber); }
-.gauge-score.caution { color: var(--green); }
-.gauge-score.weak { color: #38bdf8; }
-.gauge-score.cold { color: var(--blue); }
+/* .gauge-score colors handled by --s-color consolidated rule */
 
 .gauge-score-label {
   position: absolute;
@@ -652,9 +632,8 @@ a {
 .grid9-cell {
   background: var(--cell);
   border-radius: 10px;
-  padding: 8px 6px;
+  padding: 10px 6px;
   text-align: center;
-  min-height: 72px;
 }
 
 .grid9-value-row {
@@ -860,13 +839,7 @@ a {
   font-weight: 600;
 }
 
-.history-table .optimistic,
-.history-table .climax { color: var(--red); }
-.history-table .frenzy { color: #ef4444; }
-.history-table .neutral { color: var(--amber); }
-.history-table .caution { color: var(--green); }
-.history-table .weak { color: #38bdf8; }
-.history-table .cold { color: var(--blue); }
+/* .history-table state colors handled by --s-color consolidated rule */
 
 .history-table .index-chg.index-up { color: var(--red); }
 .history-table .index-chg.index-down { color: var(--green); }
@@ -879,4 +852,86 @@ a {
 
 @media (min-width: 520px) {
   .page { padding-top: 24px; }
+}
+
+/* ── 盘中分时走势图 ───────────────────────────────────────────── */
+.intraday-chart-canvas {
+  display: block;
+  width: 100%;
+  height: 90px;
+  border-radius: 10px 10px 0 0;
+  background: rgba(0,0,0,0.18);
+  cursor: default;
+}
+
+/* ── 板块集中度横条 ──────────────────────────────────────────── */
+.sector-bars-card {
+  padding: 10px 12px 8px;
+  margin-top: 6px;
+}
+
+.sector-bars {
+  display: flex;
+  flex-direction: column;
+  gap: 5px;
+}
+
+.sector-bar-row {
+  display: grid;
+  grid-template-columns: 72px 1fr 22px;
+  align-items: center;
+  gap: 6px;
+}
+
+.sector-bar-name {
+  font-size: 11px;
+  color: var(--dim);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.sector-bar-track {
+  height: 5px;
+  border-radius: 3px;
+  background: rgba(255,255,255,0.08);
+  overflow: hidden;
+}
+
+.sector-bar-fill {
+  height: 100%;
+  border-radius: 3px;
+  background: var(--s-color, #fbbf24);
+  transition: width 0.4s ease;
+  min-width: 4px;
+}
+
+.sector-bar-count {
+  font-size: 11px;
+  color: var(--dim);
+  text-align: right;
+}
+
+/* 板块集中度 grid 单元格后缀（主导板块名） */
+.grid9-suffix {
+  display: block;
+  font-size: 9px;
+  color: var(--dim);
+  margin-top: 1px;
+  opacity: 0.75;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  max-width: 100%;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .skeleton,
+  .gauge-dot {
+    animation: none;
+    opacity: 1;
+  }
+  .longkong-light {
+    transition: none;
+  }
 }

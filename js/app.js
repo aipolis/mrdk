@@ -1,6 +1,6 @@
 import { AUTO_REFRESH_MS } from './config.js?v=20260529i'
 import { getDisplayLevel, dailyQuote, formatHeaderDate } from './theme.js?v=20260529i'
-import { normalizeSections } from './indicators.js?v=20260529i'
+import { normalizeSections } from './indicators.js?v=20260529j'
 import {
   buildLongkongHeroText,
   resolveLongkongState,
@@ -8,7 +8,8 @@ import {
   renderLongkongLightsHtml,
   setGaugeLevelClass,
 } from './longkongState.js?v=20260529k'
-import { fetchToday, fetchHistory, fetchDay } from './api.js?v=20260529i'
+import { fetchToday, fetchHistory, fetchDay, fetchIntradaySeries } from './api.js?v=20260529i'
+import { drawIntradayChart } from './intradayChart.js?v=20260529a'
 import { createTrendController } from './trendDraw.js?v=20260529i'
 import { createGaugeController, IDLE_MIN_MS, SKIP_ANIM_MS } from './gaugeAnim.js?v=20260529m'
 import { getHomeCache, saveHomeCache, isSameHomeSnapshot } from './homeCache.js?v=20260529m'
@@ -178,9 +179,38 @@ function renderPeripheral(items) {
   return `<section class="peripheral-row">${cells}</section>`
 }
 
+function renderSectorBars(items) {
+  if (!items?.length) return '<p class="grid-empty">暂无概念数据</p>'
+  // items: [{name, chg (concept %-gain), leader, ...}]
+  const maxChg = Math.max(...items.map(s => Number(s.chg || s.count || 0)), 0.01)
+  const bars = items.map(s => {
+    const chg = Number(s.chg ?? s.count ?? 0)
+    const pct = Math.round(chg / maxChg * 100)
+    const label = chg > 0 ? `+${chg.toFixed(2)}%` : `${chg.toFixed(2)}%`
+    return `
+    <div class="sector-bar-row">
+      <span class="sector-bar-name">${esc(s.name)}</span>
+      <div class="sector-bar-track">
+        <div class="sector-bar-fill" style="width:${pct}%"></div>
+      </div>
+      <span class="sector-bar-count">${label}</span>
+    </div>`
+  }).join('')
+  return `<div class="sector-bars">${bars}</div>`
+}
+
+function renderTimeseries(section) {
+  const id = `intraday-chart-${Math.random().toString(36).slice(2, 7)}`
+  // canvas is populated after render via initIntradayChart
+  return `<canvas class="intraday-chart-canvas" id="${id}" data-series="${esc(JSON.stringify(section.series || []))}"></canvas>`
+}
+
 function renderGridSection(section) {
   if (section.layout === 'row3' && section.items?.length) {
     return renderPeripheral(section.items)
+  }
+  if (section.layout === 'timeseries') {
+    return renderTimeseries(section)
   }
 
   const rows = section.rows || []
@@ -201,13 +231,14 @@ function renderGridSection(section) {
       const prev = showPrev
         ? `<span class="grid9-sub"><span class="grid9-sub-prefix">${prefix}</span><span class="grid9-sub-val">${esc(prevText)}</span></span>`
         : '<span class="grid9-sub grid9-sub--empty"></span>'
+      const suffix = cell.displaySuffix ? `<span class="grid9-suffix">${esc(cell.displaySuffix)}</span>` : ''
       html += `
-        <article class="grid9-cell">
+        <article class="grid9-cell" data-key="${esc(cell.key || '')}">
           <span class="grid9-value-row">
             <span class="grid9-value ${esc(cell.valueClass || '')}">${esc(cell.displayValue || cell.value || '--')}</span>
             ${arrow ? `<span class="trend-arrow ${good ? 'trend-good' : 'trend-bad'}">${arrow}</span>` : ''}
           </span>
-          <span class="grid9-label">${esc(cell.label)}</span>
+          <span class="grid9-label">${esc(cell.label)}${suffix}</span>
           ${prev}
         </article>
       `
@@ -225,15 +256,63 @@ function renderSections(sections) {
     box.innerHTML = '<p class="grid-empty">暂无指标数据</p>'
     return
   }
-  box.innerHTML = sections.map((sec) => `
+  box.innerHTML = sections.map((sec) => {
+    const isIntraday = sec.id === 'intraday'
+    const chartHtml = isIntraday
+      ? `<canvas class="intraday-chart-canvas" aria-hidden="true"></canvas>`
+      : ''
+    return `
     <section class="section">
       <header class="section-head">
         <h2 class="section-title">${esc(sec.title)}</h2>
         <span class="section-meta">${esc(sec.meta || '')}</span>
       </header>
+      ${chartHtml}
       <article class="card section-card">${renderGridSection(sec)}</article>
-    </section>
-  `).join('')
+    </section>`
+  }).join('')
+  // post-render: expand sector bar cells and paint intraday canvases
+  _postRenderSections(box, sections)
+}
+
+function _postRenderSections(box, sections) {
+  // sector concentration bars: inject below sectorConcentration cell
+  for (const sec of sections) {
+    const scItem = (sec.items || []).find(it => it.key === 'sectorConcentration')
+    if (!scItem?.topSectors?.length) continue
+    const cell = box.querySelector('[data-key="sectorConcentration"]')
+    if (!cell) continue
+    const wrap = cell.closest('.section')
+    if (!wrap) continue
+    const existing = wrap.querySelector('.sector-bars-card')
+    if (!existing) {
+      const barsEl = document.createElement('article')
+      barsEl.className = 'card sector-bars-card'
+      barsEl.innerHTML = renderSectorBars(scItem.topSectors)
+      wrap.appendChild(barsEl)
+    }
+  }
+  // intraday chart canvases
+  box.querySelectorAll('.intraday-chart-canvas').forEach(canvas => {
+    try {
+      const series = JSON.parse(canvas.dataset.series || '[]')
+      drawIntradayChart(canvas, series)
+    } catch (_) {}
+  })
+}
+
+let _intradaySeriesCache = null
+async function loadAndRenderIntradayChart(sections) {
+  const intradaySec = sections?.find(s => s.id === 'intraday')
+  if (!intradaySec) return
+  try {
+    const data = _intradaySeriesCache || await fetchIntradaySeries()
+    _intradaySeriesCache = data
+    const series = data?.series || []
+    document.querySelectorAll('.intraday-chart-canvas').forEach(canvas => {
+      drawIntradayChart(canvas, series)
+    })
+  } catch (_) {}
 }
 
 function applyLongkongState(data) {
@@ -509,7 +588,9 @@ async function hydrateHomeExtras(data) {
   }
 
   const enriched = await attachAuctionArchives({ ...data }, histList)
-  renderSections(normalizeSections(enriched.indicatorSections, enriched))
+  const normalizedSections = normalizeSections(enriched.indicatorSections, enriched)
+  renderSections(normalizedSections)
+  loadAndRenderIntradayChart(normalizedSections).catch(() => {})
   if (!isSameHomeSnapshot(data, enriched)) {
     saveHomeCache(enriched)
   }
@@ -538,7 +619,7 @@ export async function loadHome(options = {}) {
     }
     applyData(data, { silent, skipAnim: silent, fastReveal: !silent && fastReveal })
     saveHomeCache(data)
-    hydrateHomeExtras(data).catch(() => {})
+    hydrateHomeExtras(data).catch((e) => console.warn('[hydrateHomeExtras]', e))
     if (retryTimer) {
       clearTimeout(retryTimer)
       retryTimer = null

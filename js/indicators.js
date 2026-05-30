@@ -307,6 +307,18 @@ function buildSectionsFromData(data) {
 
 
 
+function ensurePeripheralSection(sections, data) {
+  const list = Array.isArray(sections) ? [...sections] : []
+  const idx = list.findIndex((s) => s?.id === 'peripheral')
+  if (idx < 0) return list
+  const existing = list[idx]
+  if (existing.items?.length) return list
+  const items = normalizePeripheral(data)
+  if (!items.length) return list
+  list[idx] = { ...existing, items }
+  return list
+}
+
 function ensureAuctionSection(sections, data) {
 
   const list = Array.isArray(sections) ? [...sections] : []
@@ -812,6 +824,7 @@ export function normalizeSections(sections, data = null) {
     list = buildSectionsFromData(data)
   }
   if (data) {
+    list = ensurePeripheralSection(list, data)
     list = ensureAuctionSection(list, data)
     list = ensureLongkongRiskSection(list, data)
     list = ensureIntradaySection(list, data)

@@ -53,3 +53,8 @@ export function fetchDay(date) {
   if (!d) return Promise.reject(new Error('无效日期'))
   return fetchJson(`/api/sentiment/day?date=${d}`)
 }
+
+export function fetchIntradaySeries(date) {
+  const d = date ? String(date).replace(/-/g, '').slice(0, 8) : ''
+  return fetchJson(d ? `/api/sentiment/intraday-series?date=${d}` : '/api/sentiment/intraday-series')
+}
