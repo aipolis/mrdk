@@ -298,6 +298,13 @@ def _build_home_payload(ref_d: str, prev_d: Optional[str], advice_d: str, is_rea
         archived = assemble_home_from_archive(ref_d, prev_d, advice_d, is_ready=is_ready)
         if archived:
             archived["foreignCards"] = fetch_foreign_sentiment()
+            if not archived.get("sectorConcentration"):
+                archived["sectorConcentration"] = calc_sector_concentration(ref_d)
+            if not archived.get("regime"):
+                r = calc_regime(ref_d)
+                archived.setdefault("regimeScore", r.get("regimeScore"))
+                archived.setdefault("regimeLabel", r.get("regimeLabel"))
+                archived.setdefault("regime", r.get("regime", "neutral"))
             return archived
 
     metrics, prev_metrics, grid9 = load_ref_day_snapshot(ref_d, prev_d)
