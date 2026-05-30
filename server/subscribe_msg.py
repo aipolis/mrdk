@@ -39,18 +39,20 @@ def _clip(text: str, key: str) -> str:
     return s[: n - 1] + "…"
 
 
-def _tips_from_sentiment(score: int, empty: bool, reasons: list) -> str:
-    if empty and reasons:
-        return _clip("；".join(reasons[:2]), "thing12")
+def _weather_label(score: int, empty: bool) -> tuple[str, str, str]:
+    """返回 (天气名, 建议, 简短提示)"""
     if empty or score < 30:
-        return _clip("昨日情绪极弱，盘面偏冷", "thing12")
-    if score >= 60:
-        return _clip("昨日情绪偏强，注意分歧", "thing12")
+        return "雨天", "宜休息", "今天可能下雨，建议休息"
+    if score > 70:
+        return "晴天", "宜出门", "今天天气不错，可积极行动"
     if score >= 50:
-        return _clip("昨日情绪偏暖，结构尚可", "thing12")
-    if score >= 40:
-        return _clip("昨日情绪偏谨慎", "thing12")
-    return _clip("昨日情绪偏冷", "thing12")
+        return "多云", "带把伞", "今天多云，带好伞再出门"
+    return "阴天", "谨慎", "今天天气一般，谨慎为主"
+
+
+def _tips_from_sentiment(score: int, empty: bool, reasons: list) -> str:
+    _, _, tip = _weather_label(score, empty)
+    return _clip(tip, "thing12")
 
 
 def build_subscribe_message(
@@ -60,23 +62,15 @@ def build_subscribe_message(
     advice_date: str,
     push_kind: str = "sentiment_daily",
 ) -> dict:
-    """根据情绪结果生成订阅消息 data（非写死）"""
     score = int(sentiment.get("displayScore") or sentiment.get("score") or 0)
-    ui_level = display_level_label(score)
     empty = bool(sentiment.get("emptyWarning"))
-    reasons = sentiment.get("emptyReasons") or []
+    weather, action, _ = _weather_label(score, empty)
 
-    if push_kind == "empty_alert" and empty:
-        strategy = _clip("龙空龙·个人信号", "thing7")
-    elif empty:
-        strategy = _clip("龙空龙·个人信号", "thing7")
-    else:
-        strategy = _clip(f"市场情绪·{ui_level}", "thing7")
+    strategy = _clip(f"明日当空·{weather}", "thing7")
+    key_data = _clip(f"天气指数{score}·{action}", "character_string2")
+    tips = _tips_from_sentiment(score, empty, [])
 
-    key_data = _clip(f"情绪{score}分·{ui_level}", "character_string2")
-    tips = _tips_from_sentiment(score, empty, reasons)
-
-    time_val = f"{advice_date} 09:15"
+    time_val = f"{advice_date} 09:10"
 
     fk = SUBSCRIBE_FIELD_KEYS
     wx_data = {
