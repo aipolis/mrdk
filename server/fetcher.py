@@ -9,7 +9,7 @@ import re
 import time
 from concurrent.futures import ThreadPoolExecutor, as_completed
 from datetime import datetime
-from config import BJT, TUSHARE_TOKEN, bj_now, timedelta
+from config import BJT, bj_now, timedelta
 from functools import lru_cache
 from typing import Optional
 
@@ -34,32 +34,6 @@ _EM_CLIST_URLS = (
     "https://48.push2.eastmoney.com/api/qt/clist/get",
     "https://push2.eastmoney.com/api/qt/clist/get",
 )
-_EM_HEADERS = {
-    "User-Agent": (
-        "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 "
-        "(KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36"
-    ),
-    "Referer": "https://quote.eastmoney.com/center/boardlist.html",
-    "Accept": "application/json, text/plain, */*",
-}
-_EM_CONCEPT_FS = "m:90+t:3"
-_EM_CONCEPT_FS_ALT = "m:90+t:3+f:!50"
-_EM_CONCEPT_FS_SPACE = "m:90 t:3 f:!50"
-_EM_CONS_CLIST_URLS = (
-    "https://29.push2.eastmoney.com/api/qt/clist/get",
-    "https://79.push2.eastmoney.com/api/qt/clist/get",
-)
-_EM_SLIST_URLS = (
-    "https://push2.eastmoney.com/api/qt/slist/get",
-    "https://79.push2.eastmoney.com/api/qt/slist/get",
-    "https://91.push2.eastmoney.com/api/qt/slist/get",
-)
-_EM_SLIST_UT = "fa5fd1943c7b386f172d6893dbfba10b"
-_CONCEPT_BOARD_TOP_N = 20
-_CONCEPT_LIST_FETCH_N = 20
-_CONCEPT_FETCH_WORKERS = 3
-
-
 def _cache_get(key: str, ttl: int = 300):
     item = _cache.get(key)
     if item and time.time() - item["ts"] < ttl:
@@ -74,28 +48,12 @@ def _cache_set(key: str, data):
 def invalidate_sector_concentration_cache(trade_d: Optional[str] = None) -> None:
     """清除概念涨停强度相关进程内缓存。"""
     today = (trade_d or date_str(bj_now()))[:8]
-    keys = [
-        f"sector_conc_{today}",
-        f"em_concept_top_{_CONCEPT_LIST_FETCH_N}_{today}",
-        f"ths_concept_top_{_CONCEPT_LIST_FETCH_N}_{today}",
-        f"ts_concept_index_all_{today}",
-    ]
+    keys = [f"sector_conc_{today}"]
     dates = get_recent_trade_dates(5)
     if dates:
         keys.append(f"sector_conc_{dates[-1]}")
-        keys.append(f"ts_concept_top_{dates[-1]}_{_CONCEPT_LIST_FETCH_N}")
-        keys.append(f"ths_concept_top_{_CONCEPT_LIST_FETCH_N}_{dates[-1]}")
-        keys.append(f"ts_concept_index_all_{dates[-1]}")
     for key in keys:
         _cache.pop(key, None)
-    for key in list(_cache.keys()):
-        if key.startswith((
-            "em_board_codes_",
-            "ts_board_codes_",
-            "em_stock_concepts_",
-            "ts_stock_concepts_",
-        )):
-            _cache.pop(key, None)
 
 
 def invalidate_intraday_caches(today: Optional[str] = None) -> None:
@@ -1795,680 +1753,60 @@ def build_grid_nine(metrics: dict, prev_metrics: Optional[dict] = None) -> list:
     return build_yesterday_sentiment(metrics, prev_metrics)
 
 
-_SECTOR_CONC_EMPTY = {
-    "topSectors": [],
-    "top3Ratio": 0.0,
-    "hhi": 0.0,
-    "total": 0,
-    "topSector": "",
-    "hotConceptCount": 0,
-}
-
-
-def _sector_pool_date(trade_d: str) -> str:
-    """涨停池日期：交易日用当日实时池；非交易日用最近收盘日。"""
-    trade_d = (trade_d or "")[:8]
-    today = date_str(bj_now())
-    dates = get_recent_trade_dates(5)
-    if today not in dates:
-        if trade_d and em_pool_available(trade_d):
-            return trade_d
-        return dates[-1] if dates else trade_d
-    if today != trade_d and em_pool_available(today):
-        return today
-    return trade_d
-
-
-def _em_clist_rows(
-    params: dict,
-    *,
-    retries: int = 1,
-    timeout: int = 10,
-    max_urls: int = 3,
-    urls: Optional[tuple[str, ...]] = None,
-) -> list[dict]:
-    """东财 clist 通用请求，多镜像 + 重试。"""
-    last_err: Optional[Exception] = None
-    target_urls = urls or _EM_CLIST_URLS
-    for url in target_urls[:max(1, max_urls)]:
-        for attempt in range(retries + 1):
-            try:
-                r = requests.get(url, params=params, headers=_EM_HEADERS, timeout=timeout)
-                r.raise_for_status()
-                diff = (r.json().get("data") or {}).get("diff") or []
-                rows = list(diff.values()) if isinstance(diff, dict) else list(diff)
-                if rows:
-                    return rows
-            except Exception as exc:
-                last_err = exc
-                if attempt < retries:
-                    time.sleep(0.25 * (attempt + 1))
-    if last_err:
-        log.warning("em clist request failed: %s", last_err)
-    return []
-
-
-def _parse_concept_board_rows(rows: list[dict]) -> list[dict]:
-    result = []
-    for row in rows:
-        code = str(row.get("f12") or "").strip()
-        name = str(row.get("f14") or "").strip()
-        if not code or not name:
-            continue
-        result.append({
-            "code": code,
-            "name": name,
-            "chg": round(float(row.get("f3") or 0), 2),
-        })
-    result.sort(key=lambda x: x["chg"], reverse=True)
-    return result
-
-
-def _concept_trade_date(trade_d: str) -> str:
-    """概念板块行情/成分股日期（与涨停池对齐）。"""
-    return _sector_pool_date(trade_d)
-
-
-def _get_tushare_pro():
-    token = (TUSHARE_TOKEN or "").strip()
-    if not token:
-        return None
-    try:
-        import tushare as ts
-
-        return ts.pro_api(token)
-    except Exception as exc:
-        log.warning("tushare init failed: %s", exc)
-        return None
-
-
-def _tushare_a_code(con_code: str) -> str:
-    code = str(con_code or "").strip()
-    if "." in code:
-        code = code.split(".", 1)[0]
-    code = code.zfill(6)
-    return code if code.isdigit() and len(code) == 6 else ""
-
-
-def _to_ts_con_code(code6: str) -> str:
-    """6 位 A 股代码 → Tushare con_code（如 600519.SH）。"""
-    code6 = str(code6 or "").strip().zfill(6)
-    if not code6.isdigit() or len(code6) != 6:
-        return ""
-    if code6.startswith(("83", "87", "88", "92", "43")):
-        return f"{code6}.BJ"
-    if code6.startswith("6"):
-        return f"{code6}.SH"
-    return f"{code6}.SZ"
-
-
-def _to_dc_ts_code(code: str) -> str:
-    code = str(code or "").strip().upper()
-    if not code:
-        return ""
-    return code if code.endswith(".DC") else f"{code}.DC"
-
-
-def _secid_for_a_code(code6: str) -> str:
-    code6 = str(code6 or "").strip().zfill(6)
-    market = "1" if code6.startswith("6") else "0"
-    return f"{market}.{code6}"
-
-
-def _fetch_stock_concepts_em(code6: str) -> set[str]:
-    """东财 push2 slist：单股所属概念（无需 token，与 clist 不同域名/路径）。"""
-    code6 = str(code6 or "").strip().zfill(6)
-    if not code6.isdigit() or len(code6) != 6:
-        return set()
-    key = f"em_stock_concepts_{code6}"
-    cached = _cache_get(key, 3600)
-    if cached is not None:
-        return cached
-
-    params = {
-        "secid": _secid_for_a_code(code6),
-        "fields": "f12,f14",
-        "spt": "3",
-        "ut": _EM_SLIST_UT,
-    }
-    concepts: set[str] = set()
-    for url in _EM_SLIST_URLS[:3]:
-        try:
-            r = requests.get(url, params=params, headers=_EM_HEADERS, timeout=6)
-            r.raise_for_status()
-            payload = r.json()
-            if payload.get("rc") not in (0, None):
-                continue
-            diff = (payload.get("data") or {}).get("diff") or []
-            rows = list(diff.values()) if isinstance(diff, dict) else list(diff)
-            for row in rows:
-                name = str(row.get("f14") or "").strip()
-                if name:
-                    concepts.add(name)
-            if concepts:
-                break
-        except Exception:
-            continue
-
-    _cache_set(key, concepts)
-    return concepts
-
-
-def _fetch_concept_boards_ths(limit: int) -> list[dict]:
-    """同花顺概念资金流：按涨跌幅取 TopN（无需 token）。"""
-    key = f"ths_concept_top_{limit}_{date_str(bj_now())}"
-    cached = _cache_get(key, INTRADAY_CACHE_TTL)
-    if cached is not None:
-        return cached
-
-    try:
-        df = ak.stock_fund_flow_concept(symbol="即时")
-        if df is None or df.empty:
-            return []
-        name_col = "行业" if "行业" in df.columns else None
-        chg_col = "行业-涨跌幅" if "行业-涨跌幅" in df.columns else None
-        if not name_col or not chg_col:
-            return []
-        df = df.sort_values(chg_col, ascending=False).head(limit)
-        result: list[dict] = []
-        for _, row in df.iterrows():
-            name = str(row.get(name_col) or "").strip()
-            if not name:
-                continue
-            result.append({
-                "code": "",
-                "name": name,
-                "chg": round(float(row.get(chg_col) or 0), 2),
-            })
-        if result:
-            _cache_set(key, result)
-        return result
-    except Exception as exc:
-        log.warning("ths concept board list failed: %s", exc)
-        return []
-
-
-def _concept_name_matches_board(concept: str, board_name: str) -> bool:
-    concept = (concept or "").strip()
-    board_name = (board_name or "").strip()
-    if not concept or not board_name:
-        return False
-    if concept == board_name:
-        return True
-    return concept in board_name or board_name in concept
-
-
-def _calc_sector_concentration_reverse(
-    lu_codes: set[str],
-    boards: list[dict],
-) -> list[dict]:
-    """反向聚合：逐股拉概念，与 Top 概念板块求交集计数。"""
-    if not lu_codes or not boards:
-        return []
-
-    board_names = [b["name"] for b in boards if b.get("name")]
-    chg_map = {b["name"]: b.get("chg", 0.0) for b in boards if b.get("name")}
-    counts: dict[str, int] = {name: 0 for name in board_names}
-
-    def _collect(code: str) -> None:
-        for concept in _fetch_stock_concepts_em(code):
-            for board_name in board_names:
-                if _concept_name_matches_board(concept, board_name):
-                    counts[board_name] = counts.get(board_name, 0) + 1
-                    break
-
-    workers = min(5, max(1, len(lu_codes)))
-    with ThreadPoolExecutor(max_workers=workers) as ex:
-        list(ex.map(_collect, lu_codes))
-
-    hot = [
-        {
-            "name": name,
-            "count": count,
-            "chg": chg_map.get(name, 0.0),
-            "ratio": count,
-        }
-        for name, count in counts.items()
-        if count > 0
-    ]
-    hot.sort(key=lambda x: x["count"], reverse=True)
-    return hot
-
-
-def _fetch_concept_index_map_tushare(trade_d: str) -> dict[str, dict]:
-    """Tushare dc_index 全量概念板块：ts_code → {name, chg, ts_code, trade_date}。"""
-    pro = _get_tushare_pro()
-    if not pro:
-        return {}
-
-    trade_d = (trade_d or "")[:8]
-    key = f"ts_concept_index_all_{trade_d}"
-    cached = _cache_get(key, INTRADAY_CACHE_TTL if trade_d == date_str(bj_now()) else 900)
-    if cached is not None:
-        return cached
-
-    dates_to_try = [trade_d]
-    for d in reversed(get_recent_trade_dates(5)):
-        if d not in dates_to_try:
-            dates_to_try.append(d)
-
-    df = None
-    used_d = trade_d
-    for d in dates_to_try:
-        try:
-            part = pro.dc_index(
-                trade_date=d,
-                idx_type="概念板块",
-                fields="ts_code,name,pct_change",
-            )
-            if part is not None and not part.empty:
-                df = part
-                used_d = d
-                break
-        except Exception as exc:
-            log.warning("tushare dc_index failed date=%s err=%s", d, exc)
-
-    if df is None or df.empty:
-        return {}
-
-    chg_col = "pct_change" if "pct_change" in df.columns else None
-    if not chg_col:
-        return {}
-
-    result: dict[str, dict] = {}
-    for _, row in df.iterrows():
-        ts_code = _to_dc_ts_code(str(row.get("ts_code") or "").strip())
-        name = str(row.get("name") or "").strip()
-        if not ts_code or not name:
-            continue
-        meta = {
-            "code": ts_code.replace(".DC", "").strip(),
-            "name": name,
-            "chg": round(float(row.get(chg_col) or 0), 2),
-            "ts_code": ts_code,
-            "trade_date": used_d,
-        }
-        result[ts_code] = meta
-
-    if result:
-        _cache_set(key, result)
-    return result
-
-
-def _fetch_concept_boards_tushare(limit: int, trade_d: str) -> list[dict]:
-    """Tushare 东财概念板块：按涨跌幅取前 N（仅作兜底/展示用）。"""
-    index_map = _fetch_concept_index_map_tushare(trade_d)
-    if not index_map:
-        return []
-    boards = sorted(index_map.values(), key=lambda x: x.get("chg", 0), reverse=True)
-    return boards[:limit]
-
-
-def _fetch_stock_concepts_tushare(code6: str, trade_d: str) -> list[str]:
-    """Tushare dc_member(con_code)：单股所属概念板块 ts_code 列表。"""
-    pro = _get_tushare_pro()
-    con_code = _to_ts_con_code(code6)
-    if not pro or not con_code:
-        return []
-
-    trade_d = (trade_d or "")[:8]
-    key = f"ts_stock_concepts_{con_code}_{trade_d}"
-    cached = _cache_get(key, 3600)
-    if cached is not None:
-        return cached
-
-    concepts: list[str] = []
-    for d in (trade_d, *[
-        x for x in reversed(get_recent_trade_dates(5)) if x != trade_d
-    ][:2]):
-        try:
-            df = pro.dc_member(trade_date=d, con_code=con_code, fields="ts_code")
-            if df is None or df.empty:
-                continue
-            seen: set[str] = set()
-            for raw in df.get("ts_code", []):
-                ts_code = _to_dc_ts_code(str(raw or "").strip())
-                if ts_code and ts_code not in seen:
-                    seen.add(ts_code)
-                    concepts.append(ts_code)
-            if concepts:
-                break
-        except Exception as exc:
-            log.warning("tushare dc_member con=%s date=%s err=%s", con_code, d, exc)
-
-    _cache_set(key, concepts)
-    return concepts
-
-
-def _calc_sector_concentration_by_limit_up_tushare(
-    lu_codes: set[str],
-    trade_d: str,
-) -> list[dict]:
-    """概念涨停强度：涨停池逐股反查概念，按涨停家数排序（非涨幅 TopN 预筛）。"""
-    if not lu_codes or not _get_tushare_pro():
-        return []
-
-    trade_d = _concept_trade_date(trade_d)
-    index_map = _fetch_concept_index_map_tushare(trade_d)
-    if not index_map:
-        return []
-
-    counts: dict[str, int] = {}
-
-    def _collect(code6: str) -> list[str]:
-        return _fetch_stock_concepts_tushare(code6, trade_d)
-
-    workers = min(5, max(1, len(lu_codes)))
-    with ThreadPoolExecutor(max_workers=workers) as ex:
-        for concept_list in ex.map(_collect, lu_codes):
-            for ts_code in concept_list:
-                counts[ts_code] = counts.get(ts_code, 0) + 1
-
-    hot: list[dict] = []
-    for ts_code, count in counts.items():
-        meta = index_map.get(ts_code)
-        if not meta or count <= 0:
-            continue
-        hot.append({
-            "name": meta["name"],
-            "count": count,
-            "chg": meta.get("chg", 0.0),
-            "ratio": count,
-        })
-    hot.sort(key=lambda x: (x["count"], x["chg"]), reverse=True)
-    return hot
-
-
-def _fetch_board_codes_tushare(ts_code: str, trade_d: str) -> set[str]:
-    pro = _get_tushare_pro()
-    if not pro:
-        return set()
-
-    ts_code = _to_dc_ts_code(ts_code)
-    trade_d = (trade_d or "")[:8]
-    if not ts_code or not trade_d:
-        return set()
-
-    key = f"ts_board_codes_{ts_code}_{trade_d}"
-    cached = _cache_get(key, 3600)
-    if cached is not None:
-        return cached
-
-    codes: set[str] = set()
-    for d in (trade_d, *[
-        x for x in reversed(get_recent_trade_dates(5)) if x != trade_d
-    ][:2]):
-        try:
-            df = pro.dc_member(trade_date=d, ts_code=ts_code, fields="con_code")
-            if df is None or df.empty:
-                continue
-            for raw in df.get("con_code", []):
-                code = _tushare_a_code(raw)
-                if code:
-                    codes.add(code)
-            if codes:
-                break
-        except Exception as exc:
-            log.warning("tushare dc_member failed ts=%s date=%s err=%s", ts_code, d, exc)
-
-    _cache_set(key, codes)
-    return codes
-
-
-def _fetch_concept_boards_em(limit: int) -> list[dict]:
-    """东财 push2 概念板块列表（直连，云托管可能不稳定）。"""
-    key = f"em_concept_top_{limit}_{date_str(bj_now())}"
-    cached = _cache_get(key, INTRADAY_CACHE_TTL)
-    if cached is not None:
-        return cached
-
-    base_params = {
-        "pn": "1",
-        "pz": str(max(limit, 20)),
-        "po": "1",
-        "np": "1",
-        "ut": "bd1d9ddb04089700cf9c27f6f7426281",
-        "fltt": "2",
-        "invt": "2",
-        "fid": "f3",
-        "fields": "f12,f14,f3",
-    }
-    result: list[dict] = []
-    for fs in (_EM_CONCEPT_FS, _EM_CONCEPT_FS_ALT, _EM_CONCEPT_FS_SPACE):
-        rows = _em_clist_rows({**base_params, "fs": fs}, retries=1, timeout=10, max_urls=2)
-        result = _parse_concept_board_rows(rows)[:limit]
-        if result:
-            break
-
-    if result:
-        _cache_set(key, result)
-    return result
-
-
-def _fetch_concept_boards_top(limit: int, trade_d: str) -> tuple[list[dict], str]:
-    """概念板块 TopN：Tushare → 同花顺资金流 → 东财 push2。"""
-    trade_d = _concept_trade_date(trade_d)
-    boards = _fetch_concept_boards_tushare(limit, trade_d)
-    if boards:
-        return boards, "tushare_dc"
-
-    boards = _fetch_concept_boards_ths(limit)
-    if boards:
-        return boards, "ths_fund_flow"
-
-    boards = _fetch_concept_boards_em(limit)
-    if boards:
-        return boards, "em_boards"
-
-    log.warning("concept board list empty (tushare + ths + em)")
-    return [], "none"
-
-
-def _fetch_em_board_constituent_codes(bk_code: str, bk_name: str = "") -> set[str]:
-    """东财板块成分股代码集合。"""
-    bk_code = (bk_code or "").strip()
-    if not bk_code:
-        return set()
-    key = f"em_board_codes_{bk_code}"
-    cached = _cache_get(key, 3600)
-    if cached is not None:
-        return cached
-
-    base_params = {
-        "pn": "1",
-        "pz": "5000",
-        "po": "1",
-        "np": "1",
-        "ut": "bd1d9ddb04089700cf9c27f6f7426281",
-        "fltt": "2",
-        "invt": "2",
-        "fid": "f12",
-        "fields": "f12",
-    }
-    codes: set[str] = set()
-    for fs in (f"b:{bk_code}", f"b:{bk_code} f:!50"):
-        rows = _em_clist_rows(
-            {**base_params, "fs": fs},
-            retries=1,
-            timeout=8,
-            max_urls=2,
-            urls=_EM_CONS_CLIST_URLS,
-        )
-        for row in rows:
-            code = str(row.get("f12") or "").strip().zfill(6)
-            if code.isdigit() and len(code) == 6:
-                codes.add(code)
-        if codes:
-            break
-
-    _cache_set(key, codes)
-    return codes
-
-
-def _fetch_board_constituent_codes(board: dict, trade_d: str) -> set[str]:
-    """板块成分股：优先 Tushare dc_member，其次东财 push2。"""
-    trade_d = (board.get("trade_date") or _concept_trade_date(trade_d))[:8]
-    ts_code = board.get("ts_code") or _to_dc_ts_code(board.get("code", ""))
-    if ts_code and _get_tushare_pro():
-        codes = _fetch_board_codes_tushare(ts_code, trade_d)
-        if codes:
-            return codes
-    return _fetch_em_board_constituent_codes(board.get("code", ""), board.get("name", ""))
-
-
-def _calc_sector_concentration_from_tags(
-    lu_df: pd.DataFrame,
-    total: int,
-    boards: Optional[list[dict]] = None,
-) -> list[dict]:
-    """兜底：用涨停池「涨停原因类别」标签统计概念强度。"""
-    concept_count: dict[str, int] = {}
-    tag_col = next((c for c in ["涨停原因类别", "涨停原因", "所属行业"] if c in lu_df.columns), None)
-    if not tag_col:
-        return []
-    chg_map = {b["name"]: b.get("chg", 0.0) for b in (boards or []) if b.get("name")}
-
-    def _lookup_chg(tag: str) -> float:
-        if tag in chg_map:
-            return chg_map[tag]
-        for name, chg in chg_map.items():
-            if _concept_name_matches_board(tag, name):
-                return chg
-        return 0.0
-
-    for tags_raw in lu_df[tag_col].dropna():
-        tags = [t.strip() for t in str(tags_raw).split("+") if t.strip()]
-        for tag in tags:
-            concept_count[tag] = concept_count.get(tag, 0) + 1
-    return sorted(
-        [
-            {
-                "name": k,
-                "count": v,
-                "chg": _lookup_chg(k),
-                "ratio": v,
-            }
-            for k, v in concept_count.items()
-        ],
-        key=lambda x: x["count"],
-        reverse=True,
-    )
-
-
-def _pack_sector_concentration(hot: list[dict], total: int, *, source: str) -> dict:
-    all_count = sum(h["count"] for h in hot)
-    top3_count = sum(h["count"] for h in hot[:3])
-    top3_ratio = round(top3_count / all_count * 100, 1) if all_count > 0 else 0.0
-    hhi = round(sum((h["count"] / all_count) ** 2 for h in hot) * 100, 1) if all_count > 0 else 0.0
-    return {
-        "topSectors": hot[:5],
-        "top3Ratio": top3_ratio,
-        "hhi": hhi,
-        "total": total,
-        "topSector": hot[0]["name"] if hot else "",
-        "hotConceptCount": len(hot),
-        "source": source,
-    }
-
-
 def calc_sector_concentration(trade_d: str) -> dict:
     """
-    概念涨停强度：统计各概念在涨停池中的家数，按家数取 Top5。
-    1. 拉涨停池（盘中用当日，非交易日用最近收盘日）
-    2. 有 Tushare：dc_member(con_code) 逐股反查概念 → 按家数排序
-    3. 否则：板块成分 × 涨停池交集 / slist 反向 / 标签兜底
+    板块集中度：涨停池标签统计。
+    数据来源 akshare 涨停池「涨停原因类别」，按 + 拆分计数，按家数取 Top5。
     """
-    pool_d = _sector_pool_date(trade_d)
-    key = f"sector_conc_{pool_d}"
-    cache_ttl = INTRADAY_CACHE_TTL if pool_d == date_str(bj_now()) else 900
-    cached = _cache_get(key, cache_ttl)
+    key = f"sector_conc_{trade_d}"
+    cached = _cache_get(key, 900)
     if cached is not None:
         return cached
 
-    empty = dict(_SECTOR_CONC_EMPTY)
+    empty = {
+        "topSectors": [],
+        "top3Ratio": 0.0,
+        "hhi": 0.0,
+        "total": 0,
+        "topSector": "",
+        "hotConceptCount": 0,
+    }
     try:
-        lu_df = fetch_limit_up(pool_d)
+        lu_df = fetch_limit_up(trade_d)
         if lu_df is None or lu_df.empty:
             return empty
 
         total = len(lu_df)
-        lu_codes = _normalize_stock_codes(lu_df)
-        if not lu_codes:
+        concept_count: dict[str, int] = {}
+        tag_col = next((c for c in ["涨停原因类别", "涨停原因", "所属行业"] if c in lu_df.columns), None)
+        if tag_col:
+            for tags_raw in lu_df[tag_col].dropna():
+                tags = [t.strip() for t in str(tags_raw).split("+") if t.strip()]
+                for tag in tags:
+                    concept_count[tag] = concept_count.get(tag, 0) + 1
+
+        if not concept_count:
             return empty
 
-        hot: list[dict] = []
-        source = "none"
-        board_source = "none"
-        boards: list[dict] = []
+        hot = sorted(
+            [{"name": k, "count": v, "chg": 0.0, "ratio": v} for k, v in concept_count.items()],
+            key=lambda x: x["count"],
+            reverse=True,
+        )
 
-        if _get_tushare_pro():
-            hot = _calc_sector_concentration_by_limit_up_tushare(lu_codes, pool_d)
-            if hot:
-                source = "tushare_zt_count"
+        all_count = sum(h["count"] for h in hot)
+        top3_count = sum(h["count"] for h in hot[:3])
+        top3_ratio = round(top3_count / all_count * 100, 1) if all_count > 0 else 0.0
+        hhi = round(sum((h["count"] / all_count) ** 2 for h in hot) * 100, 1) if all_count > 0 else 0.0
 
-        if not hot:
-            boards, board_source = _fetch_concept_boards_top(_CONCEPT_LIST_FETCH_N, trade_d)
-            boards = boards[:_CONCEPT_BOARD_TOP_N]
-            source = board_source
-            if boards:
-                def _count_board(board: dict) -> Optional[dict]:
-                    codes = _fetch_board_constituent_codes(board, pool_d)
-                    if not codes:
-                        return None
-                    count = len(codes & lu_codes)
-                    if count <= 0:
-                        return None
-                    return {
-                        "name": board["name"],
-                        "count": count,
-                        "chg": board["chg"],
-                        "ratio": count,
-                    }
-
-                with ThreadPoolExecutor(max_workers=_CONCEPT_FETCH_WORKERS) as ex:
-                    futures = [ex.submit(_count_board, b) for b in boards]
-                    for fut in as_completed(futures):
-                        item = fut.result()
-                        if item:
-                            hot.append(item)
-                if hot and board_source == "tushare_dc":
-                    source = "tushare_dc"
-                elif hot and board_source == "em_boards":
-                    source = "em_boards"
-
-        if not hot and boards:
-            hot = _calc_sector_concentration_reverse(lu_codes, boards)
-            if hot:
-                source = "em_slist_reverse" if board_source == "em_boards" else "ths_reverse"
-                log.info(
-                    "sector concentration via reverse slist pool_d=%s source=%s",
-                    pool_d,
-                    source,
-                )
-
-        if not hot:
-            chg_boards = boards
-            if not chg_boards:
-                index_map = _fetch_concept_index_map_tushare(pool_d)
-                chg_boards = sorted(
-                    index_map.values(),
-                    key=lambda x: x.get("chg", 0),
-                    reverse=True,
-                )[:_CONCEPT_LIST_FETCH_N]
-            hot = _calc_sector_concentration_from_tags(lu_df, total, chg_boards)
-            source = "zt_tags" if not chg_boards else f"zt_tags+{board_source}"
-            if hot:
-                log.warning(
-                    "sector concentration fell back to zt tags pool_d=%s boards=%s",
-                    pool_d,
-                    len(chg_boards),
-                )
-
-        if not hot:
-            return empty
-
-        hot.sort(key=lambda x: x["count"], reverse=True)
-        result = _pack_sector_concentration(hot, total, source=source)
+        result = {
+            "topSectors": hot[:5],
+            "top3Ratio": top3_ratio,
+            "hhi": hhi,
+            "total": total,
+            "topSector": hot[0]["name"] if hot else "",
+            "hotConceptCount": len(hot),
+        }
         _cache_set(key, result)
         return result
     except Exception:

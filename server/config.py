@@ -43,9 +43,6 @@ APP_ENV = os.getenv("APP_ENV", os.getenv("ENV", "")).lower()
 # 审核模式：非空时 /api/sentiment/today 返回固定分数（审核通过后设环境变量 REVIEW_SCORE= 清空即可）
 REVIEW_SCORE = os.getenv("REVIEW_SCORE", "25")
 
-# 可选：Tushare Pro Token（概念板块 dc_index / dc_member，比东财直连更稳）
-TUSHARE_TOKEN = os.getenv("TUSHARE_TOKEN", "")
-
 # 微信订阅消息模板（公众平台 → 订阅消息 → 模板 ID）
 TMPL_MARKET_SENTIMENT = os.getenv(
     "TMPL_SENTIMENT",
