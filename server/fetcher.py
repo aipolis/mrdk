@@ -6,6 +6,7 @@ import math
 import os
 import re
 import time
+from concurrent.futures import ThreadPoolExecutor, as_completed
 from datetime import datetime
 from config import BJT, bj_now, timedelta
 from functools import lru_cache
@@ -22,6 +23,10 @@ EM_POOL_MAX_AGE_DAYS = 30
 
 # 盘中 2 分钟刷新周期（略小于 IntervalTrigger 120s，避免命中旧缓存）
 INTRADAY_CACHE_TTL = 100
+
+_EM_CONCEPT_FS = "m:90+t:3"
+_CONCEPT_BOARD_TOP_N = 20
+_CONCEPT_LIST_FETCH_N = 20
 
 
 def _cache_get(key: str, ttl: int = 300):
@@ -43,6 +48,8 @@ def invalidate_intraday_caches(today: Optional[str] = None) -> None:
         "intraday_board_stats_v1",
         f"zt_{today}",
         f"zb_{today}",
+        f"sector_conc_{today}",
+        f"em_concept_top_{_CONCEPT_LIST_FETCH_N}_{today}",
     ):
         _cache.pop(key, None)
     invalidate_market_breadth_cache(today)
@@ -1731,58 +1738,201 @@ def build_grid_nine(metrics: dict, prev_metrics: Optional[dict] = None) -> list:
     return build_yesterday_sentiment(metrics, prev_metrics)
 
 
-def calc_sector_concentration(trade_d: str) -> dict:
-    """
-    统计涨停池各概念标签的涨停个数，用数量衡量热点强度。
-    数据来源：akshare stock_zt_pool_em 的「涨停原因类别」列，
-    标签以「+」分隔，每股可属于多个概念。
-    """
-    key = f"sector_conc_{trade_d}"
-    cached = _cache_get(key, 900)
+_SECTOR_CONC_EMPTY = {
+    "topSectors": [],
+    "top3Ratio": 0.0,
+    "hhi": 0.0,
+    "total": 0,
+    "topSector": "",
+    "hotConceptCount": 0,
+}
+
+
+def _sector_pool_date(trade_d: str) -> str:
+    """涨停池日期：盘中用当日实时池，收盘后或非交易日用参考日。"""
+    trade_d = (trade_d or "")[:8]
+    today = date_str(bj_now())
+    if today != trade_d and em_pool_available(today):
+        return today
+    return trade_d
+
+
+def _fetch_em_concept_boards_top(limit: int = _CONCEPT_LIST_FETCH_N) -> list[dict]:
+    """东财概念板块列表，按今日涨幅降序，一次 API 调用。"""
+    key = f"em_concept_top_{limit}_{date_str(bj_now())}"
+    cached = _cache_get(key, INTRADAY_CACHE_TTL)
     if cached is not None:
         return cached
 
-    empty = {"topSectors": [], "top3Ratio": 0.0, "hhi": 0.0, "total": 0, "topSector": "",
-             "hotConceptCount": 0}
+    headers = {"User-Agent": "Mozilla/5.0", "Referer": "https://quote.eastmoney.com/"}
+    params = {
+        "pn": "1",
+        "pz": str(limit),
+        "po": "1",
+        "np": "1",
+        "ut": "bd1d9ddb04089700cf9c27f6f7426281",
+        "fltt": "2",
+        "invt": "2",
+        "fid": "f3",
+        "fs": _EM_CONCEPT_FS,
+        "fields": "f12,f14,f3",
+    }
+    for url in _EM_CLIST_URLS:
+        try:
+            r = requests.get(url, params=params, headers=headers, timeout=12)
+            diff = (r.json().get("data") or {}).get("diff") or []
+            rows = list(diff.values()) if isinstance(diff, dict) else list(diff)
+            result = []
+            for row in rows:
+                code = str(row.get("f12") or "").strip()
+                name = str(row.get("f14") or "").strip()
+                if not code or not name:
+                    continue
+                result.append({
+                    "code": code,
+                    "name": name,
+                    "chg": round(float(row.get("f3") or 0), 2),
+                })
+            if result:
+                _cache_set(key, result)
+                return result
+        except Exception:
+            continue
+    return []
+
+
+def _fetch_em_board_constituent_codes(bk_code: str) -> set[str]:
+    """东财板块成分股代码集合。"""
+    bk_code = (bk_code or "").strip()
+    if not bk_code:
+        return set()
+    key = f"em_board_codes_{bk_code}"
+    cached = _cache_get(key, 3600)
+    if cached is not None:
+        return cached
+
+    headers = {"User-Agent": "Mozilla/5.0", "Referer": "https://quote.eastmoney.com/"}
+    params = {
+        "pn": "1",
+        "pz": "5000",
+        "po": "1",
+        "np": "1",
+        "ut": "bd1d9ddb04089700cf9c27f6f7426281",
+        "fltt": "2",
+        "invt": "2",
+        "fid": "f3",
+        "fs": f"b:{bk_code}",
+        "fields": "f12",
+    }
+    codes: set[str] = set()
+    for url in _EM_CLIST_URLS:
+        try:
+            r = requests.get(url, params=params, headers=headers, timeout=12)
+            diff = (r.json().get("data") or {}).get("diff") or []
+            rows = list(diff.values()) if isinstance(diff, dict) else list(diff)
+            for row in rows:
+                code = str(row.get("f12") or "").strip().zfill(6)
+                if code.isdigit() and len(code) == 6:
+                    codes.add(code)
+            if codes:
+                _cache_set(key, codes)
+                return codes
+        except Exception:
+            continue
+    _cache_set(key, codes)
+    return codes
+
+
+def _calc_sector_concentration_from_tags(lu_df: pd.DataFrame, total: int) -> list[dict]:
+    """兜底：用涨停池「涨停原因类别」标签统计概念强度。"""
+    concept_count: dict[str, int] = {}
+    tag_col = next((c for c in ["涨停原因类别", "涨停原因", "所属行业"] if c in lu_df.columns), None)
+    if not tag_col:
+        return []
+    for tags_raw in lu_df[tag_col].dropna():
+        tags = [t.strip() for t in str(tags_raw).split("+") if t.strip()]
+        for tag in tags:
+            concept_count[tag] = concept_count.get(tag, 0) + 1
+    return sorted(
+        [{"name": k, "count": v, "chg": 0.0, "ratio": v} for k, v in concept_count.items()],
+        key=lambda x: x["count"],
+        reverse=True,
+    )
+
+
+def _pack_sector_concentration(hot: list[dict], total: int) -> dict:
+    all_count = sum(h["count"] for h in hot)
+    top3_count = sum(h["count"] for h in hot[:3])
+    top3_ratio = round(top3_count / all_count * 100, 1) if all_count > 0 else 0.0
+    hhi = round(sum((h["count"] / all_count) ** 2 for h in hot) * 100, 1) if all_count > 0 else 0.0
+    return {
+        "topSectors": hot[:5],
+        "top3Ratio": top3_ratio,
+        "hhi": hhi,
+        "total": total,
+        "topSector": hot[0]["name"] if hot else "",
+        "hotConceptCount": len(hot),
+    }
+
+
+def calc_sector_concentration(trade_d: str) -> dict:
+    """
+    概念涨停强度：东财概念板块 × 涨停池交集统计。
+    1. 拉涨停池（盘中用当日，收盘后用参考日）
+    2. 东财概念板块列表按今日涨幅取前 20（一次调用）
+    3. 对前 20 板块各取成分股，与涨停池求交集统计涨停家数
+    4. 按家数排序取前 5
+    """
+    pool_d = _sector_pool_date(trade_d)
+    key = f"sector_conc_{pool_d}"
+    cache_ttl = INTRADAY_CACHE_TTL if pool_d == date_str(bj_now()) else 900
+    cached = _cache_get(key, cache_ttl)
+    if cached is not None:
+        return cached
+
+    empty = dict(_SECTOR_CONC_EMPTY)
     try:
-        lu_df = fetch_limit_up(trade_d)
+        lu_df = fetch_limit_up(pool_d)
         if lu_df is None or lu_df.empty:
             return empty
 
         total = len(lu_df)
-
-        # 统计每个概念标签的涨停个数
-        concept_count: dict[str, int] = {}
-        tag_col = next((c for c in ["涨停原因类别", "涨停原因", "所属行业"] if c in lu_df.columns), None)
-
-        if tag_col:
-            for tags_raw in lu_df[tag_col].dropna():
-                tags = [t.strip() for t in str(tags_raw).split("+") if t.strip()]
-                for tag in tags:
-                    concept_count[tag] = concept_count.get(tag, 0) + 1
-
-        if not concept_count:
+        lu_codes = _normalize_stock_codes(lu_df)
+        if not lu_codes:
             return empty
 
-        # 按涨停个数降序排列
-        hot = sorted(
-            [{"name": k, "count": v, "chg": 0.0, "ratio": v} for k, v in concept_count.items()],
-            key=lambda x: x["count"], reverse=True
-        )
+        boards = _fetch_em_concept_boards_top(_CONCEPT_LIST_FETCH_N)[:_CONCEPT_BOARD_TOP_N]
+        hot: list[dict] = []
+        if boards:
+            def _count_board(board: dict) -> Optional[dict]:
+                codes = _fetch_em_board_constituent_codes(board["code"])
+                if not codes:
+                    return None
+                count = len(codes & lu_codes)
+                if count <= 0:
+                    return None
+                return {
+                    "name": board["name"],
+                    "count": count,
+                    "chg": board["chg"],
+                    "ratio": count,
+                }
 
-        all_count = sum(h["count"] for h in hot)
-        top3_count = sum(h["count"] for h in hot[:3])
-        top3_ratio = round(top3_count / all_count * 100, 1) if all_count > 0 else 0.0
-        hhi = round(sum((h["count"] / all_count) ** 2 for h in hot) * 100, 1) if all_count > 0 else 0.0
+            with ThreadPoolExecutor(max_workers=8) as ex:
+                futures = [ex.submit(_count_board, b) for b in boards]
+                for fut in as_completed(futures):
+                    item = fut.result()
+                    if item:
+                        hot.append(item)
 
-        result = {
-            "topSectors": hot[:5],
-            "top3Ratio": top3_ratio,
-            "hhi": hhi,
-            "total": total,
-            "topSector": hot[0]["name"] if hot else "",
-            "hotConceptCount": len(hot),
-        }
+        if not hot:
+            hot = _calc_sector_concentration_from_tags(lu_df, total)
+
+        if not hot:
+            return empty
+
+        hot.sort(key=lambda x: x["count"], reverse=True)
+        result = _pack_sector_concentration(hot, total)
         _cache_set(key, result)
         return result
     except Exception:
