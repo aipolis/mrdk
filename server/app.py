@@ -462,6 +462,7 @@ def _build_home_payload(ref_d: str, prev_d: Optional[str], advice_d: str, is_rea
         "positionLabel": longkong["positionLabel"],
         "positionDesc": position_desc(display_score, longkong["emptyWarning"], longkong.get("riskLevel", "none")),
         "emptyWarning": longkong["emptyWarning"],
+        "riskLevel": longkong.get("riskLevel", "none"),
         "emptyReasons": longkong["emptyReasons"],
         "strategyNote": strategy_note,
         "subScores": sentiment.get("subScores") or {},
@@ -566,7 +567,15 @@ def _run_peripheral_0900() -> None:
 
 
 def _run_auction_0926() -> None:
-    persist_auction_snapshot(freeze=False)
+    persist_auction_snapshot(freeze=True)
+    build_and_store(_build_home_for_cache)
+
+
+def _run_auction_live() -> None:
+    from fetcher import _in_auction_live_window
+
+    if not _in_auction_live_window():
+        return
     build_and_store(_build_home_for_cache)
 
 
@@ -1120,6 +1129,7 @@ async def lifespan(app: FastAPI):
         peripheral_10m_fn=_refresh_peripheral_live,
         auction_0926_fn=_run_auction_0926,
         auction_0935_fn=_run_auction_0935,
+        auction_live_fn=_run_auction_live,
         intraday_2m_fn=_refresh_intraday_live,
     )
     yield
@@ -1437,14 +1447,14 @@ def warm_home_cache(x_cron_secret: str = Header(default="")):
 
 
 @app.get("/api/auction/detail")
-def auction_detail(date: str = ""):
-    """竞价情绪下钻：一字个股、板块 Top10、竞价量能异动"""
+def auction_detail(date: str = "", section: str = ""):
+    """竞价情绪下钻；section=oneWord,topSectors 快速首屏，volumeSurge 可延后加载"""
     ref_d, prev_d, advice_d, _ = resolve_advice_dates()
     trade_d = (date or advice_d or ref_d or "")[:8].replace("-", "")
     if not trade_d:
         return {"code": 1, "message": "无法确定交易日"}
     try:
-        data = build_auction_detail_payload(trade_d, prev_d)
+        data = build_auction_detail_payload(trade_d, prev_d, sections=section or "oneWord,topSectors")
         return {"code": 0, "data": data}
     except Exception as e:
         log.exception("auction detail failed trade_d=%s", trade_d)
@@ -1474,7 +1484,7 @@ def snapshot_daily_cache(
     分板块定时快照（内置 cron 或控制台触发）：
     - 1505 / 1800：昨日情绪（收盘）
     - 0900：外围情绪入库
-    - 0926 / 0935：今日竞价初更 / 固化
+    - 0926：今日竞价固化；0915–0926 间每 20 秒 live 刷新
     """
     if err := _cron_auth_error(x_cron_secret):
         return err
@@ -1484,7 +1494,7 @@ def snapshot_daily_cache(
         "1505": lambda: persist_trading_day_snapshot(freeze=False),
         "1800": lambda: persist_trading_day_snapshot(freeze=True),
         "0900": persist_peripheral_db_0900,
-        "0926": lambda: persist_auction_snapshot(freeze=False),
+        "0926": lambda: persist_auction_snapshot(freeze=True),
         "0935": lambda: persist_auction_snapshot(freeze=True),
     }
     fn = handlers.get(phase)
