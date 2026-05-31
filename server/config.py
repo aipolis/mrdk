@@ -46,7 +46,7 @@ REVIEW_SCORE = os.getenv("REVIEW_SCORE", "25")
 # 微信订阅消息模板（公众平台 → 订阅消息 → 模板 ID）
 TMPL_MARKET_SENTIMENT = os.getenv(
     "TMPL_SENTIMENT",
-    "2PJYcWlocC15xg2W7YDLzT5B1Qff5Hc24O-mLEsw4tU",
+    "ZLa4Hs_89uxSh2FeXv7i68TQm0j_jDZGZsoxfs8WYUY",
 )
 
 SUBSCRIBE_TEMPLATES = {
@@ -54,10 +54,10 @@ SUBSCRIBE_TEMPLATES = {
     "empty_alert": os.getenv("TMPL_EMPTY", TMPL_MARKET_SENTIMENT),
 }
 
-# 模板字段：thing7 策略类型 | character_string2 关键数据 | time3 时间 | thing12 温馨提示
+# 模板字段：date1 日期 | phrase3 天气 | number10 舒适度分数 | thing5 温馨提示
 SUBSCRIBE_FIELD_KEYS = {
-    "strategy": "thing7",
-    "key_data": "character_string2",
-    "time": "time3",
-    "tips": "thing12",
+    "date": "date1",
+    "weather": "phrase3",
+    "score": "number10",
+    "tips": "thing5",
 }

@@ -27,32 +27,35 @@ log = logging.getLogger("mingri.subscribe")
 SUBSCRIBERS_FILE = Path(__file__).resolve().parent / "data" / "subscribers.json"
 _token_cache: dict = {"token": "", "expires": 0}
 
-# 微信模板字段长度限制（thing 约 20 字）
-_MAX = {"thing7": 20, "character_string2": 32, "thing12": 20}
+# thing5 温馨提示最多 20 字
+_TIPS_MAX = 20
 
 
-def _clip(text: str, key: str) -> str:
-    n = _MAX.get(key, 20)
+def _clip_tips(text: str) -> str:
     s = (text or "").strip()
-    if len(s) <= n:
-        return s
-    return s[: n - 1] + "…"
+    return s if len(s) <= _TIPS_MAX else s[:_TIPS_MAX - 1] + "…"
 
 
-def _weather_label(score: int, empty: bool) -> tuple[str, str, str]:
-    """返回 (天气名, 建议, 简短提示)"""
+def _weather_label(score: int, empty: bool) -> tuple[str, str]:
+    """返回 (天气词, 温馨提示)"""
     if empty or score < 30:
-        return "雨天", "宜休息", "今天可能下雨，建议休息"
+        return "雨天", "雨天宜休息，等晴天再出门"
     if score > 70:
-        return "晴天", "宜出门", "今天天气不错，可积极行动"
+        return "晴天", "天气不错，可积极行动"
     if score >= 50:
-        return "多云", "带把伞", "今天多云，带好伞再出门"
-    return "阴天", "谨慎", "今天天气一般，谨慎为主"
+        return "多云", "多云天气，带好伞再出门"
+    return "阴天", "天气一般，谨慎出行"
 
 
-def _tips_from_sentiment(score: int, empty: bool, reasons: list) -> str:
-    _, _, tip = _weather_label(score, empty)
-    return _clip(tip, "thing12")
+def _fmt_advice_date(advice_date: str) -> str:
+    """YYYY-MM-DD → YYYY年M月D日"""
+    try:
+        parts = advice_date.split("-")
+        if len(parts) == 3:
+            return f"{parts[0]}年{int(parts[1])}月{int(parts[2])}日"
+    except Exception:
+        pass
+    return advice_date
 
 
 def build_subscribe_message(
@@ -64,31 +67,27 @@ def build_subscribe_message(
 ) -> dict:
     score = int(sentiment.get("displayScore") or sentiment.get("score") or 0)
     empty = bool(sentiment.get("emptyWarning"))
-    weather, action, _ = _weather_label(score, empty)
+    weather, tip = _weather_label(score, empty)
 
-    strategy = _clip(f"明日当空·{weather}", "thing7")
-    key_data = _clip(f"天气指数{score}·{action}", "character_string2")
-    tips = _tips_from_sentiment(score, empty, [])
-
-    time_val = f"{advice_date} 09:10"
+    date_val = _fmt_advice_date(advice_date)
+    tips = _clip_tips(tip)
 
     fk = SUBSCRIBE_FIELD_KEYS
     wx_data = {
-        fk["strategy"]: {"value": strategy},
-        fk["key_data"]: {"value": key_data},
-        fk["time"]: {"value": time_val},
-        fk["tips"]: {"value": tips},
+        fk["date"]:    {"value": date_val},
+        fk["weather"]: {"value": weather},
+        fk["score"]:   {"value": str(score)},
+        fk["tips"]:    {"value": tips},
     }
 
     return {
-        "strategy": strategy,
-        "keyData": key_data,
-        "time": time_val,
+        "date": date_val,
+        "weather": weather,
+        "keyData": f"舒适度{score}",
         "tips": tips,
         "wxData": wx_data,
         "score": score,
-        "level": ui_level,
-        "positionPercent": int(sentiment.get("positionPercent", 0)),
+        "level": weather,
         "emptyWarning": empty,
     }
 

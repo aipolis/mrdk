@@ -261,7 +261,7 @@ def _build_fallback_home_payload(ref_d: str, prev_d: Optional[str], advice_d: st
         "intraday": fallback_intraday,
         "longkongRisk": fallback_longkong_risk,
         "indicatorSections": fallback_sections,
-        "subscribePreview": {"strategy": "数据预热中", "keyData": [], "time": now.strftime("%H:%M"), "tips": ["缓存预热中，先显示基础参考值"]},
+        "subscribePreview": {"date": "", "weather": "多云", "keyData": "舒适度预热中", "tips": "数据预热中，请稍候"},
         "score": 58,
         "baselineScore": 58,
         "liveScore": None,
@@ -434,9 +434,9 @@ def _build_home_payload(ref_d: str, prev_d: Optional[str], advice_d: str, is_rea
         "longkongRisk": longkong_risk,
         "indicatorSections": indicator_sections,
         "subscribePreview": {
-            "strategy": subscribe_preview["strategy"],
+            "date": subscribe_preview["date"],
+            "weather": subscribe_preview["weather"],
             "keyData": subscribe_preview["keyData"],
-            "time": subscribe_preview["time"],
             "tips": subscribe_preview["tips"],
         },
         "score": baseline_score,
@@ -1228,7 +1228,8 @@ def _review_score_payload() -> Optional[dict]:
         })
         return payload
 
-    # 缓存不可用时返回最简 payload
+    # 缓存不可用时返回最简 payload，日期从 resolve_advice_dates 取
+    ref_d, _, advice_d, is_ready = resolve_advice_dates()
     now = bj_now()
     return {
         "score": score,
@@ -1242,9 +1243,9 @@ def _review_score_payload() -> Optional[dict]:
         "positionDesc": "",
         "emptyWarning": False,
         "emptyReasons": [],
-        "refDate": now.strftime("%Y-%m-%d"),
-        "adviceDate": now.strftime("%Y-%m-%d"),
-        "date": now.strftime("%Y-%m-%d"),
+        "refDate": _fmt_date(ref_d),
+        "adviceDate": _fmt_date(advice_d),
+        "date": _fmt_date(advice_d),
         "generatedAt": "示例数据",
         "generatedAtLabel": "示例数据",
         "generatedAtTime": now.strftime("%H:%M"),
@@ -1257,7 +1258,7 @@ def _review_score_payload() -> Optional[dict]:
         "intraday": [],
         "metrics": {},
         "prevMetrics": {},
-        "isReportReady": True,
+        "isReportReady": is_ready,
         "reviewMode": True,
     }
 
