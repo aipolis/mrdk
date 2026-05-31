@@ -327,6 +327,12 @@ def persist_auction_snapshot(*, freeze: bool = False) -> dict:
         indicator_sections=sections,
         rebuild_sentiment=False,
     )
+    if freeze and ok:
+        try:
+            from auction_detail import _fetch_stock_auction_vol_map
+            _fetch_stock_auction_vol_map(today)
+        except Exception:
+            log.exception("auction stock vol cache failed trade_d=%s", today)
     log.info(
         "auction snapshot trade_d=%s phase=%s frozen=%s saved=%s",
         today,

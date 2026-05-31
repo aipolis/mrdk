@@ -17,6 +17,7 @@ from pydantic import BaseModel
 import os
 
 from config import APP_ENV, CRON_SECRET, REVIEW_SCORE, SUBSCRIBE_FIELD_KEYS, SUBSCRIBE_TEMPLATES, SYNC_HISTORY_DAYS, bj_now
+from auction_detail import build_auction_detail_payload
 from intraday import (
     build_intraday_payload,
     calc_display_score,
@@ -1433,6 +1434,21 @@ def warm_home_cache(x_cron_secret: str = Header(default="")):
     invalidate_sector_concentration_cache()
     ok = build_and_store(_build_home_for_cache)
     return {"code": 0 if ok else 1, "data": cache_status()}
+
+
+@app.get("/api/auction/detail")
+def auction_detail(date: str = ""):
+    """竞价情绪下钻：一字个股、板块 Top10、竞价量能异动"""
+    ref_d, prev_d, advice_d, _ = resolve_advice_dates()
+    trade_d = (date or advice_d or ref_d or "")[:8].replace("-", "")
+    if not trade_d:
+        return {"code": 1, "message": "无法确定交易日"}
+    try:
+        data = build_auction_detail_payload(trade_d, prev_d)
+        return {"code": 0, "data": data}
+    except Exception as e:
+        log.exception("auction detail failed trade_d=%s", trade_d)
+        return {"code": 1, "message": str(e) or "竞价详情获取失败"}
 
 
 @app.post("/api/cache/rebuild-auction")
