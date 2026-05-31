@@ -2476,26 +2476,16 @@ def _apply_auction_prev_from_ref(
 
 
 def _relative_day_label(trade_d: str, today: str) -> str:
-    """相对今天：昨天 / 前天 / MM-DD"""
+    """日期标签：x月x日（今日则返回今日）"""
     trade_d = (trade_d or "")[:8]
     today = (today or "")[:8]
-    if not trade_d:
+    if not trade_d or len(trade_d) < 8:
         return "--"
     if trade_d == today:
-        return "今天"
-    dates = get_recent_trade_dates(15)
-    try:
-        ti = dates.index(today) if today in dates else len(dates)
-        di = dates.index(trade_d) if trade_d in dates else -1
-        if di >= 0:
-            gap = ti - di
-            if gap == 1:
-                return "昨天"
-            if gap == 2:
-                return "前天"
-    except ValueError:
-        pass
-    return f"{trade_d[4:6]}-{trade_d[6:8]}"
+        return "今日"
+    month = int(trade_d[4:6])
+    day = int(trade_d[6:8])
+    return f"{month}月{day}日"
 
 
 def build_section_metas(
