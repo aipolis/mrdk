@@ -253,9 +253,9 @@ async def broadcast_daily_sentiment(
             results["details"].append({"openid": openid[:8] + "…", "err": str(e)})
 
     results["preview"] = {
-        "strategy": msg["strategy"],
+        "date": msg["date"],
+        "weather": msg["weather"],
         "keyData": msg["keyData"],
-        "time": msg["time"],
         "tips": msg["tips"],
     }
     return results

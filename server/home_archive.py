@@ -211,9 +211,9 @@ def assemble_home_from_archive(
         "longkongRisk": longkong_risk,
         "indicatorSections": indicator_sections,
         "subscribePreview": {
-            "strategy": subscribe_preview["strategy"],
+            "date": subscribe_preview["date"],
+            "weather": subscribe_preview["weather"],
             "keyData": subscribe_preview["keyData"],
-            "time": subscribe_preview["time"],
             "tips": subscribe_preview["tips"],
         },
         "score": baseline_score,
