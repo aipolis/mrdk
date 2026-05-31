@@ -38,10 +38,7 @@ function buildStatusText(data) {
     return `今日实时情绪${updTime ? ' · ' + updTime + ' 更新' : ''}`
   }
 
-  // 从 generatedAtLabel 提取 ref 日描述（"昨天 15:00 更新" → "昨日"）
-  const genLabel   = String(data.generatedAtLabel || data.generatedAt || '')
-  const dayWord    = genLabel.match(/^(今天|昨天|前天)/)?.[1]
-  const refLabel   = dayWord ? dayWord.replace('天', '日') : _dateMMDD(data.refDate)
+  const refLabel = _dateMMDD(data.refDate)
 
   const refKey  = _dateKey(data.refDate)
   const advKey  = _dateKey(data.adviceDate || data.date)
@@ -235,12 +232,11 @@ function renderPeripheral(items) {
 
 function renderSectorBars(items) {
   if (!items?.length) return '<p class="grid-empty">暂无概念数据</p>'
-  // items: [{name, chg (concept %-gain), leader, ...}]
-  const maxChg = Math.max(...items.map(s => Number(s.chg || s.count || 0)), 0.01)
+  const maxCount = Math.max(...items.map(s => Number(s.count || s.chg || 0)), 1)
   const bars = items.map(s => {
-    const chg = Number(s.chg ?? s.count ?? 0)
-    const pct = Math.round(chg / maxChg * 100)
-    const label = chg > 0 ? `+${chg.toFixed(2)}%` : `${chg.toFixed(2)}%`
+    const count = Number(s.count ?? 0)
+    const pct = Math.round(count / maxCount * 100)
+    const label = count > 0 ? `${count}家` : '--'
     return `
     <div class="sector-bar-row">
       <span class="sector-bar-name">${esc(s.name)}</span>
@@ -420,7 +416,10 @@ function applyData(data, options = {}) {
   const formattedQuote = /[。！？；…]$/.test(quoteText) ? quoteText : `${quoteText}。`
 
   $('#headerDate').textContent = formatHeaderDate()
-  $('#generatedAt').textContent = data.generatedAtLabel || data.generatedAt || '更新中'
+  const _isLive = data.scoreMode === 'live'
+  const _hm = data.generatedAtTime || '15:00'
+  const _dateLabel = _isLive ? '今日' : _dateMMDD(data.refDate)
+  $('#generatedAt').textContent = `${_dateLabel} ${_hm} 更新`
   $('#quoteText').textContent = formattedQuote
 
   gaugePendingMeta = {

@@ -42,6 +42,7 @@
       margin-bottom: 16px;
     }
     .poster-actions .btn-primary { flex: 1; }
+    .poster-actions .btn-share { background: #1677ff; }
     .poster-actions .btn-secondary { flex: 0 0 auto; }
     .btn-primary, .btn-secondary {
       border: none;
@@ -87,7 +88,7 @@
       <nav class="header-actions" aria-label="页面导航">
         <a class="nav-link" href="/">情绪</a>
         <a class="nav-link" href="/history.html">历史</a>
-        <a class="nav-link active" href="/poster.html">海报</a>
+        <a class="nav-link active" href="/poster.html">分享</a>
       </nav>
     </header>
 
@@ -99,25 +100,17 @@
 
     <section class="poster-actions">
       <button type="button" class="btn-primary" id="downloadBtn" disabled>下载 PNG</button>
-      <button type="button" class="btn-secondary" id="refreshBtn" title="刷新" aria-label="刷新数据">
-        <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M3 12a9 9 0 1 0 9-9 9.75 9.75 0 0 0-6.74 2.74L3 8"/><path d="M3 3v5h5"/></svg>
-      </button>
+      <button type="button" class="btn-primary btn-share" id="shareBtn" disabled>转发</button>
+      <a href="/" class="btn-secondary" style="display:flex;align-items:center;justify-content:center;text-decoration:none;">返回</a>
     </section>
 
-    <article class="poster-tips">
-      <strong>抖音发图建议</strong>
-      <ul>
-        <li>含：情绪表盘、昨日概览、盘中实时（不含外围/竞价/趋势，更适合手机竖图）</li>
-        <li>高度随内容自动调整，一屏内信息更集中</li>
-        <li>底部含网站二维码，扫码即可访问完整实时数据</li>
-        <li>更好效果：用剪映给海报加 5 秒轻微放大动画</li>
-        <li>口播带一句：数据仅供参考，不构成投资建议</li>
-      </ul>
-    </article>
+    <!-- 长按保存弹层（WeChat / 不支持 a.download 时使用） -->
+    <div id="imageModal" style="display:none;position:fixed;inset:0;background:rgba(0,0,0,0.92);z-index:1000;flex-direction:column;align-items:center;justify-content:center;padding:20px;">
+      <p style="color:#fff;font-size:15px;margin-bottom:16px;text-align:center;">长按图片保存到相册</p>
+      <img id="modalImage" alt="海报" style="max-width:100%;max-height:70vh;border-radius:8px;display:block;"/>
+      <button id="closeModal" style="margin-top:20px;color:#fff;background:rgba(255,255,255,0.15);border:none;padding:10px 32px;border-radius:8px;font-size:15px;cursor:pointer;">关闭</button>
+    </div>
 
-    <footer class="site-footer">
-      <p>数据仅供参考，不构成投资建议。</p>
-    </footer>
   </section>
 
   <script type="module" src="/js/poster.js"></script>

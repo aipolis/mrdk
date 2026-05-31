@@ -7,6 +7,24 @@
   <title>明日当空 · 历史情绪</title>
   <link rel="icon" type="image/svg+xml" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'%3E%3Crect width='32' height='32' rx='8' fill='%23ef4444'/%3E%3Ctext x='16' y='22' text-anchor='middle' font-family='system-ui,sans-serif' font-size='18' font-weight='700' fill='%231f2937'%3E%E6%98%8E%3C/text%3E%3C/svg%3E"/>
   <link rel="stylesheet" href="/css/app.css?v=20260529m"/>
+  <style>
+    .cal-nav { display:flex; align-items:center; justify-content:space-between; margin-bottom:12px; }
+    .cal-nav-btn { background:none; border:none; font-size:22px; color:var(--muted); cursor:pointer; padding:0 8px; line-height:1; }
+    .cal-nav-title { font-size:15px; font-weight:600; color:var(--text); }
+    .cal-weekdays { display:grid; grid-template-columns:repeat(7,1fr); margin-bottom:6px; }
+    .cal-weekdays span { text-align:center; font-size:12px; color:var(--muted); padding:4px 0; }
+    .cal-grid { display:grid; grid-template-columns:repeat(7,1fr); gap:5px 3px; }
+    .cal-cell { position:relative; border-radius:8px; aspect-ratio:1; display:flex; align-items:center; justify-content:center; }
+    .cal-cell-empty { }
+    .cal-cell-nodata { background:transparent; }
+    .cal-cell-today .cal-day-num-only { color:var(--accent); font-weight:700; }
+    .cal-score { font-size:15px; font-weight:700; color:#fff; line-height:1; }
+    .cal-day-num { position:absolute; right:4px; bottom:3px; font-size:10px; color:rgba(255,255,255,0.75); line-height:1; }
+    .cal-day-num-only { font-size:13px; color:var(--muted); }
+    .cal-legend { display:grid; grid-template-columns:repeat(4,1fr); gap:8px 0; margin-top:16px; padding-top:14px; border-top:1px solid var(--border); }
+    .cal-legend-item { display:flex; align-items:center; gap:6px; font-size:12px; color:var(--muted); }
+    .cal-legend-dot { width:12px; height:12px; border-radius:3px; flex-shrink:0; }
+  </style>
 </head>
 <body>
   <section class="page">
@@ -18,7 +36,7 @@
       <nav class="header-actions" aria-label="页面导航">
         <a class="nav-link" href="/">情绪</a>
         <a class="nav-link active" href="/history.html">历史</a>
-        <a class="nav-link" href="/poster.html">海报</a>
+        <a class="nav-link" href="/poster.html">分享</a>
         <button type="button" class="btn-icon" id="refreshBtn" title="刷新" aria-label="刷新数据">
           <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M3 12a9 9 0 1 0 9-9 9.75 9.75 0 0 0-6.74 2.74L3 8"/><path d="M3 3v5h5"/></svg>
         </button>
@@ -26,6 +44,27 @@
     </header>
 
     <p class="status-bar" id="historyStatus">加载中…</p>
+
+    <article class="card" id="calendarCard">
+      <div class="cal-nav">
+        <button class="cal-nav-btn" id="calPrev">‹</button>
+        <span class="cal-nav-title" id="calTitle">--</span>
+        <button class="cal-nav-btn" id="calNext">›</button>
+      </div>
+      <div class="cal-weekdays">
+        <span>日</span><span>一</span><span>二</span><span>三</span><span>四</span><span>五</span><span>六</span>
+      </div>
+      <div class="cal-grid" id="calGrid"></div>
+      <div class="cal-legend">
+        <div class="cal-legend-item"><div class="cal-legend-dot" style="background:#94a3b8"></div>雨天 ＜30</div>
+        <div class="cal-legend-item"><div class="cal-legend-dot" style="background:#38bdf8"></div>阴天 30+</div>
+        <div class="cal-legend-item"><div class="cal-legend-dot" style="background:#52c41a"></div>偏阴 40+</div>
+        <div class="cal-legend-item"><div class="cal-legend-dot" style="background:#faad14"></div>多云 50+</div>
+        <div class="cal-legend-item"><div class="cal-legend-dot" style="background:#ff4d4f"></div>晴天 60+</div>
+        <div class="cal-legend-item"><div class="cal-legend-dot" style="background:#cf1322"></div>晴热 75+</div>
+        <div class="cal-legend-item"><div class="cal-legend-dot" style="background:#820014"></div>极热 90+</div>
+      </div>
+    </article>
 
     <article class="card trend-card">
       <header class="trend-head">
@@ -61,7 +100,7 @@
   </section>
 
   <script type="module">
-    import { initHistoryPage } from '/js/history.js'
+    import { initHistoryPage } from '/js/history.js?v=20260530a'
     initHistoryPage()
   </script>
 </body>
