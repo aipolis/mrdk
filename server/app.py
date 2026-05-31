@@ -1269,7 +1269,7 @@ def sentiment_today(force: int = 0):
         invalidate_sector_concentration_cache()
         build_and_store(_build_home_for_cache)
 
-    review = _review_score_payload()
+    review = _review_score_payload() if not force else None
     if review is not None:
         return {"code": 0, "data": review, "cache": {"fromCache": False, "reviewMode": True}}
 
