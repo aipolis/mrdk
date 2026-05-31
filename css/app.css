@@ -1122,6 +1122,35 @@ a {
   color: var(--dim);
 }
 
+.auction-skeleton {
+  padding: 20px 16px;
+}
+
+.auction-skeleton-text {
+  margin: 0 0 12px;
+  font-size: 13px;
+  color: var(--dim);
+}
+
+.auction-skeleton-bar {
+  display: block;
+  height: 10px;
+  margin-bottom: 8px;
+  border-radius: 6px;
+  background: linear-gradient(90deg, rgba(255,255,255,0.04), rgba(255,255,255,0.10), rgba(255,255,255,0.04));
+  background-size: 200% 100%;
+  animation: auction-shimmer 1.2s ease-in-out infinite;
+}
+
+.auction-skeleton-bar.short {
+  width: 62%;
+}
+
+@keyframes auction-shimmer {
+  0% { background-position: 200% 0; }
+  100% { background-position: -200% 0; }
+}
+
 @media (prefers-reduced-motion: reduce) {
   .skeleton,
   .gauge-dot {

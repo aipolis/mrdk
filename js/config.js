@@ -27,6 +27,32 @@ export const FETCH_TIMEOUT_MS = 45000
 /** 首页自动刷新间隔（毫秒），与后端盘中 2 分钟节奏一致 */
 export const AUTO_REFRESH_MS = 2 * 60 * 1000
 
+/** 竞价窗口 9:15–9:26 刷新间隔（一字 / 板块 Top10） */
+export const AUCTION_REFRESH_MS = 20 * 1000
+
+/** 量能异动 9:20–9:26 刷新间隔 */
+export const VOLUME_SURGE_REFRESH_MS = 30 * 1000
+
+export function resolveAutoRefreshMs(now = new Date()) {
+  const hm = now.getHours() * 60 + now.getMinutes()
+  if (hm >= 9 * 60 + 15 && hm < 9 * 60 + 26) return AUCTION_REFRESH_MS
+  return AUTO_REFRESH_MS
+}
+
+/** 竞价详情页轮询：竞价窗口内 20s，其余 5 分钟 */
+export function resolveAuctionDetailPollMs(now = new Date()) {
+  const hm = now.getHours() * 60 + now.getMinutes()
+  if (hm >= 9 * 60 + 15 && hm < 9 * 60 + 26) return AUCTION_REFRESH_MS
+  return 5 * 60 * 1000
+}
+
+/** 量能异动轮询：9:20–9:26 每 30s，其余不轮询 */
+export function resolveVolumeSurgePollMs(now = new Date()) {
+  const hm = now.getHours() * 60 + now.getMinutes()
+  if (hm >= 9 * 60 + 20 && hm < 9 * 60 + 26) return VOLUME_SURGE_REFRESH_MS
+  return 0
+}
+
 /**
  * 开发环境设置 API 地址
  * 在浏览器控制台执行：localStorage.setItem('mrdk_api_base', 'http://127.0.0.1:8000')

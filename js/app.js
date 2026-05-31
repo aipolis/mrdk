@@ -1,5 +1,5 @@
-import { AUTO_REFRESH_MS } from './config.js?v=20260529i'
-import { getDisplayLevel, dailyQuote, formatHeaderDate } from './theme.js?v=20260529i'
+import { resolveAutoRefreshMs } from './config.js?v=20260531a'
+import { getDisplayLevel, dailyQuote, formatHeaderDate, HOME_QUOTE } from './theme.js?v=20260531a'
 import { normalizeSections } from './indicators.js?v=20260531a'
 import {
   buildLongkongHeroText,
@@ -7,7 +7,9 @@ import {
   resolveLongkongTone,
   renderLongkongLightsHtml,
   setGaugeLevelClass,
-} from './longkongState.js?v=20260529k'
+  normalizeRiskReason,
+  buildRiskCopy,
+} from './longkongState.js?v=20260531a'
 import { fetchToday, fetchHistory, fetchDay, fetchIntradaySeries } from './api.js?v=20260529i'
 import { drawIntradayChart } from './intradayChart.js?v=20260529a'
 import { createTrendController } from './trendDraw.js?v=20260529i'
@@ -17,7 +19,7 @@ import { getHomeCache, saveHomeCache, isSameHomeSnapshot } from './homeCache.js?
 export { fetchToday, fetchHistory }
 
 const LOADING_DESC = '正在汇总昨日收盘数据…'
-const HOME_QUOTE = '不怕错过，就怕做错。不出门的时候，就在家修炼。'
+
 
 const $ = (sel) => document.querySelector(sel)
 
@@ -117,27 +119,6 @@ function setGaugeCalculating(on) {
   }
 }
 
-function normalizeRiskReason(reason) {
-  const raw = String(reason || '').trim()
-  if (!raw) return '接力环境偏谨慎'
-
-  const promote = raw.match(/晋级率(?:仅|只有)?\s*(\d+(?:\.\d+)?)%/)
-  if (promote) return `昨日涨停股今日晋级率仅 ${promote[1]}%，也就是昨日涨停股中今天继续涨停的比例偏低`
-
-  const breakRate = raw.match(/炸板率(?:高达|达到|为)?\s*(\d+(?:\.\d+)?)%/)
-  if (breakRate) return `炸板率 ${breakRate[1]}%，封板稳定性不足`
-
-  return raw
-}
-
-function buildRiskCopy(data) {
-  if (!data?.emptyWarning) return null
-  const reason = normalizeRiskReason((data.emptyReasons && data.emptyReasons[0]) || '')
-  return {
-    desc: '分数中性，但接力晋级偏弱',
-    tip: `复盘提示：${reason}。打板少做、精选，等更强确认。`,
-  }
-}
 
 function applyGaugeMeta(data, displayScore, level) {
   const meta = gaugePendingMeta || {}
@@ -749,15 +730,21 @@ export async function loadHome(options = {}) {
 
 function startAutoRefresh() {
   stopAutoRefresh()
-  refreshTimer = setInterval(() => {
-    if (document.hidden) return
-    loadHome({ silent: true })
-  }, AUTO_REFRESH_MS)
+  const tick = () => {
+    if (document.hidden) {
+      refreshTimer = setTimeout(tick, resolveAutoRefreshMs())
+      return
+    }
+    loadHome({ silent: true }).finally(() => {
+      refreshTimer = setTimeout(tick, resolveAutoRefreshMs())
+    })
+  }
+  refreshTimer = setTimeout(tick, resolveAutoRefreshMs())
 }
 
 function stopAutoRefresh() {
   if (refreshTimer) {
-    clearInterval(refreshTimer)
+    clearTimeout(refreshTimer)
     refreshTimer = null
   }
 }

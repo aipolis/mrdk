@@ -69,3 +69,22 @@ export function buildLongkongHeroText(data, lk) {
   const desc = positionDesc || lkDesc
   return { levelLabel, desc }
 }
+
+export function normalizeRiskReason(reason) {
+  const raw = String(reason || '').trim()
+  if (!raw) return '接力环境偏谨慎'
+  const promote = raw.match(/晋级率(?:仅|只有)?\s*(\d+(?:\.\d+)?)%/)
+  if (promote) return `昨日涨停股今日晋级率仅 ${promote[1]}%，也就是昨日涨停股中今天继续涨停的比例偏低`
+  const breakRate = raw.match(/炸板率(?:高达|达到|为)?\s*(\d+(?:\.\d+)?)%/)
+  if (breakRate) return `炸板率 ${breakRate[1]}%，封板稳定性不足`
+  return raw
+}
+
+export function buildRiskCopy(data) {
+  if (!data?.emptyWarning) return null
+  const reason = normalizeRiskReason((data.emptyReasons && data.emptyReasons[0]) || '')
+  return {
+    desc: '分数中性，但接力晋级偏弱',
+    tip: `复盘提示：${reason}。打板少做、精选，等更强确认。`,
+  }
+}

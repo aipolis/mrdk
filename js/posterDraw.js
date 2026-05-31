@@ -1,10 +1,11 @@
 /**
  * 分享海报：手机竖屏适配（格言 + 表盘 + 昨日/盘中 + 页脚）
  */
-import { drawSteeringGauge } from './gaugeDraw.js'
-import { getDisplayLevel, dailyQuote, formatHeaderDate } from './theme.js'
-import { normalizeSections } from './indicators.js'
-import { drawQrCode } from './qrDraw.js'
+import { drawSteeringGauge } from './gaugeDraw.js?v=20260531a'
+import { getDisplayLevel, formatHeaderDate, HOME_QUOTE } from './theme.js?v=20260531a'
+import { scoreToLongkongState, LONGKONG_STATE_STEPS, buildRiskCopy } from './longkongState.js?v=20260531a'
+import { normalizeSections } from './indicators.js?v=20260531a'
+import { drawQrCode } from './qrDraw.js?v=20260531a'
 
 export const POSTER_W = 1080
 const SCALE = POSTER_W / 750
@@ -42,6 +43,16 @@ const LEVEL_COLORS = {
   neutral: '#faad14',
   caution: '#52c41a',
   cold: '#1890ff',
+}
+
+const LEVEL_LIGHT = {
+  frenzy:    { bg: 'rgba(248,113,113,0.10)', border: 'rgba(248,113,113,0.45)', dot: '#f87171' },
+  climax:    { bg: 'rgba(248,113,113,0.10)', border: 'rgba(248,113,113,0.45)', dot: '#f87171' },
+  optimistic:{ bg: 'rgba(248,113,113,0.10)', border: 'rgba(248,113,113,0.45)', dot: '#f87171' },
+  neutral:   { bg: 'rgba(251,191,36,0.10)',  border: 'rgba(251,191,36,0.45)',  dot: '#fbbf24' },
+  caution:   { bg: 'rgba(74,222,128,0.08)',  border: 'rgba(74,222,128,0.40)',  dot: '#4ade80' },
+  weak:      { bg: 'rgba(56,189,248,0.10)',  border: 'rgba(56,189,248,0.45)',  dot: '#38bdf8' },
+  cold:      { bg: 'rgba(96,165,250,0.10)',  border: 'rgba(96,165,250,0.45)',  dot: '#60a5fa' },
 }
 
 const INVERSE_VALUE_KEYS = new Set(['limitDown', 'break', 'limitDownLive', 'breakLive'])
@@ -84,10 +95,8 @@ function getPosterSections(data) {
   return getSections(data).filter((sec) => keep.has(sec.id))
 }
 
-function formatQuote(data) {
-  const quote = dailyQuote(data.adviceDate || data.date)
-  const text = String(data.dailyQuote || quote.text)
-  return /[。！？；…]$/.test(text) ? text : `${text}。`
+function formatQuote() {
+  return /[。！？；…]$/.test(HOME_QUOTE) ? HOME_QUOTE : `${HOME_QUOTE}。`
 }
 
 function cellValueColor(key) {
@@ -138,19 +147,35 @@ function drawSectionHead(ctx, x, y, w, title, meta) {
   }
 }
 
+// 布局常量（以 sc 为单位）：
+//   pill top=28, pill h=40, pill bottom=68
+//   quote baseline = pill_bottom + gap_to_cap(20) + cap_h(19) = 107 → 用 sc(108)
+//   quote line height = sc(38)
+//   gap quote_bottom → author_top = sc(16)，author cap ≈ sc(14)
+//   author baseline = quote_last_baseline + sc(38) + sc(16) + sc(14) = last + sc(68)
+//     — 但统一写成 quoteStartY + lineCount*sc(38) + sc(20)
+//   bottom pad = sc(32)
+const _QT = {
+  pillTop: sc(28), pillH: sc(40),
+  quoteBaselineOffset: sc(108),  // from card y to first quote text baseline
+  lineH: sc(38),
+  authorGap: sc(20),             // from last quote baseline to author baseline
+  bottomPad: sc(32),
+}
+
 function calcQuoteCardHeight(quoteLineCount = 1) {
-  return sc(36) + sc(52) + quoteLineCount * sc(42) + sc(36)
+  return _QT.quoteBaselineOffset + quoteLineCount * _QT.lineH + _QT.authorGap + sc(28)
 }
 
 function drawQuoteCard(ctx, x, y, w, quote) {
-  ctx.font = `500 ${sc(32)}px ${FONT}`
+  ctx.font = `500 ${sc(26)}px ${FONT}`
   const lines = wrapText(ctx, quote, w - sc(80)).slice(0, 2)
   const h = calcQuoteCardHeight(lines.length)
   drawCard(ctx, x, y, w, h)
 
+  // 「与君共勉」胶囊
   const pillW = sc(100)
-  const pillH = sc(40)
-  roundRect(ctx, x + sc(28), y + sc(28), pillW, pillH, sc(20))
+  roundRect(ctx, x + sc(28), y + _QT.pillTop, pillW, _QT.pillH, sc(20))
   ctx.fillStyle = 'rgba(255,77,79,0.15)'
   ctx.fill()
   ctx.strokeStyle = 'rgba(255,77,79,0.35)'
@@ -160,23 +185,33 @@ function drawQuoteCard(ctx, x, y, w, quote) {
   ctx.font = `600 ${sc(22)}px ${FONT}`
   ctx.textAlign = 'center'
   ctx.textBaseline = 'middle'
-  ctx.fillText('与君共勉', x + sc(28) + pillW / 2, y + sc(28) + pillH / 2)
+  ctx.fillText('与君共勉', x + sc(28) + pillW / 2, y + _QT.pillTop + _QT.pillH / 2)
 
+  // 引言正文
   ctx.fillStyle = COLORS.text
-  ctx.font = `500 ${sc(32)}px ${FONT}`
+  ctx.font = `500 ${sc(26)}px ${FONT}`
   ctx.textAlign = 'center'
   ctx.textBaseline = 'alphabetic'
-  const quoteStartY = y + sc(92)
+  const quoteBaseY = y + _QT.quoteBaselineOffset
   lines.forEach((line, i) => {
-    ctx.fillText(line, x + w / 2, quoteStartY + i * sc(42))
+    ctx.fillText(line, x + w / 2, quoteBaseY + i * _QT.lineH)
   })
+
+  // 作者（右对齐，在最后一行 baseline 下方 authorGap）
+  const authorY = quoteBaseY + lines.length * _QT.lineH + _QT.authorGap
+  ctx.fillStyle = COLORS.dim
+  ctx.font = `400 ${sc(20)}px ${FONT}`
+  ctx.textAlign = 'right'
+  ctx.fillText('—— 养家心法', x + w - sc(40), authorY)
+  ctx.textAlign = 'center'
+
   return h
 }
 
 function calcGaugeCardHeight(data) {
-  let h = sc(28) + sc(44) + sc(40) + sc(44) + sc(292) + sc(28)
+  let h = sc(28) + sc(44) + sc(40) + sc(44) + sc(100) + sc(292) + sc(28)
   if (data.scoreMode === 'live' && data.baselineScore != null) h += sc(28)
-  if (data.emptyWarning) h += sc(36)
+  if (data.emptyWarning) h += sc(44)
   return h
 }
 
@@ -187,6 +222,10 @@ function drawGaugeCard(ctx, x, y, w, data) {
   const gaugeH = sc(292)
   const h = calcGaugeCardHeight(data)
 
+  const riskCopy = buildRiskCopy(data)
+  const positionDesc = (riskCopy?.desc || data.positionDesc || '').replace(/。$/, '')
+  const lk = scoreToLongkongState(score, !!data.emptyWarning)
+
   drawCard(ctx, x, y, w, h)
   drawSectionHead(ctx, x + sc(28), y + sc(40), w - sc(56), '市场情绪', data.generatedAtLabel || data.generatedAt || '')
 
@@ -196,15 +235,75 @@ function drawGaugeCard(ctx, x, y, w, data) {
   ctx.font = `700 ${sc(32)}px ${FONT}`
   ctx.fillText(data.levelLabel || data.displayLevel || level.label, x + w / 2, levelY)
 
-  const desc = String(data.positionDesc || '').replace(/。$/, '')
-  if (desc) {
+  if (positionDesc) {
     ctx.fillStyle = COLORS.muted
     ctx.font = `400 ${sc(24)}px ${FONT}`
-    ctx.fillText(wrapText(ctx, desc, w - sc(80))[0] || desc, x + w / 2, levelY + sc(34))
+    ctx.fillText(wrapText(ctx, positionDesc, w - sc(80))[0] || positionDesc, x + w / 2, levelY + sc(34))
   }
 
+  // 龙空龙状态灯（竖排四格，对齐首页 CSS）
+  const lightsAreaY = y + sc(148)
+  const lightsAreaH = sc(88)
+  const lightsLx = x + sc(28)
+  const lightsLw = w - sc(56)
+  const cellPad = sc(8)
+  const cellGap = sc(7)
+  const cellW = (lightsLw - cellPad * 2 - cellGap * 3) / 4
+  const cellH = sc(70)
+  const cellY = lightsAreaY + cellPad
+  // 「空」状态固定用琥珀警告色（与首页 risk-warning/caution 覆盖逻辑一致）
+  const lightPalette = lk.state === 'empty'
+    ? { bg: 'rgba(251,191,36,0.10)', border: 'rgba(251,191,36,0.55)', dot: '#fbbf24' }
+    : (LEVEL_LIGHT[data.levelClass] || LEVEL_LIGHT.neutral)
+
+  // 容器背景
+  roundRect(ctx, lightsLx, lightsAreaY, lightsLw, lightsAreaH, sc(18))
+  ctx.fillStyle = 'rgba(0,0,0,0.22)'
+  ctx.fill()
+  ctx.strokeStyle = 'rgba(255,255,255,0.04)'
+  ctx.lineWidth = 1
+  roundRect(ctx, lightsLx + 0.5, lightsAreaY + 0.5, lightsLw - 1, lightsAreaH - 1, sc(18))
+  ctx.stroke()
+
+  LONGKONG_STATE_STEPS.forEach((step, i) => {
+    const active = step.state === lk.state
+    const cx = lightsLx + cellPad + i * (cellW + cellGap)
+    const centerX = cx + cellW / 2
+
+    // 单格背景
+    roundRect(ctx, cx, cellY, cellW, cellH, sc(12))
+    ctx.fillStyle = active ? lightPalette.bg : 'transparent'
+    ctx.fill()
+    if (active) {
+      ctx.strokeStyle = lightPalette.border
+      ctx.lineWidth = 1.5
+      roundRect(ctx, cx + 0.5, cellY + 0.5, cellW - 1, cellH - 1, sc(12))
+      ctx.stroke()
+    }
+
+    // 圆点（激活时加光晕）
+    const dotR = sc(6)
+    const dotY = cellY + sc(22)
+    ctx.beginPath()
+    ctx.arc(centerX, dotY, dotR, 0, Math.PI * 2)
+    if (active) {
+      ctx.shadowColor = lightPalette.dot
+      ctx.shadowBlur = sc(12)
+    }
+    ctx.fillStyle = active ? lightPalette.dot : 'rgba(255,255,255,0.22)'
+    ctx.fill()
+    ctx.shadowBlur = 0
+
+    // 标签
+    ctx.font = `${active ? 700 : 400} ${sc(23)}px ${FONT}`
+    ctx.fillStyle = active ? lightPalette.dot : 'rgba(255,255,255,0.28)'
+    ctx.textAlign = 'center'
+    ctx.textBaseline = 'alphabetic'
+    ctx.fillText(step.label, centerX, dotY + dotR + sc(22))
+  })
+
   const gx = x + sc(28)
-  const gy = y + sc(132)
+  const gy = y + sc(248)
   const gw = w - sc(56)
   ctx.save()
   roundRect(ctx, gx, gy, gw, gaugeH, sc(14))
@@ -236,10 +335,16 @@ function drawGaugeCard(ctx, x, y, w, data) {
     footY += sc(28)
   }
   if (data.emptyWarning) {
-    const reason = (data.emptyReasons && data.emptyReasons[0]) || '综合情绪偏弱'
+    const tip = riskCopy?.tip || '复盘提示：综合情绪偏弱，打板少做、精选，等更强确认。'
     ctx.fillStyle = COLORS.green
     ctx.font = `400 ${sc(20)}px ${FONT}`
-    ctx.fillText(`龙空风险提示 · ${reason}`, x + w / 2, footY)
+    const tipLines = wrapText(ctx, tip, w - sc(56)).slice(0, 2)
+    // 末尾孤立标点合并到上一行
+    if (tipLines.length === 2 && /^[。！？…]$/.test(tipLines[1].trim())) {
+      tipLines[0] = tipLines[0] + tipLines[1].trim()
+      tipLines.length = 1
+    }
+    tipLines.forEach((line, i) => ctx.fillText(line, x + w / 2, footY + i * sc(28)))
   }
   return h
 }
@@ -491,7 +596,7 @@ export function drawDouyinPoster(ctx, data) {
   ctx.clearRect(0, 0, w, h)
   drawPageBackground(ctx, w, h)
 
-  const quote = formatQuote(data)
+  const quote = formatQuote()
   const sections = getPosterSections(data)
   let y = PAD
 

@@ -44,8 +44,9 @@ export function fetchIntradaySeries(date) {
   return fetchJson(d ? `/api/sentiment/intraday-series?date=${d}` : '/api/sentiment/intraday-series')
 }
 
-export function fetchAuctionDetail(date) {
+export function fetchAuctionDetail(date, section = 'oneWord,topSectors') {
   const d = String(date || '').replace(/-/g, '').slice(0, 8)
-  const q = d ? `?date=${d}` : ''
-  return fetchJson(`/api/auction/detail${q}`)
+  const parts = [`section=${encodeURIComponent(section)}`]
+  if (d) parts.unshift(`date=${d}`)
+  return fetchJson(`/api/auction/detail?${parts.join('&')}`)
 }

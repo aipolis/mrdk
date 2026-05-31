@@ -5,11 +5,19 @@ export const SITE_QR_URL = 'https://mrdk.pages.dev/'
 /**
  * 在 Canvas 上绘制网址二维码（白底黑块）
  */
-export function drawQrCode(ctx, x, y, size, text = SITE_QR_URL) {
+const _qrCache = new Map()
+function getQr(text) {
+  if (_qrCache.has(text)) return _qrCache.get(text)
   const qr = qrcode(0, 'M')
   qr.addData(text)
   qr.make()
-  const n = qr.getModuleCount()
+  const result = { qr, n: qr.getModuleCount() }
+  _qrCache.set(text, result)
+  return result
+}
+
+export function drawQrCode(ctx, x, y, size, text = SITE_QR_URL) {
+  const { qr, n } = getQr(text)
   const pad = Math.max(4, Math.round(size * 0.04))
   const inner = size - pad * 2
   const cell = inner / n

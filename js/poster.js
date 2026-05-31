@@ -1,5 +1,5 @@
 import { fetchToday } from './api.js'
-import { renderPosterToCanvas, posterFilename, posterToBlob } from './posterDraw.js'
+import { renderPosterToCanvas, posterFilename, posterToBlob } from './posterDraw.js?v=20260531a'
 
 const preview = document.getElementById('previewCanvas')
 const statusBar = document.getElementById('statusBar')
@@ -15,6 +15,8 @@ const isMobile = /Android|iPhone|iPad|iPod/i.test(navigator.userAgent)
 
 let latestData = null
 let modalBlobUrl = null
+let _blobCache = null   // 预生成的 blob
+let _blobPending = null // 生成中的 Promise
 
 function setStatus(msg, type = '') {
   if (!statusBar) return
@@ -69,6 +71,10 @@ async function loadAndDraw() {
         setStatus(`已生成 · 情绪分 ${score} · 可下载 PNG`, 'ok')
         if (downloadBtn) downloadBtn.disabled = false
         if (shareBtn) shareBtn.disabled = false
+        // 预览完成后立即后台生成 blob，用户点分享时直接取缓存
+        _blobCache = null
+        _blobPending = posterToBlob(latestData)
+        _blobPending.then((b) => { _blobCache = b }).catch(() => {})
       } catch (renderErr) {
         console.error(renderErr)
         previewWrap?.classList.remove('loading')
@@ -85,11 +91,15 @@ async function loadAndDraw() {
   }
 }
 
+function getBlob() {
+  return _blobCache ? Promise.resolve(_blobCache) : (_blobPending || posterToBlob(latestData))
+}
+
 async function downloadPoster() {
   if (!latestData || downloadBtn?.disabled) return
   if (downloadBtn) downloadBtn.disabled = true
   try {
-    const blob = await posterToBlob(latestData)
+    const blob = await getBlob()
     const filename = posterFilename(latestData)
     if (isMobile) {
       const shared = await tryNativeShare(blob, filename).catch(() => false)
@@ -122,7 +132,7 @@ async function sharePoster() {
   if (!latestData || shareBtn?.disabled) return
   if (shareBtn) shareBtn.disabled = true
   try {
-    const blob = await posterToBlob(latestData)
+    const blob = await getBlob()
     const filename = posterFilename(latestData)
     const shared = await tryNativeShare(blob, filename).catch(() => false)
     if (shared) {
