@@ -47,6 +47,7 @@ from fetcher import (
     get_recent_trade_dates,
     invalidate_intraday_caches,
     invalidate_peripheral_cache,
+    invalidate_sector_concentration_cache,
     load_advice_metrics,
     load_auction_snapshot,
     load_ref_day_snapshot,
@@ -301,8 +302,7 @@ def _build_home_payload(ref_d: str, prev_d: Optional[str], advice_d: str, is_rea
         archived = assemble_home_from_archive(ref_d, prev_d, advice_d, is_ready=is_ready)
         if archived:
             archived["foreignCards"] = fetch_foreign_sentiment()
-            if not archived.get("sectorConcentration"):
-                archived["sectorConcentration"] = calc_sector_concentration(ref_d)
+            archived["sectorConcentration"] = calc_sector_concentration(ref_d)
             if not archived.get("regime"):
                 r = calc_regime(ref_d)
                 archived.setdefault("regimeScore", r.get("regimeScore"))
@@ -1265,6 +1265,10 @@ def _review_score_payload() -> Optional[dict]:
 
 @app.get("/api/sentiment/today")
 def sentiment_today(force: int = 0):
+    if force:
+        invalidate_sector_concentration_cache()
+        build_and_store(_build_home_for_cache)
+
     review = _review_score_payload()
     if review is not None:
         return {"code": 0, "data": review, "cache": {"fromCache": False, "reviewMode": True}}
@@ -1272,9 +1276,6 @@ def sentiment_today(force: int = 0):
     ref_d, prev_d, advice_d, is_ready = resolve_advice_dates()
     if not ref_d:
         return {"code": 1, "message": "无法获取交易日"}
-
-    if force:
-        build_and_store(_build_home_for_cache)
 
     ensure_memory_loaded()
     snap = get_snapshot()
@@ -1429,6 +1430,7 @@ def warm_home_cache(x_cron_secret: str = Header(default="")):
     """定时触发或手动预热首页缓存（建议 6:00 / 8:50 各调一次）"""
     if err := _cron_auth_error(x_cron_secret):
         return err
+    invalidate_sector_concentration_cache()
     ok = build_and_store(_build_home_for_cache)
     return {"code": 0 if ok else 1, "data": cache_status()}
 

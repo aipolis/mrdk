@@ -2,6 +2,7 @@
 """akshare / 新浪 数据抓取层"""
 from __future__ import annotations
 
+import logging
 import math
 import os
 import re
@@ -17,6 +18,7 @@ import pandas as pd
 import requests
 
 _cache: dict = {}
+log = logging.getLogger(__name__)
 
 # 东财涨停/跌停/炸板股池可回溯约 30 个自然日；更早仅读 MySQL 归档
 EM_POOL_MAX_AGE_DAYS = 30
@@ -24,9 +26,27 @@ EM_POOL_MAX_AGE_DAYS = 30
 # 盘中 2 分钟刷新周期（略小于 IntervalTrigger 120s，避免命中旧缓存）
 INTRADAY_CACHE_TTL = 100
 
+_EM_CLIST_URLS = (
+    "https://push2.eastmoney.com/api/qt/clist/get",
+    "https://82.push2.eastmoney.com/api/qt/clist/get",
+    "https://79.push2.eastmoney.com/api/qt/clist/get",
+    "https://48.push2.eastmoney.com/api/qt/clist/get",
+    "https://91.push2.eastmoney.com/api/qt/clist/get",
+)
+_EM_HEADERS = {
+    "User-Agent": (
+        "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 "
+        "(KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36"
+    ),
+    "Referer": "https://quote.eastmoney.com/center/boardlist.html",
+    "Accept": "application/json, text/plain, */*",
+}
 _EM_CONCEPT_FS = "m:90+t:3"
+_EM_CONCEPT_FS_ALT = "m:90+t:3+f:!50"
+_EM_CONCEPT_FS_SPACE = "m:90 t:3 f:!50"
 _CONCEPT_BOARD_TOP_N = 20
 _CONCEPT_LIST_FETCH_N = 20
+_CONCEPT_FETCH_WORKERS = 3
 
 
 def _cache_get(key: str, ttl: int = 300):
@@ -40,6 +60,23 @@ def _cache_set(key: str, data):
     _cache[key] = {"ts": time.time(), "data": data}
 
 
+def invalidate_sector_concentration_cache(trade_d: Optional[str] = None) -> None:
+    """清除概念涨停强度相关进程内缓存。"""
+    today = (trade_d or date_str(bj_now()))[:8]
+    keys = [
+        f"sector_conc_{today}",
+        f"em_concept_top_{_CONCEPT_LIST_FETCH_N}_{today}",
+    ]
+    dates = get_recent_trade_dates(5)
+    if dates:
+        keys.append(f"sector_conc_{dates[-1]}")
+    for key in keys:
+        _cache.pop(key, None)
+    for key in list(_cache.keys()):
+        if key.startswith("em_board_codes_"):
+            _cache.pop(key, None)
+
+
 def invalidate_intraday_caches(today: Optional[str] = None) -> None:
     """盘中定时刷新前清缓存，保证 high10 / top10 / 晋级率 等与 2 分钟任务同步。"""
     today = (today or date_str(bj_now()))[:8]
@@ -48,10 +85,9 @@ def invalidate_intraday_caches(today: Optional[str] = None) -> None:
         "intraday_board_stats_v1",
         f"zt_{today}",
         f"zb_{today}",
-        f"sector_conc_{today}",
-        f"em_concept_top_{_CONCEPT_LIST_FETCH_N}_{today}",
     ):
         _cache.pop(key, None)
+    invalidate_sector_concentration_cache(today)
     invalidate_market_breadth_cache(today)
     _cache.pop(f"em_a_share_snapshot_{today}", None)
     try:
@@ -1749,12 +1785,82 @@ _SECTOR_CONC_EMPTY = {
 
 
 def _sector_pool_date(trade_d: str) -> str:
-    """涨停池日期：盘中用当日实时池，收盘后或非交易日用参考日。"""
+    """涨停池日期：交易日用当日实时池；非交易日用最近收盘日。"""
     trade_d = (trade_d or "")[:8]
     today = date_str(bj_now())
+    dates = get_recent_trade_dates(5)
+    if today not in dates:
+        if trade_d and em_pool_available(trade_d):
+            return trade_d
+        return dates[-1] if dates else trade_d
     if today != trade_d and em_pool_available(today):
         return today
     return trade_d
+
+
+def _em_clist_rows(params: dict, *, retries: int = 2, timeout: int = 15) -> list[dict]:
+    """东财 clist 通用请求，多镜像 + 重试。"""
+    last_err: Optional[Exception] = None
+    for url in _EM_CLIST_URLS:
+        for attempt in range(retries + 1):
+            try:
+                r = requests.get(url, params=params, headers=_EM_HEADERS, timeout=timeout)
+                r.raise_for_status()
+                diff = (r.json().get("data") or {}).get("diff") or []
+                rows = list(diff.values()) if isinstance(diff, dict) else list(diff)
+                if rows:
+                    return rows
+            except Exception as exc:
+                last_err = exc
+                if attempt < retries:
+                    time.sleep(0.35 * (attempt + 1))
+    if last_err:
+        log.warning("em clist request failed: %s", last_err)
+    return []
+
+
+def _parse_concept_board_rows(rows: list[dict]) -> list[dict]:
+    result = []
+    for row in rows:
+        code = str(row.get("f12") or "").strip()
+        name = str(row.get("f14") or "").strip()
+        if not code or not name:
+            continue
+        result.append({
+            "code": code,
+            "name": name,
+            "chg": round(float(row.get("f3") or 0), 2),
+        })
+    result.sort(key=lambda x: x["chg"], reverse=True)
+    return result
+
+
+def _fetch_concept_boards_akshare_fallback(limit: int) -> list[dict]:
+    try:
+        df = ak.stock_board_concept_name_em()
+        if df is None or df.empty:
+            return []
+        chg_col = "涨跌幅" if "涨跌幅" in df.columns else None
+        code_col = "板块代码" if "板块代码" in df.columns else None
+        name_col = "板块名称" if "板块名称" in df.columns else None
+        if not chg_col or not code_col or not name_col:
+            return []
+        df = df.sort_values(chg_col, ascending=False).head(limit)
+        result = []
+        for _, row in df.iterrows():
+            code = str(row.get(code_col) or "").strip()
+            name = str(row.get(name_col) or "").strip()
+            if not code or not name:
+                continue
+            result.append({
+                "code": code,
+                "name": name,
+                "chg": round(float(row.get(chg_col) or 0), 2),
+            })
+        return result
+    except Exception as exc:
+        log.warning("akshare concept boards fallback failed: %s", exc)
+        return []
 
 
 def _fetch_em_concept_boards_top(limit: int = _CONCEPT_LIST_FETCH_N) -> list[dict]:
@@ -1764,44 +1870,53 @@ def _fetch_em_concept_boards_top(limit: int = _CONCEPT_LIST_FETCH_N) -> list[dic
     if cached is not None:
         return cached
 
-    headers = {"User-Agent": "Mozilla/5.0", "Referer": "https://quote.eastmoney.com/"}
-    params = {
+    base_params = {
         "pn": "1",
-        "pz": str(limit),
+        "pz": str(max(limit, 20)),
         "po": "1",
         "np": "1",
         "ut": "bd1d9ddb04089700cf9c27f6f7426281",
         "fltt": "2",
         "invt": "2",
         "fid": "f3",
-        "fs": _EM_CONCEPT_FS,
         "fields": "f12,f14,f3",
     }
-    for url in _EM_CLIST_URLS:
-        try:
-            r = requests.get(url, params=params, headers=headers, timeout=12)
-            diff = (r.json().get("data") or {}).get("diff") or []
-            rows = list(diff.values()) if isinstance(diff, dict) else list(diff)
-            result = []
-            for row in rows:
-                code = str(row.get("f12") or "").strip()
-                name = str(row.get("f14") or "").strip()
-                if not code or not name:
-                    continue
-                result.append({
-                    "code": code,
-                    "name": name,
-                    "chg": round(float(row.get("f3") or 0), 2),
-                })
-            if result:
-                _cache_set(key, result)
-                return result
-        except Exception:
-            continue
-    return []
+    result: list[dict] = []
+    for fs in (_EM_CONCEPT_FS, _EM_CONCEPT_FS_ALT, _EM_CONCEPT_FS_SPACE):
+        rows = _em_clist_rows({**base_params, "fs": fs})
+        result = _parse_concept_board_rows(rows)[:limit]
+        if result:
+            break
+
+    if not result:
+        result = _fetch_concept_boards_akshare_fallback(limit)
+
+    if result:
+        _cache_set(key, result)
+    else:
+        log.warning("concept board list empty after em + akshare fallback")
+    return result
 
 
-def _fetch_em_board_constituent_codes(bk_code: str) -> set[str]:
+def _fetch_board_codes_akshare_fallback(bk_name: str) -> set[str]:
+    bk_name = (bk_name or "").strip()
+    if not bk_name:
+        return set()
+    try:
+        df = ak.stock_board_concept_cons_em(symbol=bk_name)
+        if df is None or df.empty or "代码" not in df.columns:
+            return set()
+        return {
+            str(code).strip().zfill(6)
+            for code in df["代码"].tolist()
+            if str(code).strip().isdigit()
+        }
+    except Exception as exc:
+        log.warning("akshare concept cons fallback failed name=%s err=%s", bk_name, exc)
+        return set()
+
+
+def _fetch_em_board_constituent_codes(bk_code: str, bk_name: str = "") -> set[str]:
     """东财板块成分股代码集合。"""
     bk_code = (bk_code or "").strip()
     if not bk_code:
@@ -1811,7 +1926,6 @@ def _fetch_em_board_constituent_codes(bk_code: str) -> set[str]:
     if cached is not None:
         return cached
 
-    headers = {"User-Agent": "Mozilla/5.0", "Referer": "https://quote.eastmoney.com/"}
     params = {
         "pn": "1",
         "pz": "5000",
@@ -1825,20 +1939,15 @@ def _fetch_em_board_constituent_codes(bk_code: str) -> set[str]:
         "fields": "f12",
     }
     codes: set[str] = set()
-    for url in _EM_CLIST_URLS:
-        try:
-            r = requests.get(url, params=params, headers=headers, timeout=12)
-            diff = (r.json().get("data") or {}).get("diff") or []
-            rows = list(diff.values()) if isinstance(diff, dict) else list(diff)
-            for row in rows:
-                code = str(row.get("f12") or "").strip().zfill(6)
-                if code.isdigit() and len(code) == 6:
-                    codes.add(code)
-            if codes:
-                _cache_set(key, codes)
-                return codes
-        except Exception:
-            continue
+    rows = _em_clist_rows(params)
+    for row in rows:
+        code = str(row.get("f12") or "").strip().zfill(6)
+        if code.isdigit() and len(code) == 6:
+            codes.add(code)
+
+    if not codes and bk_name:
+        codes = _fetch_board_codes_akshare_fallback(bk_name)
+
     _cache_set(key, codes)
     return codes
 
@@ -1860,7 +1969,7 @@ def _calc_sector_concentration_from_tags(lu_df: pd.DataFrame, total: int) -> lis
     )
 
 
-def _pack_sector_concentration(hot: list[dict], total: int) -> dict:
+def _pack_sector_concentration(hot: list[dict], total: int, *, source: str) -> dict:
     all_count = sum(h["count"] for h in hot)
     top3_count = sum(h["count"] for h in hot[:3])
     top3_ratio = round(top3_count / all_count * 100, 1) if all_count > 0 else 0.0
@@ -1872,6 +1981,7 @@ def _pack_sector_concentration(hot: list[dict], total: int) -> dict:
         "total": total,
         "topSector": hot[0]["name"] if hot else "",
         "hotConceptCount": len(hot),
+        "source": source,
     }
 
 
@@ -1903,9 +2013,10 @@ def calc_sector_concentration(trade_d: str) -> dict:
 
         boards = _fetch_em_concept_boards_top(_CONCEPT_LIST_FETCH_N)[:_CONCEPT_BOARD_TOP_N]
         hot: list[dict] = []
+        source = "em_boards"
         if boards:
             def _count_board(board: dict) -> Optional[dict]:
-                codes = _fetch_em_board_constituent_codes(board["code"])
+                codes = _fetch_em_board_constituent_codes(board["code"], board.get("name", ""))
                 if not codes:
                     return None
                 count = len(codes & lu_codes)
@@ -1918,7 +2029,7 @@ def calc_sector_concentration(trade_d: str) -> dict:
                     "ratio": count,
                 }
 
-            with ThreadPoolExecutor(max_workers=8) as ex:
+            with ThreadPoolExecutor(max_workers=_CONCEPT_FETCH_WORKERS) as ex:
                 futures = [ex.submit(_count_board, b) for b in boards]
                 for fut in as_completed(futures):
                     item = fut.result()
@@ -1927,12 +2038,19 @@ def calc_sector_concentration(trade_d: str) -> dict:
 
         if not hot:
             hot = _calc_sector_concentration_from_tags(lu_df, total)
+            source = "zt_tags"
+            if hot:
+                log.warning(
+                    "sector concentration fell back to zt tags pool_d=%s boards=%s",
+                    pool_d,
+                    len(boards),
+                )
 
         if not hot:
             return empty
 
         hot.sort(key=lambda x: x["count"], reverse=True)
-        result = _pack_sector_concentration(hot, total)
+        result = _pack_sector_concentration(hot, total, source=source)
         _cache_set(key, result)
         return result
     except Exception:
@@ -3228,11 +3346,6 @@ def fetch_market_volume() -> dict:
     return {"amount": "--", "change": "", "label": ""}
 
 
-_EM_CLIST_URLS = (
-    "https://82.push2.eastmoney.com/api/qt/clist/get",
-    "https://push2.eastmoney.com/api/qt/clist/get",
-    "https://79.push2.eastmoney.com/api/qt/clist/get",
-)
 _HIGH10_FS_CANDIDATES = (
     "b:MK0105",
     "b:MK0110",
