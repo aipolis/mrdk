@@ -27,11 +27,12 @@ EM_POOL_MAX_AGE_DAYS = 30
 INTRADAY_CACHE_TTL = 100
 
 _EM_CLIST_URLS = (
-    "https://push2.eastmoney.com/api/qt/clist/get",
-    "https://82.push2.eastmoney.com/api/qt/clist/get",
     "https://79.push2.eastmoney.com/api/qt/clist/get",
-    "https://48.push2.eastmoney.com/api/qt/clist/get",
+    "https://29.push2.eastmoney.com/api/qt/clist/get",
+    "https://82.push2.eastmoney.com/api/qt/clist/get",
     "https://91.push2.eastmoney.com/api/qt/clist/get",
+    "https://48.push2.eastmoney.com/api/qt/clist/get",
+    "https://push2.eastmoney.com/api/qt/clist/get",
 )
 _EM_HEADERS = {
     "User-Agent": (
@@ -1836,6 +1837,23 @@ def _parse_concept_board_rows(rows: list[dict]) -> list[dict]:
 
 
 def _fetch_concept_boards_akshare_fallback(limit: int) -> list[dict]:
+    """akshare 同源：79.push2 + 分页拉概念列表。"""
+    params = {
+        "pn": "1",
+        "pz": "100",
+        "po": "1",
+        "np": "1",
+        "ut": "bd1d9ddb04089700cf9c27f6f7426281",
+        "fltt": "2",
+        "invt": "2",
+        "fid": "f3",
+        "fs": _EM_CONCEPT_FS_SPACE,
+        "fields": "f12,f14,f3",
+    }
+    rows = _em_clist_rows(params, retries=3, timeout=20)
+    result = _parse_concept_board_rows(rows)[:limit]
+    if result:
+        return result
     try:
         df = ak.stock_board_concept_name_em()
         if df is None or df.empty:
@@ -1883,7 +1901,7 @@ def _fetch_em_concept_boards_top(limit: int = _CONCEPT_LIST_FETCH_N) -> list[dic
     }
     result: list[dict] = []
     for fs in (_EM_CONCEPT_FS, _EM_CONCEPT_FS_ALT, _EM_CONCEPT_FS_SPACE):
-        rows = _em_clist_rows({**base_params, "fs": fs})
+        rows = _em_clist_rows({**base_params, "fs": fs}, retries=3, timeout=20)
         result = _parse_concept_board_rows(rows)[:limit]
         if result:
             break
@@ -1926,7 +1944,7 @@ def _fetch_em_board_constituent_codes(bk_code: str, bk_name: str = "") -> set[st
     if cached is not None:
         return cached
 
-    params = {
+    base_params = {
         "pn": "1",
         "pz": "5000",
         "po": "1",
@@ -1934,16 +1952,18 @@ def _fetch_em_board_constituent_codes(bk_code: str, bk_name: str = "") -> set[st
         "ut": "bd1d9ddb04089700cf9c27f6f7426281",
         "fltt": "2",
         "invt": "2",
-        "fid": "f3",
-        "fs": f"b:{bk_code}",
+        "fid": "f12",
         "fields": "f12",
     }
     codes: set[str] = set()
-    rows = _em_clist_rows(params)
-    for row in rows:
-        code = str(row.get("f12") or "").strip().zfill(6)
-        if code.isdigit() and len(code) == 6:
-            codes.add(code)
+    for fs in (f"b:{bk_code}", f"b:{bk_code} f:!50"):
+        rows = _em_clist_rows({**base_params, "fs": fs})
+        for row in rows:
+            code = str(row.get("f12") or "").strip().zfill(6)
+            if code.isdigit() and len(code) == 6:
+                codes.add(code)
+        if codes:
+            break
 
     if not codes and bk_name:
         codes = _fetch_board_codes_akshare_fallback(bk_name)
