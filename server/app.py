@@ -1799,54 +1799,6 @@ async def subscribe_cron_daily(x_cron_secret: str = Header(default="")):
     return {"code": 0, "data": data}
 
 
-@app.post("/api/admin/seed-history")
-def seed_history(x_cron_secret: str = Header(default="")):
-    """一次性写入历史分数（用完即删）"""
-    if err := _cron_auth_error(x_cron_secret):
-        return err
-    import json as _json
-    ROWS = [
-        ("20260529","2026-05-29","20260528",47,"偏阴","caution","#52c41a"),
-        ("20260528","2026-05-28","20260527",61,"晴天","optimistic","#ff4d4f"),
-        ("20260527","2026-05-27","20260526",32,"阴天","weak","#38bdf8"),
-        ("20260526","2026-05-26","20260525",39,"阴天","weak","#38bdf8"),
-        ("20260525","2026-05-25","20260522",68,"晴天","optimistic","#ff4d4f"),
-        ("20260522","2026-05-22","20260521",73,"晴天","optimistic","#ff4d4f"),
-        ("20260521","2026-05-21","20260520",33,"阴天","weak","#38bdf8"),
-        ("20260520","2026-05-20","20260519",52,"多云","neutral","#faad14"),
-        ("20260519","2026-05-19","20260518",75,"晴热","climax","#cf1322"),
-        ("20260518","2026-05-18","20260515",57,"多云","neutral","#faad14"),
-        ("20260515","2026-05-15","20260514",45,"偏阴","caution","#52c41a"),
-        ("20260514","2026-05-14",None,       45,"偏阴","caution","#52c41a"),
-    ]
-    from db_store import with_retry, TABLE_DAILY as _TD
-    results = {"inserted": 0, "rows": len(ROWS)}
-    def _run(conn):
-        n = 0
-        with conn.cursor() as cur:
-            for td, dd, prev, score, label, lc, color in ROWS:
-                hist = _json.dumps({"date":dd,"score":score,"level":label,"levelClass":lc,"levelColor":color,"indexChg":0,"indexChgText":"+0.00%","indexUp":True,"position":0,"promote":0,"limitUp":0}, ensure_ascii=False)
-                sent = _json.dumps({"score":score,"displayScore":score,"levelClass":lc,"levelColor":color}, ensure_ascii=False)
-                cur.execute(
-                    f"""INSERT INTO `{_TD}`
-                    (trade_date,date_display,prev_trade_date,score,level_label,level_class,level_color,
-                     index_chg,position_pct,promote_rate,limit_up,empty_warning,metrics_json,sentiment_json,history_json)
-                    VALUES (%s,%s,%s,%s,%s,%s,%s,0,0,0,0,0,'{{}}',%s,%s)
-                    ON DUPLICATE KEY UPDATE
-                     score=VALUES(score),level_label=VALUES(level_label),level_class=VALUES(level_class),
-                     level_color=VALUES(level_color),sentiment_json=VALUES(sentiment_json),history_json=VALUES(history_json)""",
-                    (td, dd, prev, score, label, lc, color, sent, hist)
-                )
-                n += cur.rowcount
-        conn.commit()
-        return n
-    try:
-        results["inserted"] = with_retry(_run)
-        return {"code": 0, "data": results}
-    except Exception as e:
-        return {"code": 1, "message": str(e)}
-
-
 if __name__ == "__main__":
     import uvicorn
     from config import HOST, PORT
