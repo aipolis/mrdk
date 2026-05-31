@@ -45,6 +45,10 @@ _EM_HEADERS = {
 _EM_CONCEPT_FS = "m:90+t:3"
 _EM_CONCEPT_FS_ALT = "m:90+t:3+f:!50"
 _EM_CONCEPT_FS_SPACE = "m:90 t:3 f:!50"
+_EM_CONS_CLIST_URLS = (
+    "https://29.push2.eastmoney.com/api/qt/clist/get",
+    "https://79.push2.eastmoney.com/api/qt/clist/get",
+)
 _CONCEPT_BOARD_TOP_N = 20
 _CONCEPT_LIST_FETCH_N = 20
 _CONCEPT_FETCH_WORKERS = 3
@@ -1799,10 +1803,18 @@ def _sector_pool_date(trade_d: str) -> str:
     return trade_d
 
 
-def _em_clist_rows(params: dict, *, retries: int = 2, timeout: int = 15) -> list[dict]:
+def _em_clist_rows(
+    params: dict,
+    *,
+    retries: int = 1,
+    timeout: int = 10,
+    max_urls: int = 3,
+    urls: Optional[tuple[str, ...]] = None,
+) -> list[dict]:
     """东财 clist 通用请求，多镜像 + 重试。"""
     last_err: Optional[Exception] = None
-    for url in _EM_CLIST_URLS:
+    target_urls = urls or _EM_CLIST_URLS
+    for url in target_urls[:max(1, max_urls)]:
         for attempt in range(retries + 1):
             try:
                 r = requests.get(url, params=params, headers=_EM_HEADERS, timeout=timeout)
@@ -1814,7 +1826,7 @@ def _em_clist_rows(params: dict, *, retries: int = 2, timeout: int = 15) -> list
             except Exception as exc:
                 last_err = exc
                 if attempt < retries:
-                    time.sleep(0.35 * (attempt + 1))
+                    time.sleep(0.25 * (attempt + 1))
     if last_err:
         log.warning("em clist request failed: %s", last_err)
     return []
@@ -1850,7 +1862,7 @@ def _fetch_concept_boards_akshare_fallback(limit: int) -> list[dict]:
         "fs": _EM_CONCEPT_FS_SPACE,
         "fields": "f12,f14,f3",
     }
-    rows = _em_clist_rows(params, retries=3, timeout=20)
+    rows = _em_clist_rows(params, retries=1, timeout=10, max_urls=1)
     result = _parse_concept_board_rows(rows)[:limit]
     if result:
         return result
@@ -1901,7 +1913,7 @@ def _fetch_em_concept_boards_top(limit: int = _CONCEPT_LIST_FETCH_N) -> list[dic
     }
     result: list[dict] = []
     for fs in (_EM_CONCEPT_FS, _EM_CONCEPT_FS_ALT, _EM_CONCEPT_FS_SPACE):
-        rows = _em_clist_rows({**base_params, "fs": fs}, retries=3, timeout=20)
+        rows = _em_clist_rows({**base_params, "fs": fs}, retries=1, timeout=10, max_urls=2)
         result = _parse_concept_board_rows(rows)[:limit]
         if result:
             break
@@ -1957,7 +1969,13 @@ def _fetch_em_board_constituent_codes(bk_code: str, bk_name: str = "") -> set[st
     }
     codes: set[str] = set()
     for fs in (f"b:{bk_code}", f"b:{bk_code} f:!50"):
-        rows = _em_clist_rows({**base_params, "fs": fs})
+        rows = _em_clist_rows(
+            {**base_params, "fs": fs},
+            retries=1,
+            timeout=8,
+            max_urls=2,
+            urls=_EM_CONS_CLIST_URLS,
+        )
         for row in rows:
             code = str(row.get("f12") or "").strip().zfill(6)
             if code.isdigit() and len(code) == 6:
