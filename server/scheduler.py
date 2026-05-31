@@ -30,6 +30,7 @@ def start_internal_cron(
     peripheral_10m_fn: Callable[[], None],
     auction_0926_fn: Callable[[], None],
     auction_0935_fn: Callable[[], None],
+    auction_live_fn: Callable[[], None],
     intraday_2m_fn: Callable[[], None],
 ) -> Optional[BackgroundScheduler]:
     global _scheduler
@@ -88,6 +89,12 @@ def start_internal_cron(
         replace_existing=True,
     )
     sched.add_job(
+        lambda: _safe("auction-live-20s", auction_live_fn),
+        IntervalTrigger(seconds=20),
+        id="auction-live-20s",
+        replace_existing=True,
+    )
+    sched.add_job(
         lambda: _safe("auction-0935", auction_0935_fn),
         CronTrigger(day_of_week=weekday, hour=9, minute=35),
         id="auction-0935",
@@ -127,6 +134,20 @@ def start_internal_cron(
         lambda: _safe("sync-history-1805", sync_fn),
         CronTrigger(day_of_week=weekday, hour=18, minute=5),
         id="sync-history-1805",
+        replace_existing=True,
+    )
+
+    def _cleanup_auction_vol():
+        try:
+            from db_store import cleanup_auction_vol_snapshots
+            cleanup_auction_vol_snapshots(keep_days=90)
+        except Exception:
+            log.exception("cleanup auction vol snapshots failed in scheduler")
+
+    sched.add_job(
+        _cleanup_auction_vol,
+        CronTrigger(day_of_week=weekday, hour=18, minute=10),
+        id="cleanup-auction-vol-1810",
         replace_existing=True,
     )
     sched.start()

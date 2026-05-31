@@ -17,6 +17,7 @@ log = logging.getLogger("mingri.db")
 TABLE_HOME = "home_sentiment_cache"
 TABLE_DAILY = "daily_market"
 TABLE_INTRADAY = "intraday_market_snapshots"
+TABLE_AUCTION_VOL = "auction_vol_snapshot"
 CACHE_KEY = "default"
 _schema_ready = False
 MYSQL_CHARSET = "utf8mb4"
@@ -190,6 +191,16 @@ def ensure_schema() -> bool:
                 except pymysql.err.OperationalError as exc:
                     if exc.args[0] not in (1060,):
                         raise
+            cur.execute(
+                f"""
+                CREATE TABLE IF NOT EXISTS `{TABLE_AUCTION_VOL}` (
+                    trade_date CHAR(8) NOT NULL PRIMARY KEY,
+                    vol_all_json LONGTEXT NOT NULL,
+                    saved_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+                        ON UPDATE CURRENT_TIMESTAMP
+                ) ENGINE=InnoDB DEFAULT CHARSET={MYSQL_CHARSET} COLLATE={MYSQL_COLLATE}
+                """
+            )
             # 旧库可能是 utf8（3 字节），无法存 emoji（指标 icon 📈 等）
             for table in (TABLE_HOME, TABLE_DAILY):
                 cur.execute(
@@ -265,6 +276,82 @@ def save_home_cache(payload: dict, context: dict, built_at: float) -> bool:
     except Exception:
         log.exception("mysql save home cache failed")
         return False
+
+
+# --- 竞价量快照（循环覆盖，最大 90 天） ---
+
+
+def save_auction_vol_snapshot(trade_d: str, vol_all: dict) -> bool:
+    if not mysql_enabled() or not ensure_schema() or not vol_all:
+        return False
+    vol_all_s = json.dumps(vol_all, ensure_ascii=False)
+
+    def _run(conn):
+        with conn.cursor() as cur:
+            cur.execute(
+                f"""
+                INSERT INTO `{TABLE_AUCTION_VOL}` (trade_date, vol_all_json)
+                VALUES (%s, %s)
+                ON DUPLICATE KEY UPDATE vol_all_json=VALUES(vol_all_json)
+                """,
+                (trade_d[:8], vol_all_s),
+            )
+        conn.commit()
+        return True
+
+    try:
+        return bool(with_retry(_run))
+    except Exception:
+        log.exception("save auction vol snapshot failed trade_d=%s", trade_d)
+        return False
+
+
+def load_auction_vol_snapshot(trade_d: str) -> Optional[dict]:
+    if not mysql_enabled() or not ensure_schema():
+        return None
+
+    def _run(conn):
+        with conn.cursor() as cur:
+            cur.execute(
+                f"SELECT vol_all_json FROM `{TABLE_AUCTION_VOL}` WHERE trade_date=%s LIMIT 1",
+                (trade_d[:8],),
+            )
+            row = cur.fetchone()
+        if not row:
+            return None
+        data = json.loads(row["vol_all_json"] or "{}")
+        return {k: float(v) for k, v in data.items() if v} or None
+
+    try:
+        return with_retry(_run)
+    except Exception:
+        log.exception("load auction vol snapshot failed trade_d=%s", trade_d)
+        return None
+
+
+def cleanup_auction_vol_snapshots(keep_days: int = 90) -> int:
+    if not mysql_enabled() or not ensure_schema():
+        return 0
+
+    def _run(conn):
+        with conn.cursor() as cur:
+            cur.execute(
+                f"DELETE FROM `{TABLE_AUCTION_VOL}` "
+                f"WHERE trade_date < DATE_FORMAT(DATE_SUB(CURDATE(), INTERVAL %s DAY), '%%Y%%m%%d')",
+                (keep_days,),
+            )
+            deleted = cur.rowcount
+        conn.commit()
+        return deleted
+
+    try:
+        deleted = with_retry(_run)
+        if deleted:
+            log.info("cleanup auction vol snapshots: deleted %s rows (keep %s days)", deleted, keep_days)
+        return deleted
+    except Exception:
+        log.exception("cleanup auction vol snapshots failed")
+        return 0
 
 
 def db_status() -> dict:
