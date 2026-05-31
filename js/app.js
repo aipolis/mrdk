@@ -230,12 +230,13 @@ function renderPeripheral(items) {
   return `<section class="peripheral-row">${cells}</section>`
 }
 
+const SECTOR_BAR_MAX = 30
+
 function renderSectorBars(items) {
   if (!items?.length) return '<p class="grid-empty">暂无概念数据</p>'
-  const maxCount = Math.max(...items.map(s => Number(s.count || s.chg || 0)), 1)
   const bars = items.map(s => {
     const count = Number(s.count ?? 0)
-    const pct = Math.round(count / maxCount * 100)
+    const pct = Math.min(100, Math.round(count / SECTOR_BAR_MAX * 100))
     const label = count > 0 ? `${count}家` : '--'
     return `
     <div class="sector-bar-row">
