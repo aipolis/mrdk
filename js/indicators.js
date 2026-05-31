@@ -7,7 +7,6 @@ const INVERSE_KEYS = new Set([
   'break',
   'limitDownLive',
   'breakLive',
-  'highBreakFeedback',
   'multiFailRate',
   'limitDownRisk',
   'bigLossCount',
@@ -701,7 +700,7 @@ function inferValueGood(item) {
   if (key === 'seal') return n >= 60
   if (key === 'promote' || key === 'promoteLive') return n >= 25
   if (key === 'break' || key === 'breakLive') return n <= 30
-  if (key === 'highBreakFeedback') return n <= 0
+  if (key === 'highBreakFeedback') return n > 0
   if (key === 'limitUpPremium') return n >= 0
   if (key === 'multiFailRate') return n <= 60
   if (key === 'resealRate') return n >= 70

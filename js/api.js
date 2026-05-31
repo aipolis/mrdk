@@ -43,3 +43,9 @@ export function fetchIntradaySeries(date) {
   const d = date ? String(date).replace(/-/g, '').slice(0, 8) : ''
   return fetchJson(d ? `/api/sentiment/intraday-series?date=${d}` : '/api/sentiment/intraday-series')
 }
+
+export function fetchAuctionDetail(date) {
+  const d = String(date || '').replace(/-/g, '').slice(0, 8)
+  const q = d ? `?date=${d}` : ''
+  return fetchJson(`/api/auction/detail${q}`)
+}

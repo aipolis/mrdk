@@ -1,0 +1,55 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+  <meta charset="UTF-8"/>
+  <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover"/>
+  <meta name="description" content="明日当空｜竞价详情：一字个股、板块涨幅、量能异动"/>
+  <title>明日当空 · 竞价详情</title>
+  <link rel="icon" type="image/svg+xml" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'%3E%3Crect width='32' height='32' rx='8' fill='%23ef4444'/%3E%3Ctext x='16' y='22' text-anchor='middle' font-family='system-ui,sans-serif' font-size='18' font-weight='700' fill='%231f2937'%3E%E6%98%8E%3C/text%3E%3C/svg%3E"/>
+  <link rel="stylesheet" href="/css/app.css?v=20260531c"/>
+</head>
+<body>
+  <section class="page">
+    <header class="site-header">
+      <div class="brand">
+        <img class="brand-logo" src="/logo.png" alt="明日当空" width="32" height="32"/>
+        <span class="brand-name">明日当空</span>
+      </div>
+      <nav class="header-actions" aria-label="页面导航">
+        <a class="nav-link" href="/">情绪</a>
+        <a class="nav-link" href="/history.html">历史</a>
+        <a class="nav-link" href="/poster.html">分享</a>
+        <button type="button" class="btn-icon" id="refreshBtn" title="刷新" aria-label="刷新数据">
+          <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M3 12a9 9 0 1 0 9-9 9.75 9.75 0 0 0-6.74 2.74L3 8"/><path d="M3 3v5h5"/></svg>
+        </button>
+      </nav>
+    </header>
+
+    <header class="auction-page-head card">
+      <div>
+        <h1 class="auction-page-title">竞价详情</h1>
+        <p class="auction-page-meta" id="auctionMeta">加载中…</p>
+      </div>
+    </header>
+
+    <nav class="auction-tabs card" id="auctionTabs" aria-label="竞价详情分类" hidden>
+      <button type="button" class="auction-tab active" data-tab="oneWord">竞价一字</button>
+      <button type="button" class="auction-tab" data-tab="topSectors">板块 Top10</button>
+      <button type="button" class="auction-tab" data-tab="volumeSurge">量能异动</button>
+    </nav>
+
+    <p class="status-bar" id="auctionStatus">正在加载…</p>
+
+    <section id="auctionPanels" hidden></section>
+
+    <footer class="site-footer">
+      <p><strong>免责声明</strong>：数据仅供复盘参考，不构成投资建议。</p>
+    </footer>
+  </section>
+
+  <script type="module">
+    import { initAuctionPage } from '/js/auction.js?v=20260531c'
+    initAuctionPage()
+  </script>
+</body>
+</html>

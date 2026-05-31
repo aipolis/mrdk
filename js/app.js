@@ -1,6 +1,6 @@
 import { AUTO_REFRESH_MS } from './config.js?v=20260529i'
 import { getDisplayLevel, dailyQuote, formatHeaderDate } from './theme.js?v=20260529i'
-import { normalizeSections } from './indicators.js?v=20260529j'
+import { normalizeSections } from './indicators.js?v=20260531a'
 import {
   buildLongkongHeroText,
   resolveLongkongState,
@@ -240,11 +240,13 @@ function renderSectorBars(items) {
     const label = count > 0 ? `${count}家` : '--'
     return `
     <div class="sector-bar-row">
-      <span class="sector-bar-name">${esc(s.name)}</span>
+      <div class="sector-bar-head">
+        <span class="sector-bar-name" title="${esc(s.name)}">${esc(s.name)}</span>
+        <span class="sector-bar-count">${label}</span>
+      </div>
       <div class="sector-bar-track">
         <div class="sector-bar-fill" style="width:${pct}%"></div>
       </div>
-      <span class="sector-bar-count">${label}</span>
     </div>`
   }).join('')
   return `<div class="sector-bars">${bars}</div>`
@@ -312,14 +314,20 @@ function renderSections(sections, homeData) {
     const chartHtml = isIntraday
       ? `<canvas class="intraday-chart-canvas" aria-hidden="true"></canvas>`
       : ''
+    const isAuction = sec.id === 'auction'
+    const sectionClass = isAuction ? 'section section--drill' : 'section'
+    const cardClass = isAuction ? 'card section-card section-card--drill' : 'card section-card'
+    const metaHtml = isAuction
+      ? `<span class="section-meta-row"><span class="section-meta">${esc(sec.meta || '')}</span><span class="section-chevron" aria-hidden="true">›</span></span>`
+      : `<span class="section-meta">${esc(sec.meta || '')}</span>`
     return `
-    <section class="section">
+    <section class="${sectionClass}" data-drill-href="${isAuction ? '/auction.html' : ''}">
       <header class="section-head">
         <h2 class="section-title">${esc(sec.title)}</h2>
-        <span class="section-meta">${esc(sec.meta || '')}</span>
+        ${metaHtml}
       </header>
       ${chartHtml}
-      <article class="card section-card">${renderGridSection(sec)}</article>
+      <article class="${cardClass}">${renderGridSection(sec)}</article>
     </section>`
   }).join('')
   // post-render: expand sector bar cells and paint intraday canvases
@@ -349,6 +357,24 @@ function _postRenderSections(box, sections, homeData) {
     }
   }
   // ── 盘中分时图 ──────────────────────────────────────────────
+  box.querySelectorAll('.section--drill .section-card--drill').forEach((card) => {
+    const section = card.closest('.section--drill')
+    const href = section?.dataset?.drillHref
+    if (!href || card.dataset.drillBound) return
+    card.dataset.drillBound = '1'
+    card.setAttribute('role', 'link')
+    card.setAttribute('tabindex', '0')
+    card.setAttribute('aria-label', '查看竞价明细')
+    const go = () => { window.location.href = href }
+    card.addEventListener('click', go)
+    card.addEventListener('keydown', (e) => {
+      if (e.key === 'Enter' || e.key === ' ') {
+        e.preventDefault()
+        go()
+      }
+    })
+  })
+  // ── 盘中分时图（canvas） ────────────────────────────────────
   box.querySelectorAll('.intraday-chart-canvas').forEach(canvas => {
     try {
       const series = JSON.parse(canvas.dataset.series || '[]')
