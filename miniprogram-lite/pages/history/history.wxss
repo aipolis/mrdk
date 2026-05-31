@@ -50,15 +50,175 @@
   color: #475569;
 }
 
-/* ── 走势图 ── */
-.trend-card {
+/* ── 近10日统计摘要 ── */
+.summary-card {
   background: #fff;
-  border-radius: 32rpx;
-  padding: 32rpx 38rpx 24rpx;
+  border-radius: 24rpx;
+  padding: 24rpx 32rpx;
   margin-bottom: 24rpx;
-  box-sizing: border-box;
   box-shadow: 0 2rpx 12rpx rgba(0, 0, 0, 0.06);
 }
+
+.summary-label {
+  font-size: 22rpx;
+  color: #94a3b8;
+  font-weight: 500;
+  display: block;
+  margin-bottom: 16rpx;
+}
+
+.summary-tags {
+  display: flex;
+  gap: 12rpx;
+  flex-wrap: wrap;
+}
+
+.summary-tag {
+  display: flex;
+  align-items: center;
+  padding: 8rpx 20rpx;
+  border-radius: 16rpx;
+  font-size: 24rpx;
+  font-weight: 500;
+  line-height: 1.4;
+}
+
+.summary-tag--long  { background: #fef2f2; color: #b91c1c; }
+.summary-tag--mid   { background: #fffbeb; color: #92400e; }
+.summary-tag--empty { background: #f0f9ff; color: #0369a1; }
+
+.summary-streak {
+  display: block;
+  margin-top: 14rpx;
+  font-size: 22rpx;
+  color: #64748b;
+}
+
+/* ── 图表/日历容器 ── */
+.chart-card {
+  background: #fff;
+  border-radius: 32rpx;
+  padding: 24rpx 32rpx 28rpx;
+  margin-bottom: 24rpx;
+  box-shadow: 0 2rpx 12rpx rgba(0, 0, 0, 0.06);
+}
+
+/* ── 视图切换 tab ── */
+.view-tabs {
+  display: flex;
+  background: #f1f5f9;
+  border-radius: 16rpx;
+  padding: 4rpx;
+  margin-bottom: 28rpx;
+}
+
+.view-tab {
+  flex: 1;
+  text-align: center;
+  padding: 12rpx 0;
+  border-radius: 12rpx;
+  font-size: 26rpx;
+  color: #64748b;
+  transition: all 0.2s;
+}
+
+.view-tab--active {
+  background: #fff;
+  color: #0f172a;
+  font-weight: 600;
+  box-shadow: 0 1rpx 6rpx rgba(0,0,0,0.08);
+}
+
+/* ── 月历 ── */
+.cal-nav {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  margin-bottom: 20rpx;
+}
+
+.cal-nav-title {
+  font-size: 30rpx;
+  font-weight: 600;
+  color: #0f172a;
+}
+
+.cal-nav-btn {
+  font-size: 48rpx;
+  color: #94a3b8;
+  padding: 0 16rpx;
+  line-height: 1;
+}
+
+.cal-weekdays {
+  display: grid;
+  grid-template-columns: repeat(7, 1fr);
+  margin-bottom: 8rpx;
+}
+
+.cal-wd {
+  text-align: center;
+  font-size: 22rpx;
+  color: #94a3b8;
+  font-weight: 500;
+  padding: 8rpx 0;
+}
+
+.cal-grid {
+  display: grid;
+  grid-template-columns: repeat(7, 1fr);
+  gap: 8rpx 4rpx;
+}
+
+.cal-cell {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.cal-day-wrap {
+  width: 72rpx;
+  height: 80rpx;
+  border-radius: 14rpx;
+  position: relative;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.cal-day-wrap--today {
+  border: 2rpx solid #0284c7;
+}
+
+.cal-score {
+  font-size: 34rpx;
+  font-weight: 700;
+  color: #fff;
+  line-height: 1;
+}
+
+.cal-day {
+  position: absolute;
+  right: 6rpx;
+  bottom: 5rpx;
+  font-size: 18rpx;
+  color: #64748b;
+  font-weight: 400;
+  line-height: 1;
+}
+
+.cal-day--filled {
+  color: rgba(255, 255, 255, 0.75);
+  font-weight: 500;
+}
+
+.cal-day--today {
+  color: #0284c7;
+  font-weight: 700;
+}
+
+/* .trend-card 已合并到 .chart-card */
+.trend-card {}
 
 .trend-head {
   display: flex;

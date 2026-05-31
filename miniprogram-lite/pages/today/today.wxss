@@ -148,7 +148,6 @@ page {
   display: flex;
   align-items: flex-start;
   justify-content: center;
-  padding-left: 16rpx;
 }
 
 .hero-score {
@@ -159,21 +158,74 @@ page {
   letter-spacing: -6rpx;
 }
 
-.hero-score-degree {
-  font-size: 80rpx;
-  font-weight: 400;
-  font-family: -apple-system, 'Helvetica Neue', Helvetica, sans-serif;
-  line-height: 1;
-  margin-top: 12rpx;
-  margin-left: 2rpx;
+/* ── 走势柱选中高亮 ── */
+.trend-bar--selected {
+  opacity: 0.75;
+  box-shadow: 0 0 0 3rpx #fff, 0 0 0 6rpx currentColor;
 }
 
-.weather-long .hero-score,
-.weather-long .hero-score-degree { color: #e63838; }
-.weather-mid .hero-score,
-.weather-mid .hero-score-degree { color: #f5a60a; }
-.weather-empty .hero-score,
-.weather-empty .hero-score-degree { color: #91d1ed; }
+/* ── 柱图点击详情弹窗 ── */
+.bar-popup-mask {
+  position: fixed;
+  top: 0; left: 0; right: 0; bottom: 0;
+  background: rgba(0,0,0,0.3);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  z-index: 100;
+}
+
+.bar-popup {
+  width: 480rpx;
+  background: #fff;
+  border-radius: 28rpx;
+  overflow: hidden;
+  box-shadow: 0 8rpx 40rpx rgba(0,0,0,0.18);
+}
+
+.bar-popup-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 24rpx 28rpx 20rpx;
+}
+
+.bar-popup-date {
+  font-size: 26rpx;
+  font-weight: 600;
+  color: #334155;
+}
+
+.bar-popup-close {
+  font-size: 40rpx;
+  color: #94a3b8;
+  line-height: 1;
+  padding: 0 4rpx;
+}
+
+.bar-popup-body {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  padding: 24rpx 28rpx 36rpx;
+  gap: 16rpx;
+}
+
+.bar-popup-score {
+  font-size: 120rpx;
+  font-weight: 300;
+  line-height: 1;
+  letter-spacing: -4rpx;
+}
+
+.bar-popup-tag {
+  padding: 8rpx 28rpx;
+  border-radius: 20rpx;
+  font-size: 26rpx;
+  font-weight: 600;
+}
+
+/* 分数颜色由 JS getScoreColor 计算后 inline style 注入 */
 
 .hero-verdict {
   display: block;
@@ -224,43 +276,45 @@ page {
   position: relative;
 }
 
-.hero-pill--active {
-  box-shadow: 0 2rpx 8rpx rgba(0, 0, 0, 0.2);
+/* 默认（未命中）：灰底灰字 */
+.pill-long,
+.pill-mid,
+.pill-empty {
+  background: #f1f5f9;
 }
 
-.pill-long { background: #e63838; }
-.pill-mid { background: #f5a60a; }
-.pill-empty { background: #91d1ed; }
+/* 命中时：背景由 inline style 注入（7色方案），保留阴影 */
+.hero-pill--active { box-shadow: 0 2rpx 8rpx rgba(0,0,0,0.25); }
 
 .pill-icon {
   width: 28rpx;
   height: 28rpx;
   flex-shrink: 0;
   align-self: center;
+  filter: brightness(0) saturate(0) opacity(0.35);
 }
 
-.pill-mid .pill-icon {
-  filter: brightness(0) invert(1);
-}
+/* 命中时图标恢复彩色/白色 */
+.hero-pill--active .pill-icon { filter: none; }
+.hero-pill--active.pill-mid .pill-icon { filter: brightness(0) invert(1); }
 
 .pill-char {
   font-size: 28rpx;
   font-weight: 700;
-  color: #fff;
+  color: #94a3b8;
   line-height: 64rpx;
 }
 
 .pill-hint {
   font-size: 20rpx;
   font-weight: 500;
-  color: #fff;
+  color: #94a3b8;
   line-height: 64rpx;
 }
 
-.pill-empty .pill-char,
-.pill-empty .pill-hint {
-  color: #1e293b;
-}
+/* 命中时文字统一白色 */
+.hero-pill--active .pill-char,
+.hero-pill--active .pill-hint { color: #fff; }
 
 /* ── 走势 358×186 ── */
 .trend-card {
@@ -358,6 +412,70 @@ page {
   font-weight: 700;
 }
 
+/* ── 连续天数徽章 ── */
+.streak-badge {
+  margin-top: 10rpx;
+  display: inline-flex;
+  align-items: center;
+  padding: 6rpx 20rpx;
+  background: rgba(0, 0, 0, 0.06);
+  border-radius: 24rpx;
+}
+
+.streak-text {
+  font-size: 22rpx;
+  font-weight: 500;
+  color: #475569;
+  line-height: 1.3;
+}
+
+.weather-long .streak-badge { background: rgba(230, 56, 56, 0.1); }
+.weather-long .streak-text  { color: #b91c1c; }
+.weather-mid  .streak-badge { background: rgba(245, 166, 10, 0.1); }
+.weather-mid  .streak-text  { color: #92400e; }
+.weather-empty .streak-badge { background: rgba(145, 209, 237, 0.2); }
+.weather-empty .streak-text  { color: #0369a1; }
+
+/* ── 今日解读 ── */
+.insight-row {
+  width: 100%;
+  margin: 18rpx 0 14rpx;
+  padding: 20rpx 24rpx;
+  background: #f8fafc;
+  border-radius: 16rpx;
+  box-sizing: border-box;
+}
+
+.insight-label {
+  display: block;
+  font-size: 20rpx;
+  font-weight: 600;
+  color: #94a3b8;
+  margin-bottom: 8rpx;
+  letter-spacing: 1rpx;
+}
+
+.insight-text {
+  display: block;
+  font-size: 26rpx;
+  line-height: 1.65;
+  color: #334155;
+}
+
+/* ── 走势柱顶分数标注 ── */
+.bar-score-label {
+  font-size: 18rpx;
+  font-weight: 600;
+  line-height: 1.2;
+  margin-bottom: 4rpx;
+  text-align: center;
+}
+
+.bar-score-label--today {
+  font-size: 20rpx;
+  font-weight: 800;
+}
+
 /* ── 游资语录 358×222 ── */
 .quote-card {
   padding: 32rpx 38rpx 28rpx;
@@ -377,11 +495,14 @@ page {
   line-height: 1.3;
 }
 
-.quote-card-more {
-  font-size: 26rpx;
-  font-weight: 400;
+.quote-card-tag {
+  font-size: 22rpx;
+  font-weight: 500;
   color: #0284c7;
-  line-height: 1.3;
+  background: #eff7fb;
+  padding: 4rpx 14rpx;
+  border-radius: 10rpx;
+  line-height: 1.5;
 }
 
 .quote-box {
@@ -452,6 +573,7 @@ page {
   color: #fff;
   flex: 1;
   text-align: left;
+  white-space: nowrap;
 }
 
 .subscribe-btn--done .subscribe-text {
@@ -490,4 +612,59 @@ page {
 
 .subscribe-bell--done .subscribe-bell-text {
   color: #94a3b8;
+}
+
+/* ── 已订阅后：提示 + 分享 ── */
+.subscribed-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 16rpx;
+  padding: 0 8rpx;
+}
+
+.subscribed-done {
+  display: flex;
+  align-items: center;
+  gap: 12rpx;
+  flex: 1;
+  min-width: 0;
+}
+
+.subscribed-check {
+  font-size: 32rpx;
+  color: #16a34a;
+  line-height: 1;
+  flex-shrink: 0;
+}
+
+.subscribed-label {
+  font-size: 26rpx;
+  color: #475569;
+  line-height: 1.4;
+}
+
+.share-btn {
+  flex-shrink: 0;
+  height: 72rpx;
+  padding: 0 32rpx;
+  background: #0284c7;
+  color: #fff;
+  border-radius: 18rpx;
+  border: none;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  line-height: 1;
+}
+
+.share-btn::after {
+  border: none;
+}
+
+.share-btn-text {
+  font-size: 26rpx;
+  font-weight: 600;
+  color: #fff;
+  line-height: 1;
 }

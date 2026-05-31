@@ -1,119 +1,202 @@
 .profile-page {
   min-height: 100vh;
   background: #f0f9ff;
-  padding: 24rpx 31rpx calc(24rpx + env(safe-area-inset-bottom));
+  padding: 24rpx 31rpx calc(40rpx + env(safe-area-inset-bottom));
   box-sizing: border-box;
 }
 
+/* ── 用户卡片容器 ── */
 .user-card {
-  display: flex;
-  align-items: center;
-  gap: 24rpx;
-  padding: 32rpx 32rpx;
-  margin-bottom: 24rpx;
   background: #fff;
   border-radius: 32rpx;
+  margin-bottom: 24rpx;
   box-shadow: 0 2rpx 12rpx rgba(0, 0, 0, 0.06);
-  box-sizing: border-box;
+  overflow: hidden;
 }
 
-.user-card__logged {
-  position: relative;
-  width: 100%;
-  min-height: 48px;
-  padding-bottom: 36rpx;
-}
-
-.user-card__main {
+/* ── 已登录：横排 ── */
+.logged-row {
   display: flex;
   align-items: center;
   gap: 24rpx;
-  width: 100%;
+  padding: 36rpx 32rpx;
 }
 
-.user-meta {
+.avatar-lg {
+  width: 88rpx;
+  height: 88rpx;
+  border-radius: 44rpx;
+  flex-shrink: 0;
+  background: #f1f5f9;
+}
+
+.logged-meta {
   flex: 1;
   min-width: 0;
 }
 
-.avatar-ring {
-  width: 48px;
-  height: 48px;
-  border-radius: 24px;
-  background: #e63838;
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  flex-shrink: 0;
+.logged-name {
+  display: block;
+  font-size: 34rpx;
+  font-weight: 700;
+  color: #0f172a;
+  line-height: 1.3;
 }
 
-.avatar-btn {
+.logged-sub {
+  display: block;
+  font-size: 22rpx;
+  color: #94a3b8;
+  margin-top: 6rpx;
+}
+
+.logout-btn {
+  font-size: 24rpx;
+  color: #94a3b8;
+  flex-shrink: 0;
+  padding: 8rpx 0 8rpx 24rpx;
+}
+
+/* ── 未登录：居中引导 ── */
+.guest-body {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  padding: 48rpx 32rpx 40rpx;
+}
+
+/* 头像选择按钮 */
+.avatar-pick-btn {
   padding: 0;
   margin: 0;
   border: none;
   background: transparent;
   line-height: 1;
-  flex-shrink: 0;
 }
 
-.avatar-btn::after {
+.avatar-pick-btn::after {
   border: none;
 }
 
-.avatar-img {
-  width: 48px;
-  height: 48px;
-  border-radius: 24px;
-  flex-shrink: 0;
-  background: #f1f5f9;
+.avatar-pick-wrap {
+  position: relative;
+  width: 120rpx;
+  height: 120rpx;
 }
 
-.avatar-char {
-  font-size: 20px;
-  font-weight: 700;
-  color: #fff;
-}
-
-.user-name {
+.avatar-pick-img {
+  width: 120rpx;
+  height: 120rpx;
+  border-radius: 60rpx;
   display: block;
-  font-size: 36rpx;
-  font-weight: 700;
-  color: #0f172a;
 }
 
-.user-id {
-  display: block;
-  font-size: 24rpx;
-  color: #64748b;
-  margin-top: 8rpx;
+.avatar-pick-placeholder {
+  width: 120rpx;
+  height: 120rpx;
+  border-radius: 60rpx;
+  background: linear-gradient(135deg, #bae6fd 0%, #7dd3fc 100%);
+  display: flex;
+  align-items: center;
+  justify-content: center;
 }
 
-.user-meta--login {
-  flex: 1;
+.avatar-pick-icon {
+  font-size: 56rpx;
+  line-height: 1;
 }
 
-.nickname-input {
-  width: 100%;
-  font-size: 32rpx;
-  font-weight: 600;
-  color: #0f172a;
-}
-
-.login-hint {
-  display: block;
-  font-size: 22rpx;
-  color: #64748b;
-  margin-top: 10rpx;
-}
-
-.logout-link {
+/* 相机角标 */
+.avatar-camera-badge {
   position: absolute;
   right: 0;
   bottom: 0;
-  font-size: 24rpx;
-  color: #64748b;
+  width: 40rpx;
+  height: 40rpx;
+  border-radius: 20rpx;
+  background: #0284c7;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  border: 3rpx solid #fff;
 }
 
+.avatar-camera-icon {
+  font-size: 22rpx;
+  line-height: 1;
+}
+
+.avatar-pick-hint {
+  margin-top: 20rpx;
+  font-size: 24rpx;
+  color: #0284c7;
+  font-weight: 500;
+}
+
+/* 昵称输入框 */
+.nickname-wrap {
+  width: 100%;
+  margin-top: 36rpx;
+  background: #f8fafc;
+  border-radius: 20rpx;
+  border: 2rpx solid #e2e8f0;
+  padding: 0 28rpx;
+  box-sizing: border-box;
+  height: 88rpx;
+  display: flex;
+  align-items: center;
+}
+
+.nickname-field {
+  flex: 1;
+  font-size: 30rpx;
+  font-weight: 500;
+  color: #0f172a;
+  height: 88rpx;
+  line-height: 88rpx;
+}
+
+.nickname-placeholder {
+  color: #cbd5e1;
+  font-weight: 400;
+}
+
+.guest-tip {
+  margin-top: 20rpx;
+  font-size: 22rpx;
+  color: #94a3b8;
+  text-align: center;
+  line-height: 1.5;
+}
+
+.save-profile-btn {
+  margin-top: 32rpx;
+  width: 100%;
+  height: 88rpx;
+  background: #0284c7;
+  border-radius: 20rpx;
+  border: none;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.save-profile-btn::after {
+  border: none;
+}
+
+.save-profile-btn--disabled {
+  background: #cbd5e1;
+}
+
+.save-profile-text {
+  font-size: 30rpx;
+  font-weight: 600;
+  color: #fff;
+  line-height: 1;
+}
+
+/* ── 菜单卡片 ── */
 .menu-card {
   background: #fff;
   border-radius: 32rpx;
@@ -139,17 +222,100 @@
   color: #0f172a;
 }
 
-.menu-val {
-  font-size: 24rpx;
-  color: #64748b;
-  margin-right: 8rpx;
-}
-
 .menu-arrow {
   font-size: 20px;
-  color: #64748b;
+  color: #94a3b8;
 }
 
 .menu-row.tap:active {
   background: #f8fafc;
+}
+
+/* ── 使用统计 ── */
+.stats-card {
+  background: #fff;
+  border-radius: 32rpx;
+  padding: 28rpx 32rpx;
+  margin-bottom: 24rpx;
+  box-shadow: 0 2rpx 12rpx rgba(0, 0, 0, 0.06);
+}
+
+.stats-title {
+  display: block;
+  font-size: 24rpx;
+  font-weight: 600;
+  color: #94a3b8;
+  margin-bottom: 20rpx;
+  letter-spacing: 1rpx;
+}
+
+.stats-row {
+  display: flex;
+  align-items: center;
+}
+
+.stats-item {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 8rpx;
+}
+
+.stats-divider {
+  width: 1rpx;
+  height: 48rpx;
+  background: #f1f5f9;
+  flex-shrink: 0;
+}
+
+.stats-num {
+  font-size: 52rpx;
+  font-weight: 700;
+  color: #0f172a;
+  line-height: 1;
+}
+
+.stats-num--long  { color: #e63838; }
+.stats-num--mid   { color: #f5a60a; }
+.stats-num--empty { color: #0284c7; }
+
+.stats-desc {
+  font-size: 22rpx;
+  color: #64748b;
+  line-height: 1.3;
+}
+
+/* ── 关于卡片 ── */
+.about-card {
+  background: #fff;
+  border-radius: 32rpx;
+  padding: 28rpx 32rpx;
+  margin-bottom: 24rpx;
+  box-shadow: 0 2rpx 12rpx rgba(0, 0, 0, 0.06);
+}
+
+.about-logo-row {
+  display: flex;
+  align-items: baseline;
+  gap: 12rpx;
+  margin-bottom: 16rpx;
+}
+
+.about-name {
+  font-size: 32rpx;
+  font-weight: 700;
+  color: #0f172a;
+}
+
+.about-version {
+  font-size: 22rpx;
+  color: #94a3b8;
+}
+
+.about-desc {
+  display: block;
+  font-size: 26rpx;
+  color: #475569;
+  line-height: 1.65;
 }

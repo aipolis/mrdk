@@ -1,51 +1,112 @@
 <view class="page profile-page">
+
+  <!-- 用户卡片 -->
   <view class="user-card">
-    <view wx:if="{{loggedIn}}" class="user-card__logged">
-      <view class="user-card__main">
-        <image class="avatar-img" src="{{avatarUrl}}" mode="aspectFill"/>
-        <view class="user-meta">
-          <text class="user-name">{{nickName}}</text>
-          <text class="user-id">{{userId ? 'ID ' + userId : (openidHint || '微信用户')}}</text>
-        </view>
+
+    <!-- 已登录 -->
+    <view wx:if="{{loggedIn}}" class="logged-row">
+      <image class="avatar-lg" src="{{avatarUrl}}" mode="aspectFill"/>
+      <view class="logged-meta">
+        <text class="logged-name">{{nickName}}</text>
+        <text class="logged-sub">{{userId ? 'UID · ' + userId : '已登录'}}</text>
       </view>
-      <text class="logout-link" bindtap="onLogout">退出</text>
+      <text class="logout-btn" bindtap="onLogout">退出</text>
     </view>
 
+    <!-- 未登录：居中引导 -->
     <block wx:else>
-      <button class="avatar-btn" open-type="chooseAvatar" bind:chooseavatar="onChooseAvatar">
-        <image wx:if="{{loginAvatarUrl}}" class="avatar-img" src="{{loginAvatarUrl}}" mode="aspectFill"/>
-        <view wx:else class="avatar-ring">
-          <text class="avatar-char">微信</text>
+      <view class="guest-body">
+
+        <!-- 头像选择 -->
+        <button class="avatar-pick-btn" open-type="chooseAvatar" bind:chooseavatar="onChooseAvatar">
+          <view class="avatar-pick-wrap">
+            <image wx:if="{{loginAvatarUrl}}" class="avatar-pick-img" src="{{loginAvatarUrl}}" mode="aspectFill"/>
+            <view wx:else class="avatar-pick-placeholder">
+              <text class="avatar-pick-icon">☁</text>
+            </view>
+            <!-- 相机角标 -->
+            <view class="avatar-camera-badge">
+              <text class="avatar-camera-icon">📷</text>
+            </view>
+          </view>
+        </button>
+
+        <text class="avatar-pick-hint">点击选择微信头像</text>
+
+        <!-- 昵称输入 -->
+        <view class="nickname-wrap">
+          <input
+            id="nickname-input"
+            class="nickname-field"
+            type="nickname"
+            placeholder="填写昵称（可选）"
+            placeholder-class="nickname-placeholder"
+            value="{{loginNickName}}"
+            bindinput="onNicknameInput"
+            bindblur="onNicknameBlur"
+            bindnicknamereview="onNicknameReview"
+          />
         </view>
-      </button>
-      <view class="user-meta user-meta--login">
-        <input
-          id="nickname-input"
-          class="nickname-input"
-          type="nickname"
-          placeholder="点击填写微信昵称"
-          value="{{loginNickName}}"
-          bindinput="onNicknameInput"
-          bindblur="onNicknameBlur"
-          bindnicknamereview="onNicknameReview"
-        />
-        <text class="login-hint">选择头像并填写昵称后自动登录（可选）</text>
+
+        <text class="guest-tip">留下昵称，天气记录更有归属感</text>
+
+        <button
+          class="save-profile-btn {{loginNickName ? '' : 'save-profile-btn--disabled'}}"
+          bindtap="onSaveProfile"
+        >
+          <text class="save-profile-text">保存</text>
+        </button>
+
       </view>
     </block>
+
+  </view>
+
+  <!-- 使用统计 -->
+  <view class="stats-card" wx:if="{{usageDays > 0}}">
+    <text class="stats-title">我的天气记录</text>
+    <view class="stats-row">
+      <view class="stats-item">
+        <text class="stats-num">{{usageDays}}</text>
+        <text class="stats-desc">使用天数</text>
+      </view>
+      <view class="stats-divider"/>
+      <view class="stats-item">
+        <text class="stats-num stats-num--long">{{usageLong}}</text>
+        <text class="stats-desc">☀ 晴天</text>
+      </view>
+      <view class="stats-divider"/>
+      <view class="stats-item">
+        <text class="stats-num stats-num--mid">{{usageMid}}</text>
+        <text class="stats-desc">⛅ 多云</text>
+      </view>
+      <view class="stats-divider"/>
+      <view class="stats-item">
+        <text class="stats-num stats-num--empty">{{usageEmpty}}</text>
+        <text class="stats-desc">🌧 雨天</text>
+      </view>
+    </view>
+  </view>
+
+  <!-- 关于卡片 -->
+  <view class="about-card">
+    <view class="about-logo-row">
+      <text class="about-name">明日当空</text>
+      <text class="about-version">v{{appVersion}}</text>
+    </view>
+    <text class="about-desc">不怕错过，就怕做错，帮你识别下雨天。</text>
+    <text class="about-desc">雨天少出门，晴天走更远。</text>
   </view>
 
   <view class="menu-card">
     <view class="menu-row">
       <text class="menu-label">每日天气提醒</text>
-      <switch checked="{{pushEnabled}}" color="#e63838" bindchange="onPushChange"/>
-    </view>
-    <view class="menu-row tap" bindtap="goAbout">
-      <text class="menu-label">关于</text>
-      <text class="menu-arrow">›</text>
+      <switch checked="{{pushEnabled}}" color="#0284c7" bindchange="onPushChange"/>
     </view>
     <view class="menu-row tap no-border" bindtap="goDisclaimer">
-      <text class="menu-label">说明</text>
+      <text class="menu-label">说明与免责</text>
       <text class="menu-arrow">›</text>
     </view>
   </view>
+
 </view>

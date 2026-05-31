@@ -12,20 +12,20 @@
     "backgroundTextStyle": "dark"
   },
   "tabBar": {
-    "color": "#64748B",
+    "color": "#94A3B8",
     "selectedColor": "#0284C7",
     "backgroundColor": "#F8FAFC",
     "borderStyle": "black",
     "list": [
       {
         "pagePath": "pages/today/today",
-        "text": "首页",
-        "iconPath": "images/tab-home.png",
-        "selectedIconPath": "images/tab-home-active.png"
+        "text": "今日",
+        "iconPath": "images/tab-today.png",
+        "selectedIconPath": "images/tab-today-active.png"
       },
       {
         "pagePath": "pages/history/history",
-        "text": "历史",
+        "text": "走势",
         "iconPath": "images/tab-history.png",
         "selectedIconPath": "images/tab-history-active.png"
       },

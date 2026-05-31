@@ -1,7 +1,8 @@
 const { fetchToday, fetchTrend, loadCachedToday } = require('../../utils/store')
+const { getScoreColor } = require('../../utils/scoreColor')
 const { requestDailySubscribe } = require('../../utils/subscribe')
-const { APP_TITLE, APP_SUBTITLE, QUOTE_SECTION } = require('../../utils/config')
-const { formatHeaderDate, formatUpdateBadge, LONG, MID, EMPTY } = require('../../utils/verdict')
+const { APP_TITLE, APP_SUBTITLE } = require('../../utils/config')
+const { formatHeaderDate, formatUpdateBadge, LONG, MID, EMPTY, getDailyQuote, calcStreak, recordTodayUsage } = require('../../utils/verdict')
 const { formatErrMsg } = require('../../utils/errMsg')
 
 const VERDICT_TABS = [
@@ -16,7 +17,6 @@ Page({
     error: '',
     appTitle: APP_TITLE,
     appSubtitle: APP_SUBTITLE,
-    quoteSection: QUOTE_SECTION,
     headerDate: '',
     updateBadge: '',
     live: false,
@@ -24,22 +24,28 @@ Page({
     verdictChar: '中',
     weatherText: '多云',
     weatherShort: '多云',
-    actionText: '带伞',
-    weatherLine: '多云 · 带伞',
+    actionText: '带把伞',
+    weatherLine: '多云 · 带把伞',
     heroIcon: MID.heroIcon,
+    insight: MID.insight,
     score: 0,
     displayScore: 0,
+    scoreColor: '#f5a60a',
     themeClass: 'weather-mid',
     pageReady: false,
     trendBars: [],
     verdictTabs: VERDICT_TABS,
     subscribed: false,
+    streakText: '',
+    dailyQuote: { text: '', author: '' },
+    barDetail: null,
   },
 
   onLoad() {
     this.setData({
       headerDate: formatHeaderDate(),
       subscribed: !!wx.getStorageSync('subscribe_sentimentDaily'),
+      dailyQuote: getDailyQuote(),
     })
     const cached = loadCachedToday()
     if (cached) this.applyData(cached)
@@ -108,21 +114,26 @@ Page({
 
   applyData(data) {
     const v = data.verdict || {}
+    const verdictKey = v.key || 'mid'
+    recordTodayUsage(verdictKey)
+    const verdictDef = verdictKey === 'long' ? LONG : verdictKey === 'empty' ? EMPTY : MID
     this.setData({
       loading: false,
       error: '',
       updateBadge: data.updateBadge || (data.raw ? formatUpdateBadge(data.raw) : ''),
       live: !!data.live,
-      verdictKey: v.key || 'mid',
-      verdictChar: v.char || '中',
-      weatherText: v.weather || '',
-      weatherShort: data.weatherShort || v.weatherShort || '',
-      actionText: v.action || '',
+      verdictKey,
+      verdictChar: v.char || verdictDef.char,
+      weatherText: v.weather || verdictDef.weather,
+      weatherShort: data.weatherShort || v.weatherShort || verdictDef.weatherShort,
+      actionText: v.action || verdictDef.action,
       weatherLine: data.weatherLine || '',
-      heroIcon: data.heroIcon || v.heroIcon || v.icon || MID.heroIcon,
+      heroIcon: data.heroIcon || v.heroIcon || v.icon || verdictDef.heroIcon,
+      insight: verdictDef.insight,
       score: data.score != null ? data.score : 0,
       displayScore: data.score != null ? data.score : 0,
-      themeClass: v.themeClass || 'weather-mid',
+      scoreColor: getScoreColor(data.score != null ? data.score : 0),
+      themeClass: v.themeClass || verdictDef.themeClass,
       pageReady: true,
       trendBars: data.trendBars || this.data.trendBars,
     })
@@ -139,6 +150,7 @@ Page({
         this.applyData(data)
         fetchTrend(10, data.raw).then(bars => {
           this.setData({ trendBars: bars })
+          this._loadStreak(bars)
         }).catch(() => {})
       })
       .catch(err => {
@@ -154,6 +166,16 @@ Page({
         this._loading = null
       })
     return this._loading
+  },
+
+  _loadStreak(trendBars) {
+    if (!trendBars || !trendBars.length) return
+    // 从 trendBars 反推历史列表（已是旧→新顺序，需要反转为新→旧）
+    const reversed = trendBars.slice().reverse().map(b => ({
+      verdict: { key: b.verdictKey || (b.color === '#e63838' ? 'long' : b.color === '#91d1ed' ? 'empty' : 'mid') },
+    }))
+    const streak = calcStreak(reversed)
+    this.setData({ streakText: streak ? `已连续 ${streak.count} 天${streak.label}` : '' })
   },
 
   onSubscribe() {
@@ -173,4 +195,32 @@ Page({
       path: '/pages/today/today',
     }
   },
+
+  onShareFriend() {
+    wx.shareAppMessage({
+      title: `明日当空 · ${this.data.weatherLine || '今日天气'}`,
+      path: '/pages/today/today',
+    })
+  },
+
+  onBarTap(e) {
+    const index = Number(e.currentTarget.dataset.index)
+    const bar = this.data.trendBars[index]
+    if (!bar) return
+    const labelMap = { long: '晴天', mid: '多云', empty: '雨天' }
+    this.setData({
+      barDetail: {
+        fullDate: bar.fullDate,
+        score: bar.score,
+        color: bar.color,
+        verdictLabel: labelMap[bar.verdictKey] || '多云',
+      },
+    })
+  },
+
+  onCloseBarDetail() {
+    this.setData({ barDetail: null })
+  },
+
+  noop() {},
 })

@@ -9,6 +9,9 @@ const {
   DEFAULT_AVATAR,
   refreshUserSession,
 } = require('../../utils/userProfile')
+const { loadUsageStats } = require('../../utils/verdict')
+
+const APP_VERSION = '1.2.0'
 
 Page({
   data: {
@@ -20,12 +23,28 @@ Page({
     openidHint: '',
     loginAvatarUrl: '',
     loginNickName: '',
+    usageDays: 0,
+    usageLong: 0,
+    usageMid: 0,
+    usageEmpty: 0,
+    appVersion: APP_VERSION,
   },
 
   onShow() {
     this.loadProfile()
     this.setData({
       pushEnabled: !!wx.getStorageSync('subscribe_sentimentDaily'),
+    })
+    this._loadUsage()
+  },
+
+  _loadUsage() {
+    const stats = loadUsageStats()
+    this.setData({
+      usageDays: stats.days || 0,
+      usageLong: stats.long || 0,
+      usageMid: stats.mid || 0,
+      usageEmpty: stats.empty || 0,
     })
   },
 
@@ -97,11 +116,20 @@ Page({
   tryAutoLogin() {
     if (this.data.loggedIn || this._autoLogging) return
     const avatarUrl = this.data.loginAvatarUrl
-    if (!avatarUrl) return
     this.readNickName().then(nickName => {
       if (!nickName) return
       this.completeLogin(avatarUrl, nickName)
     })
+  },
+
+  onSaveProfile() {
+    if (this.data.loggedIn || this._autoLogging) return
+    const nickName = (this.data.loginNickName || '').trim()
+    if (!nickName) {
+      wx.showToast({ title: '请先填写昵称', icon: 'none' })
+      return
+    }
+    this.completeLogin(this.data.loginAvatarUrl, nickName)
   },
 
   onChooseAvatar(e) {

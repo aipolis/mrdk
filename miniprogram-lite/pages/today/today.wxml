@@ -23,7 +23,7 @@
     <!-- 今日天气卡片 -->
     <view class="hero-card">
       <view class="hero-top">
-        <text class="hero-title">今日天气</text>
+        <text class="hero-title">今日舒适度</text>
         <view class="hero-update" wx:if="{{updateBadge}}">
           <text class="hero-update-text">{{updateBadge}}</text>
         </view>
@@ -31,8 +31,7 @@
 
       <view class="hero-body">
         <view class="hero-score-wrap">
-          <text class="hero-score">{{displayScore}}</text>
-          <text class="hero-score-degree">°</text>
+          <text class="hero-score" style="color: {{scoreColor}};">{{displayScore}}</text>
         </view>
         <text class="hero-verdict">{{verdictChar}}·{{weatherShort}}</text>
         <!-- 连续天数 -->
@@ -54,6 +53,7 @@
           wx:for="{{verdictTabs}}"
           wx:key="key"
           class="hero-pill {{item.pillClass}} {{verdictKey === item.key ? 'hero-pill--active' : ''}}"
+          style="{{verdictKey === item.key ? 'background:' + scoreColor + ';' : ''}}"
         >
           <image class="pill-icon" src="{{item.icon}}" mode="aspectFit"/>
           <text class="pill-char">{{item.char}}</text>
@@ -82,8 +82,13 @@
         </view>
       </view>
       <view class="trend-bars">
-        <view wx:for="{{trendBars}}" wx:key="fullDate" class="trend-col">
-          <!-- 分数标注：今日 或 最近3根，颜色跟随得分区间 -->
+        <view
+          wx:for="{{trendBars}}"
+          wx:key="fullDate"
+          class="trend-col"
+          bindtap="onBarTap"
+          data-index="{{index}}"
+        >
           <text
             class="bar-score-label {{item.isToday ? 'bar-score-label--today' : ''}}"
             style="color: {{item.color}};"
@@ -91,11 +96,27 @@
           >{{item.score}}</text>
           <view class="trend-bar-wrap">
             <view
-              class="trend-bar {{item.isToday ? 'trend-bar--today' : ''}}"
+              class="trend-bar {{item.isToday ? 'trend-bar--today' : ''}} {{barDetail && barDetail.fullDate === item.fullDate ? 'trend-bar--selected' : ''}}"
               style="height: {{item.heightPct}}%; background-color: {{item.color}};"
             />
           </view>
           <text class="trend-date {{item.isToday ? 'trend-date--today' : ''}}">{{item.dateLabel}}</text>
+        </view>
+      </view>
+    </view>
+
+    <!-- 柱图点击详情弹窗 -->
+    <view class="bar-popup-mask" wx:if="{{barDetail}}" bindtap="onCloseBarDetail">
+      <view class="bar-popup" catchtap="noop">
+        <view class="bar-popup-header" style="background: {{barDetail.color}}20;">
+          <text class="bar-popup-date">{{barDetail.fullDate}}</text>
+          <text class="bar-popup-close" bindtap="onCloseBarDetail">×</text>
+        </view>
+        <view class="bar-popup-body">
+          <text class="bar-popup-score" style="color: {{barDetail.color}};">{{barDetail.score}}</text>
+          <view class="bar-popup-tag" style="background: {{barDetail.color}}20; color: {{barDetail.color}};">
+            <text>{{barDetail.verdictLabel}}</text>
+          </view>
         </view>
       </view>
     </view>
@@ -120,7 +141,7 @@
         class="subscribe-btn"
         bindtap="onSubscribe"
       >
-        <text class="subscribe-text">订阅提醒，每日早上9:10推送今日天气</text>
+        <text class="subscribe-text">订阅每日9:10天气提醒</text>
         <view class="subscribe-bell">
           <image class="subscribe-icon" src="/images/icon-bell.png" mode="aspectFit"/>
           <text class="subscribe-bell-text">立即订阅</text>

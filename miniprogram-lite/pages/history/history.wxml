@@ -1,58 +1,102 @@
 <view class="page history-page">
   <view class="history-head">
     <view class="history-head-row">
-      <text class="history-title">天气走势</text>
+      <text class="history-title">舒适度走势</text>
       <view class="head-date-pill">
         <text class="head-date">{{headerDate}}</text>
       </view>
     </view>
-    <text class="history-sub">只看天气，不看别的</text>
+    <text class="history-sub">回顾每天的天气，找到属于自己的节奏</text>
   </view>
 
-  <!-- 走势图 -->
-  <view class="trend-card" wx:if="{{trendBars.length}}">
-    <view class="trend-head">
-      <text class="trend-title">近{{trendDays}}日天气走势</text>
-      <view class="trend-legend">
-        <view class="legend-item">
-          <view class="legend-dot legend-dot--long"/>
-          <text>龙</text>
-        </view>
-        <view class="legend-item">
-          <view class="legend-dot legend-dot--mid"/>
-          <text>中</text>
-        </view>
-        <view class="legend-item">
-          <view class="legend-dot legend-dot--empty"/>
-          <text>空</text>
-        </view>
+  <!-- 近10日统计摘要 -->
+  <view class="summary-card" wx:if="{{summary && summary.total}}">
+    <text class="summary-label">近{{summary.total}}日</text>
+    <view class="summary-tags">
+      <view class="summary-tag summary-tag--long" wx:if="{{summary.long}}">
+        <text>☀ 晴天 {{summary.long}} 天</text>
+      </view>
+      <view class="summary-tag summary-tag--mid" wx:if="{{summary.mid}}">
+        <text>⛅ 多云 {{summary.mid}} 天</text>
+      </view>
+      <view class="summary-tag summary-tag--empty" wx:if="{{summary.empty}}">
+        <text>🌧 雨天 {{summary.empty}} 天</text>
       </view>
     </view>
+    <text class="summary-streak" wx:if="{{streakText}}">{{streakText}}</text>
+  </view>
 
-    <view class="trend-bars">
-      <view wx:for="{{trendBars}}" wx:key="fullDate" class="trend-col">
-        <view class="trend-bar-wrap">
-          <view
-            class="trend-bar {{item.isToday ? 'trend-bar--today' : ''}}"
-            style="height: {{item.heightPct}}%; background-color: {{item.color}};"
-          />
-        </view>
-        <text class="trend-date {{item.isToday ? 'trend-date--today' : ''}}">{{item.dateLabel}}</text>
-      </view>
-    </view>
-
-    <!-- 周期切换 -->
-    <view class="period-tabs">
+  <!-- 视图切换 + 图表/日历 -->
+  <view class="chart-card" wx:if="{{!loading && !error}}">
+    <!-- 视图切换 tab -->
+    <view class="view-tabs">
       <view
-        wx:for="{{periods}}"
-        wx:key="days"
-        class="period-tab {{trendDays === item.days ? 'period-tab--active' : ''}}"
-        data-days="{{item.days}}"
-        bindtap="onPeriodTap"
-      >
-        <text>{{item.label}}</text>
-      </view>
+        class="view-tab {{viewMode === 'chart' ? 'view-tab--active' : ''}}"
+        data-mode="chart"
+        bindtap="onViewToggle"
+      ><text>走势图</text></view>
+      <view
+        class="view-tab {{viewMode === 'calendar' ? 'view-tab--active' : ''}}"
+        data-mode="calendar"
+        bindtap="onViewToggle"
+      ><text>月历</text></view>
     </view>
+
+    <!-- 走势图 -->
+    <block wx:if="{{viewMode === 'chart' && trendBars.length}}">
+      <view class="trend-head">
+        <text class="trend-title">近{{trendDays}}日舒适度走势</text>
+        <view class="trend-legend">
+          <view class="legend-item"><view class="legend-dot legend-dot--long"/><text>晴</text></view>
+          <view class="legend-item"><view class="legend-dot legend-dot--mid"/><text>云</text></view>
+          <view class="legend-item"><view class="legend-dot legend-dot--empty"/><text>雨</text></view>
+        </view>
+      </view>
+      <view class="trend-bars">
+        <view wx:for="{{trendBars}}" wx:key="fullDate" class="trend-col">
+          <view class="trend-bar-wrap">
+            <view
+              class="trend-bar {{item.isToday ? 'trend-bar--today' : ''}}"
+              style="height: {{item.heightPct}}%; background-color: {{item.color}};"
+            />
+          </view>
+          <text class="trend-date {{item.isToday ? 'trend-date--today' : ''}}">{{item.dateLabel}}</text>
+        </view>
+      </view>
+      <view class="period-tabs">
+        <view
+          wx:for="{{periods}}"
+          wx:key="days"
+          class="period-tab {{trendDays === item.days ? 'period-tab--active' : ''}}"
+          data-days="{{item.days}}"
+          bindtap="onPeriodTap"
+        ><text>{{item.label}}</text></view>
+      </view>
+    </block>
+
+    <!-- 月历 -->
+    <block wx:if="{{viewMode === 'calendar'}}">
+      <view class="cal-nav">
+        <text class="cal-nav-btn" bindtap="onCalPrev">‹</text>
+        <text class="cal-nav-title">{{calTitle}}</text>
+        <text class="cal-nav-btn" bindtap="onCalNext">›</text>
+      </view>
+      <view class="cal-weekdays">
+        <text wx:for="{{weekdays}}" wx:key="*this" class="cal-wd">{{item}}</text>
+      </view>
+      <view class="cal-grid">
+        <view wx:for="{{calCells}}" wx:key="index" class="cal-cell">
+          <view
+            wx:if="{{!item.empty}}"
+            class="cal-day-wrap {{item.hasData ? 'cal-day-wrap--filled' : ''}} {{item.isToday && !item.hasData ? 'cal-day-wrap--today' : ''}}"
+            style="{{item.hasData ? 'background:' + item.color + ';' : ''}}"
+          >
+            <text wx:if="{{item.hasData}}" class="cal-score">{{item.score}}</text>
+            <text class="cal-day {{item.hasData ? 'cal-day--filled' : ''}} {{item.isToday && !item.hasData ? 'cal-day--today' : ''}}">{{item.day}}</text>
+          </view>
+        </view>
+      </view>
+    </block>
   </view>
 
   <!-- 状态 -->
@@ -72,7 +116,7 @@
   <view wx:else class="list-card">
     <view
       wx:for="{{list}}"
-      wx:key="fullDate"
+      wx:key="date"
       class="history-row"
     >
       <text class="history-date">{{item.date}}</text>

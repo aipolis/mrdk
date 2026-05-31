@@ -13,14 +13,14 @@ module.exports = {
   CLOUD_SERVICE: 'mingri-api',
 
   SUBSCRIBE_TEMPLATES: {
-    sentimentDaily: '2PJYcWlocC15xg2W7YDLzT5B1Qff5Hc24O-mLEsw4tU',
+    sentimentDaily: 'ZLa4Hs_89uxSh2FeXv7i68TQm0j_jDZGZsoxfs8WYUY',
   },
 
   SUBSCRIBE_FIELD_KEYS: {
-    strategy: 'thing7',
-    keyData: 'character_string2',
-    time: 'time3',
-    tips: 'thing12',
+    date: 'date1',
+    weather: 'phrase3',
+    score: 'number10',
+    tips: 'thing5',
   },
 
   APP_TAGLINE: '识别下雨天，下雨天少出门',

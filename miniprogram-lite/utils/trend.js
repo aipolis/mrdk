@@ -17,9 +17,12 @@ function mapTrendBars(list, todayItem, count = 10) {
     if (!fullDate || seen.has(fullDate)) return
     seen.add(fullDate)
     const score = Number(item.score != null ? item.score : item.displayScore) || 0
+    const color = getScoreColor(score, item.levelClass, item.levelColor)
+    const verdictKey = score > 70 ? 'long' : score < 30 ? 'empty' : 'mid'
     rows.push({
       score,
-      color: getScoreColor(score, item.levelClass, item.levelColor),
+      color,
+      verdictKey,
       dateLabel: formatBarDate(fullDate),
       fullDate,
       heightPct: Math.max(8, Math.min(100, score)),
