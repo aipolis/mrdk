@@ -96,27 +96,22 @@ export function drawIntradayChart(canvas, series) {
   const toX = min => PAD.left + ((min - SESSION_START) / SESSION_MINS) * cW
   const toY = s   => PAD.top  + cH * (1 - Math.max(0, Math.min(100, s)) / 100)
 
-  // ── filled area ──────────────────────────────────────────────
   const lastScore = pts[pts.length - 1].score
-  ctx.beginPath()
-  ctx.moveTo(toX(pts[0].min), toY(0))
-  for (const p of pts) ctx.lineTo(toX(p.min), toY(p.score))
-  ctx.lineTo(toX(pts[pts.length - 1].min), toY(0))
-  ctx.closePath()
-  const grad = ctx.createLinearGradient(0, PAD.top, 0, PAD.top + cH)
-  const baseCol = scoreToColor(lastScore)
-  grad.addColorStop(0,   baseCol.replace(')', ',0.25)').replace('rgb', 'rgba'))
-  grad.addColorStop(1,   baseCol.replace(')', ',0.03)').replace('rgb', 'rgba'))
-  ctx.fillStyle = grad
-  ctx.fill()
 
-  // ── line ────────────────────────────────────────────────────
+  // ── smooth line ──────────────────────────────────────────────
   ctx.beginPath()
-  ctx.lineWidth = 1.5
+  ctx.lineWidth = 2
   ctx.lineJoin = 'round'
+  ctx.lineCap = 'round'
   pts.forEach((p, i) => {
-    if (i === 0) ctx.moveTo(toX(p.min), toY(p.score))
-    else         ctx.lineTo(toX(p.min), toY(p.score))
+    if (i === 0) {
+      ctx.moveTo(toX(p.min), toY(p.score))
+    } else {
+      // catmull-rom 平滑
+      const prev = pts[i - 1]
+      const cpx = (toX(prev.min) + toX(p.min)) / 2
+      ctx.bezierCurveTo(cpx, toY(prev.score), cpx, toY(p.score), toX(p.min), toY(p.score))
+    }
   })
   ctx.strokeStyle = scoreToColor(lastScore)
   ctx.stroke()

@@ -893,13 +893,21 @@ a {
 }
 
 /* ── 盘中分时走势图 ───────────────────────────────────────────── */
+.section-card--intraday {
+  overflow: hidden;
+  padding: 0;
+}
+
 .intraday-chart-canvas {
   display: block;
   width: 100%;
-  height: 90px;
-  border-radius: 10px 10px 0 0;
+  height: 100px;
   background: rgba(0,0,0,0.18);
   cursor: default;
+}
+
+.section-card--intraday .grid9 {
+  padding: 4px 0 0;
 }
 
 /* ── 板块集中度横条 ──────────────────────────────────────────── */

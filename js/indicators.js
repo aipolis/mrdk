@@ -10,6 +10,7 @@ const INVERSE_KEYS = new Set([
   'multiFailRate',
   'limitDownRisk',
   'bigLossCount',
+  'continuationDepth',
 ])
 
 const SECTION_DEFS = [

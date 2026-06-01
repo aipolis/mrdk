@@ -11,7 +11,7 @@ import {
   buildRiskCopy,
 } from './longkongState.js?v=20260531a'
 import { fetchToday, fetchHistory, fetchDay, fetchIntradaySeries } from './api.js?v=20260529i'
-import { drawIntradayChart } from './intradayChart.js?v=20260529a'
+import { drawIntradayChart } from './intradayChart.js?v=20260601a'
 import { createTrendController } from './trendDraw.js?v=20260529i'
 import { createGaugeController, IDLE_MIN_MS, SKIP_ANIM_MS } from './gaugeAnim.js?v=20260529m'
 import { getHomeCache, saveHomeCache, isSameHomeSnapshot } from './homeCache.js?v=20260529m'
@@ -292,23 +292,22 @@ function renderSections(sections, homeData) {
   }
   box.innerHTML = sections.map((sec) => {
     const isIntraday = sec.id === 'intraday'
-    const chartHtml = isIntraday
-      ? `<canvas class="intraday-chart-canvas" aria-hidden="true"></canvas>`
-      : ''
     const isAuction = sec.id === 'auction'
     const sectionClass = isAuction ? 'section section--drill' : 'section'
-    const cardClass = isAuction ? 'card section-card section-card--drill' : 'card section-card'
+    const cardClass = isAuction ? 'card section-card section-card--drill' : (isIntraday ? 'card section-card section-card--intraday' : 'card section-card')
     const metaHtml = isAuction
       ? `<span class="section-meta-row"><span class="section-meta">${esc(sec.meta || '')}</span><span class="section-chevron" aria-hidden="true">›</span></span>`
       : `<span class="section-meta">${esc(sec.meta || '')}</span>`
+    const cardContent = isIntraday
+      ? `<canvas class="intraday-chart-canvas" aria-hidden="true"></canvas>${renderGridSection(sec)}`
+      : renderGridSection(sec)
     return `
     <section class="${sectionClass}" data-drill-href="${isAuction ? '/auction.html' : ''}">
       <header class="section-head">
         <h2 class="section-title">${esc(sec.title)}</h2>
         ${metaHtml}
       </header>
-      ${chartHtml}
-      <article class="${cardClass}">${renderGridSection(sec)}</article>
+      <article class="${cardClass}">${cardContent}</article>
     </section>`
   }).join('')
   // post-render: expand sector bar cells and paint intraday canvases
