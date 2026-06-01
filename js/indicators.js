@@ -14,7 +14,6 @@ const INVERSE_KEYS = new Set([
 
 const SECTION_DEFS = [
   { id: 'yesterday', title: '昨日情绪概览', meta: '15:00 更新', layout: 'grid3', cols: 3 },
-  { id: 'peripheral', title: '外围情绪及指数', meta: '15:00 更新', layout: 'row3', cols: 3 },
   { id: 'auction', title: '今日竞价情绪', meta: '09:15 更新', layout: 'grid3', cols: 3 },
   { id: 'intraday', title: '盘中实时情绪', meta: '盘中更新', layout: 'grid3', cols: 3 },
   { id: 'longkongRisk', title: '龙空龙专属风控', meta: '盘中更新', layout: 'grid3', cols: 3 },
@@ -266,28 +265,6 @@ function mergeAuctionItems(rawItems, data) {
   })
 }
 
-function normalizePeripheral(data) {
-  if (Array.isArray(data?.peripheral) && data.peripheral.length) {
-    return data.peripheral
-  }
-  const overview = data?.overview || []
-  if (overview.length) {
-    return overview.map((o) => ({
-      key: o.name || o.key,
-      label: o.name || o.label,
-      price: o.price || o.value,
-      chgText: o.chgText || o.value,
-      up: o.up,
-      trend: o.up ? 'up' : 'down',
-    }))
-  }
-  return [
-    { key: 'ftseA50', label: '富时A50指数', price: '--', chgText: '--', trend: 'flat', up: false },
-    { key: 'sp500', label: '标普500', price: '--', chgText: '--', trend: 'flat', up: false },
-    { key: 'cnh', label: '离岸人民币', price: '--', chgText: '--', trend: 'flat', up: true },
-  ]
-}
-
 function buildSectionsFromData(data) {
   const yesterday = normalizeGrid9(data).map((item) => ({
     ...item,
@@ -296,7 +273,6 @@ function buildSectionsFromData(data) {
   return SECTION_DEFS.map((def) => {
     let items = []
     if (def.id === 'yesterday') items = yesterday
-    else if (def.id === 'peripheral') items = normalizePeripheral(data)
     else if (def.id === 'auction') items = mergeAuctionItems([], data)
     else if (def.id === 'intraday') items = mergeIntradayItems(data?.intraday || [], data)
     else if (def.id === 'longkongRisk') items = data?.longkongRisk || []
@@ -305,18 +281,6 @@ function buildSectionsFromData(data) {
 }
 
 
-
-function ensurePeripheralSection(sections, data) {
-  const list = Array.isArray(sections) ? [...sections] : []
-  const idx = list.findIndex((s) => s?.id === 'peripheral')
-  if (idx < 0) return list
-  const existing = list[idx]
-  if (existing.items?.length) return list
-  const items = normalizePeripheral(data)
-  if (!items.length) return list
-  list[idx] = { ...existing, items }
-  return list
-}
 
 function ensureAuctionSection(sections, data) {
 
@@ -727,28 +691,10 @@ function enrichAdvance(item) {
   }
 }
 
-function enrichPeripheral(item) {
-  let chgText = displayText(item.chgText ?? item.chg, '--')
-  if (chgText === '--' && item.chg != null && !Number.isNaN(Number(item.chg))) {
-    const n = Number(item.chg)
-    chgText = `${n >= 0 ? '+' : ''}${n.toFixed(2)}%`
-  }
-  const price = displayText(item.price ?? item.value)
-  const hasChg = chgText !== '--' && chgText.includes('%')
-  return {
-    ...item,
-    price,
-    value: price,
-    chgText: hasChg ? chgText : '--',
-    displayValue: price,
-  }
-}
-
 function normalizeCell(item, sectionId) {
   if (!item) return null
   let cell = { ...item }
-  if (sectionId === 'peripheral') cell = enrichPeripheral(cell)
-  else cell = enrichAdvance(cell)
+  cell = enrichAdvance(cell)
 
   let prev = cell.prev != null ? String(cell.prev) : ''
   if (!prev && cell.yesterday != null) {
@@ -791,7 +737,6 @@ const TRADING_SECTION_ORDER = [
   'longkongRisk',
   'auction',
   'yesterday',
-  'peripheral',
 ]
 
 function pinLiveSections(sections) {
@@ -823,7 +768,6 @@ export function normalizeSections(sections, data = null) {
     list = buildSectionsFromData(data)
   }
   if (data) {
-    list = ensurePeripheralSection(list, data)
     list = ensureAuctionSection(list, data)
     list = ensureLongkongRiskSection(list, data)
     list = ensureIntradaySection(list, data)

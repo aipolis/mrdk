@@ -689,42 +689,6 @@ a {
 .trend-arrow.trend-good { color: var(--red); }
 .trend-arrow.trend-bad { color: var(--green); }
 
-.peripheral-row {
-  display: grid;
-  grid-template-columns: repeat(3, 1fr);
-  gap: 8px;
-}
-
-.peripheral-cell {
-  text-align: center;
-  padding: 8px 4px;
-  background: var(--cell);
-  border-radius: 10px;
-}
-
-.peripheral-label {
-  display: block;
-  font-size: 10px;
-  color: var(--dim);
-}
-
-.peripheral-price {
-  display: block;
-  font-size: 14px;
-  font-weight: 600;
-  margin-top: 4px;
-}
-
-.peripheral-chg {
-  display: block;
-  font-size: 11px;
-  margin-top: 2px;
-  color: var(--muted);
-}
-
-.peripheral-chg.up { color: var(--red); }
-.peripheral-chg.down { color: var(--green); }
-
 .grid-empty {
   text-align: center;
   color: var(--dim);

@@ -200,17 +200,6 @@ function finishGaugeAnimation(displayScore, data, level, options = {}) {
   }, remain)
 }
 
-function renderPeripheral(items) {
-  const cells = (items || []).map((cell) => `
-    <article class="peripheral-cell">
-      <span class="peripheral-label">${esc(cell.label)}</span>
-      <span class="peripheral-price">${esc(cell.price || cell.value || '--')}</span>
-      <span class="peripheral-chg ${cell.up ? 'up' : cell.trend === 'down' ? 'down' : ''}">${esc(cell.chgText || '--')}</span>
-    </article>
-  `).join('')
-  return `<section class="peripheral-row">${cells}</section>`
-}
-
 const SECTOR_BAR_MAX = 30
 
 function renderSectorBars(items) {
@@ -240,9 +229,6 @@ function renderTimeseries(section) {
 }
 
 function renderGridSection(section) {
-  if (section.layout === 'row3' && section.items?.length) {
-    return renderPeripheral(section.items)
-  }
   if (section.layout === 'timeseries') {
     return renderTimeseries(section)
   }
@@ -548,14 +534,6 @@ function buildArchiveSections(detail) {
       items: detail?.grid9 || [],
     },
     {
-      id: 'peripheral',
-      title: '今天外围情绪及指数',
-      meta: '归档数据',
-      layout: 'row3',
-      cols: 3,
-      items: detail?.peripheral || [],
-    },
-    {
       id: 'auction',
       title: '今天竞价情绪',
       meta: '归档数据',
@@ -597,7 +575,6 @@ function archiveHomeData(detail, histList, err) {
     baselineEmptyWarning: Boolean(sentiment.emptyWarning),
     baselineEmptyReasons: sentiment.emptyReasons || [],
     grid9: detail?.grid9 || [],
-    peripheral: detail?.peripheral || [],
     auction: detail?.auction || [],
     intraday: [],
     metrics,
