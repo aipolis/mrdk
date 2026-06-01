@@ -805,11 +805,11 @@ def longkong_state(
     intraday_sub_scores: Optional[dict] = None,
 ) -> dict:
     """
-    龙空龙短线状态：龙>70 / 修复50–70 / 退潮30–50 / 空<30。
+    龙空龙短线状态：龙>70 / 较强50–70 / 较弱30–50 / 空<30。
     风险等级会压低状态上限：
       critical → 强制为空
-      warning  → 最高为退潮（即使分数在修复/龙区间）
-      caution  → 最高为修复（即使分数在龙区间）
+      warning  → 最高为较弱（即使分数在较强/龙区间）
+      caution  → 最高为较强（即使分数在龙区间）
     """
     del sub_scores, intraday_sub_scores
     score = int(score or 0)
@@ -821,16 +821,16 @@ def longkong_state(
         state, label = "dragon", "龙"
         desc = "接力结构较强"
     elif score >= 50:
-        state, label = "repair", "修复"
-        desc = "有修复迹象，待确认"
+        state, label = "repair", "较强"
+        desc = "有较强迹象，待确认"
     elif score >= 30:
-        state, label = "retreat", "退潮"
+        state, label = "retreat", "较弱"
         desc = "接力偏弱"
     else:
         state, label = "empty", "空"
         desc = "风险偏高，宜控节奏"
 
-    # 风险等级压制：warning 最高退潮，caution 最高修复
+    # 风险等级压制：warning 最高较弱，caution 最高较强
     _order = ("empty", "retreat", "repair", "dragon")
     if risk_level == "warning":
         cap = "retreat"
@@ -841,9 +841,9 @@ def longkong_state(
     if _order.index(state) > _order.index(cap):
         state = cap
         if cap == "retreat":
-            label, desc = "退潮", "弱信号较多，接力偏弱"
+            label, desc = "较弱", "弱信号较多，接力偏弱"
         else:
-            label, desc = "修复", "有修复迹象，注意风险"
+            label, desc = "较强", "有较强迹象，注意风险"
 
     return {
         "state": state,
@@ -940,5 +940,5 @@ def position_desc(score: int, empty_warning: bool, risk_level: str = "none") -> 
     if score >= 40:
         return "综合情绪偏谨慎，短线结构一般"
     if score >= 30:
-        return "综合情绪偏冷，耐心等待修复"
+        return "综合情绪偏冷，耐心等待较强"
     return "综合情绪偏弱，宜控节奏"

@@ -139,7 +139,7 @@ def _attach_longkong_state(
     *,
     intraday_sub_scores: Optional[dict] = None,
 ) -> dict:
-    """补齐龙空龙状态灯字段（龙/修复/空/退潮）。"""
+    """补齐龙空龙状态灯字段（龙/较强/空/较弱）。"""
     display_score = int(p.get("displayScore") or p.get("score") or 0)
     if intraday_sub_scores is None:
         intraday_sub_scores = p.get("intradaySubScores") or {}
@@ -1410,7 +1410,7 @@ def _build_advice_payload_from_home(data: dict, advice_d: str) -> Optional[dict]
 
     reminders = reasons[:4] or [
         "竞价偏弱，盘面分歧加大",
-        "连板高度下降，注意情绪退潮",
+        "连板高度下降，注意情绪较弱",
         "炸板率升高，短线分歧加剧",
         "晋级率偏低，情绪结构偏弱",
     ]
@@ -1426,7 +1426,7 @@ def _build_advice_payload_from_home(data: dict, advice_d: str) -> Optional[dict]
         "reminders": reminders,
         "strategies": [
             {"range": "0-29", "name": "冰点", "color": "#1890FF", "action": "情绪冰点区间 · 盘面偏冷"},
-            {"range": "30-39", "name": "偏冷", "color": "#38BDF8", "action": "情绪偏冷区间 · 等待修复"},
+            {"range": "30-39", "name": "偏冷", "color": "#38BDF8", "action": "情绪偏冷区间 · 等待较强"},
             {"range": "40-49", "name": "偏谨慎", "color": "#FA8C16", "action": "情绪谨慎区间 · 结构一般"},
             {"range": "50-59", "name": "中性", "color": "#FAAD14", "action": "情绪中性区间 · 注意分化"},
             {"range": "60-79", "name": "偏乐观", "color": "#FF4D4F", "action": "情绪乐观区间 · 结构尚可"},
@@ -1541,13 +1541,13 @@ def sentiment_advice():
             "score": sentiment["score"],
             "reminders": [
                 "竞价偏弱，盘面分歧加大",
-                "连板高度下降，注意情绪退潮",
+                "连板高度下降，注意情绪较弱",
                 "炸板率升高，短线分歧加剧",
                 "晋级率偏低，情绪结构偏弱",
             ],
             "strategies": [
                 {"range": "0-29", "name": "冰点", "color": "#1890FF", "action": "情绪冰点区间 · 盘面偏冷"},
-                {"range": "30-39", "name": "偏冷", "color": "#38BDF8", "action": "情绪偏冷区间 · 等待修复"},
+                {"range": "30-39", "name": "偏冷", "color": "#38BDF8", "action": "情绪偏冷区间 · 等待较强"},
                 {"range": "40-49", "name": "偏谨慎", "color": "#FA8C16", "action": "情绪谨慎区间 · 结构一般"},
                 {"range": "50-59", "name": "中性", "color": "#FAAD14", "action": "情绪中性区间 · 注意分化"},
                 {"range": "60-79", "name": "偏乐观", "color": "#FF4D4F", "action": "情绪乐观区间 · 结构尚可"},

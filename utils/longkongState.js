@@ -4,8 +4,8 @@ const { getDisplayLevel } = require('./theme')
 
 const STEPS = [
   { state: 'dragon', label: '龙' },
-  { state: 'repair', label: '修复' },
-  { state: 'retreat', label: '退潮' },
+  { state: 'repair', label: '较强' },
+  { state: 'retreat', label: '较弱' },
   { state: 'empty', label: '空' },
 ]
 
@@ -18,10 +18,10 @@ function scoreToLongkongState(score, emptyWarning = false) {
     return { state: 'dragon', label: '龙', desc: '接力结构较强' }
   }
   if (s >= 50) {
-    return { state: 'repair', label: '修复', desc: '有修复迹象，待确认' }
+    return { state: 'repair', label: '较强', desc: '有较强迹象，待确认' }
   }
   if (s >= 30) {
-    return { state: 'retreat', label: '退潮', desc: '接力偏弱' }
+    return { state: 'retreat', label: '较弱', desc: '接力偏弱' }
   }
   return { state: 'empty', label: '空', desc: '风险偏高，宜控节奏' }
 }
