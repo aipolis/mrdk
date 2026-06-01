@@ -1778,8 +1778,10 @@ def build_yesterday_sentiment(metrics: dict, prev_metrics: Optional[dict] = None
     mb_prev_raw = prev.get("multi_board_count")
     lu_prev = int(prev.get("limit_up_count") or 0)
     mb_prev = int(mb_prev_raw) if mb_prev_raw is not None else None
-    cont_val = f"{mb}/{lu}" if mb is not None and lu else "--"
-    cont_prev = f"{mb_prev}/{lu_prev}" if mb_prev is not None and lu_prev else "--"
+    cont_ratio = mb / lu * 100 if mb is not None and lu else None
+    cont_ratio_prev = mb_prev / lu_prev * 100 if mb_prev is not None and lu_prev else None
+    cont_val = f"{cont_ratio:.1f}%" if cont_ratio is not None else "--"
+    cont_prev = f"{cont_ratio_prev:.1f}%" if cont_ratio_prev is not None else "--"
 
     rows = [
         {"key": "height", "label": "连板高度", "value": f"{metrics['max_board']}板", "yesterday": f"{_y('max_board')}板", "trend": _trend(metrics["max_board"], prev.get("max_board"))},
