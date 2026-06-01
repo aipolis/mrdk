@@ -216,18 +216,22 @@ def score_sector_concentration(top3_ratio: float, total: int) -> int:
 def score_continuation_depth(multi_board: int, limit_up: int) -> int:
     """
     连板占比 = multi_board / limit_up：接力深度。
-    低占比惩罚加重：约 18%→36，25%→55，40%+→90。
+    0%→0  15%→20  25%→50  40%→70  60%+→90
     """
     if not limit_up:
         return SCORE_NEUTRAL
     ratio = multi_board / limit_up * 100
     if ratio <= 0:
-        return 10
-    if ratio >= 40:
+        return 0
+    if ratio >= 60:
         return 90
     if ratio <= 15:
-        return round(10 + ratio / 15.0 * 18)
-    return round(28 + (ratio - 15) / 25.0 * 62)
+        return round(ratio / 15.0 * 20)
+    if ratio <= 25:
+        return round(20 + (ratio - 15) / 10.0 * 30)
+    if ratio <= 40:
+        return round(50 + (ratio - 25) / 15.0 * 20)
+    return round(70 + (ratio - 40) / 20.0 * 20)
 
 
 def score_one_word(count: int) -> int:
