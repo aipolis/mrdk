@@ -217,6 +217,36 @@
   font-weight: 700;
 }
 
+/* ── 月历颜色说明 ── */
+.cal-legend {
+  display: grid;
+  grid-template-columns: repeat(4, 1fr);
+  gap: 16rpx 0;
+  margin-top: 24rpx;
+  padding-top: 20rpx;
+  border-top: 1rpx solid #f1f5f9;
+}
+
+.cal-legend-item {
+  display: flex;
+  align-items: center;
+  gap: 8rpx;
+}
+
+.cal-legend-dot {
+  width: 20rpx;
+  height: 20rpx;
+  border-radius: 6rpx;
+  flex-shrink: 0;
+}
+
+.cal-legend-label {
+  font-size: 22rpx;
+  color: #64748b;
+  line-height: 1;
+  white-space: nowrap;
+}
+
 /* .trend-card 已合并到 .chart-card */
 .trend-card {}
 
@@ -375,8 +405,19 @@
 }
 
 .history-emoji {
-  font-size: 36rpx;
+  font-size: 34rpx;
   flex-shrink: 0;
+  width: 48rpx;
+  text-align: center;
+}
+
+.history-score {
+  font-size: 32rpx;
+  font-weight: 700;
+  flex-shrink: 0;
+  width: 72rpx;
+  text-align: center;
+  margin-left: 16rpx;
 }
 
 .history-line {

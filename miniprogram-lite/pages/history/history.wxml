@@ -31,15 +31,15 @@
     <!-- 视图切换 tab -->
     <view class="view-tabs">
       <view
-        class="view-tab {{viewMode === 'chart' ? 'view-tab--active' : ''}}"
-        data-mode="chart"
-        bindtap="onViewToggle"
-      ><text>走势图</text></view>
-      <view
         class="view-tab {{viewMode === 'calendar' ? 'view-tab--active' : ''}}"
         data-mode="calendar"
         bindtap="onViewToggle"
       ><text>月历</text></view>
+      <view
+        class="view-tab {{viewMode === 'chart' ? 'view-tab--active' : ''}}"
+        data-mode="chart"
+        bindtap="onViewToggle"
+      ><text>走势图</text></view>
     </view>
 
     <!-- 走势图 -->
@@ -96,6 +96,16 @@
           </view>
         </view>
       </view>
+      <!-- 颜色说明 -->
+      <view class="cal-legend">
+        <view class="cal-legend-item"><view class="cal-legend-dot" style="background:#94a3b8;"/><text class="cal-legend-label">雨天 ＜30</text></view>
+        <view class="cal-legend-item"><view class="cal-legend-dot" style="background:#38bdf8;"/><text class="cal-legend-label">阴天 30+</text></view>
+        <view class="cal-legend-item"><view class="cal-legend-dot" style="background:#52c41a;"/><text class="cal-legend-label">偏阴 40+</text></view>
+        <view class="cal-legend-item"><view class="cal-legend-dot" style="background:#faad14;"/><text class="cal-legend-label">多云 50+</text></view>
+        <view class="cal-legend-item"><view class="cal-legend-dot" style="background:#ff4d4f;"/><text class="cal-legend-label">晴天 60+</text></view>
+        <view class="cal-legend-item"><view class="cal-legend-dot" style="background:#cf1322;"/><text class="cal-legend-label">晴热 75+</text></view>
+        <view class="cal-legend-item"><view class="cal-legend-dot" style="background:#820014;"/><text class="cal-legend-label">极热 90+</text></view>
+      </view>
     </block>
   </view>
 
@@ -120,8 +130,9 @@
       class="history-row"
     >
       <text class="history-date">{{item.date}}</text>
-      <text class="history-emoji">{{item.verdict.emoji}}</text>
-      <text class="history-line" style="color: {{item.verdict.key === 'long' ? '#e63838' : item.verdict.key === 'mid' ? '#f5a60a' : '#0284c7'}}">{{item.weatherLine}}</text>
+      <text class="history-emoji">{{item.emoji}}</text>
+      <text class="history-score" style="color: {{item.color}};">{{item.score}}</text>
+      <text class="history-line" style="color: {{item.color}};">{{item.weatherLine}}</text>
     </view>
   </view>
 </view>

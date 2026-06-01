@@ -91,7 +91,7 @@ Page({
     periods: PERIODS,
     summary: null,
     streakText: '',
-    viewMode: 'chart',      // 'chart' | 'calendar'
+    viewMode: 'calendar',   // 'chart' | 'calendar'
     weekdays: WEEKDAYS,
     calYear: 0,
     calMonth: 0,
@@ -118,9 +118,25 @@ Page({
         const summary = calcSummary(this._fullList)
         const streak = calcStreak(this._fullList)
         const { calYear, calMonth } = this.data
+        const VERDICT_COLOR = { long: '#cf1322', mid: '#faad14', empty: '#38bdf8' }
+        const listWithColor = this._fullList.map(item => {
+          const key = item.verdict && item.verdict.key
+          const color = item.score > 0
+            ? getScoreColor(item.score)
+            : (VERDICT_COLOR[key] || '#94a3b8')
+          return {
+            date: item.date,
+            fullDate: item.fullDate,
+            score: item.score,
+            verdictKey: key,
+            emoji: item.verdict && item.verdict.emoji,
+            weatherLine: item.weatherLine,
+            color,
+          }
+        })
         this.setData({
           loading: false,
-          list: this._fullList,
+          list: listWithColor,
           trendBars: buildTrendBars(this._fullList, this.data.trendDays),
           summary,
           streakText: streak ? `已连续 ${streak.count} 天${streak.label}` : '',

@@ -259,14 +259,22 @@ def persist_peripheral_db_0900() -> dict:
 
 
 def persist_auction_snapshot(*, freeze: bool = False) -> dict:
-    """今日竞价情绪：09:26 初更 / 09:35 固化（类比昨日情绪 15:05/18:00）。"""
-    from fetcher import _after_auction_925, build_auction_sentiment, load_ref_day_snapshot
+    """今日竞价情绪：9:15–9:26 live 刷新，09:26 固化入库。"""
+    from fetcher import (
+        _after_auction_frozen,
+        _auction_data_ready,
+        build_auction_sentiment,
+        invalidate_auction_day_cache,
+        load_ref_day_snapshot,
+    )
 
     today, prev_d = _resolve_today_prev()
     if not today:
         return {"ok": False, "skipped": True, "reason": "not_trading_day"}
-    if not _after_auction_925():
-        return {"ok": False, "skipped": True, "reason": "before_auction_925"}
+    if not _auction_data_ready():
+        return {"ok": False, "skipped": True, "reason": "before_auction_915"}
+    if freeze and not _after_auction_frozen():
+        return {"ok": False, "skipped": True, "reason": "before_auction_926"}
 
     existing = fetch_daily_detail(today) or {}
     from fetcher import auction_items_incomplete
@@ -274,6 +282,9 @@ def persist_auction_snapshot(*, freeze: bool = False) -> dict:
     if not freeze and ((existing.get("metrics") or {}).get("auction_frozen")):
         if not auction_items_incomplete(existing.get("auction") or []):
             return {"ok": True, "skipped": True, "reason": "already_frozen", "trade_d": today}
+
+    if freeze:
+        invalidate_auction_day_cache(today)
 
     dates = get_recent_trade_dates(5)
     idx = dates.index(today)
@@ -287,7 +298,7 @@ def persist_auction_snapshot(*, freeze: bool = False) -> dict:
         ref_prev,
         advice_d=today,
     )
-    phase = "0935" if freeze else "0926"
+    phase = "0926" if freeze else "0915"
     metrics = {
         "date": f"{today[:4]}-{today[4:6]}-{today[6:8]}",
         "auction_phase": phase,

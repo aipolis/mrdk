@@ -21,9 +21,13 @@ const TREND_PERIODS = [
 
 function barColorForScore(score) {
   const s = Number(score) || 0
-  if (s > 70) return '#e63838'
-  if (s >= 30) return '#f5a60a'
-  return '#91d1ed'
+  if (s >= 90) return '#cf1322'
+  if (s >= 80) return '#cf1322'
+  if (s >= 60) return '#ff4d4f'
+  if (s >= 50) return '#faad14'
+  if (s >= 40) return '#52c41a'
+  if (s >= 30) return '#38bdf8'
+  return '#1890ff'
 }
 
 Page({
@@ -126,32 +130,43 @@ Page({
     if (this._gaugeCtrl) this._gaugeCtrl.stop()
   },
 
-  _isTradingHours() {
+  _getPollIntervalMs() {
     const now = new Date()
-    const day = now.getDay()
-    if (day === 0 || day === 6) return false
     const hm = now.getHours() * 60 + now.getMinutes()
-    return hm >= 9 * 60 + 25 && hm <= 15 * 60 + 5
+    if (hm >= 9 * 60 + 15 && hm < 9 * 60 + 26) return 20000
+    if (hm >= 9 * 60 + 25 && hm <= 15 * 60 + 5) return 120000
+    return 0
+  },
+
+  _isTradingHours() {
+    return this._getPollIntervalMs() > 0
   },
 
   _startPolling() {
     this._stopPolling()
-    if (!this._isTradingHours()) return
+    const interval = this._getPollIntervalMs()
+    if (!interval) return
     this._pollTimer = setTimeout(() => {
       this._silentRefresh()
       this._pollInterval = setInterval(() => {
-        if (!this._isTradingHours()) {
+        const ms = this._getPollIntervalMs()
+        if (!ms) {
           this._stopPolling()
           return
         }
+        if (ms !== interval && this._pollInterval) {
+          this._stopPolling()
+          this._startPolling()
+          return
+        }
         this._silentRefresh()
-      }, 120000)
+      }, interval)
     }, 3000)
   },
 
   _stopPolling() {
     if (this._pollTimer) {
-      clearInterval(this._pollTimer)
+      clearTimeout(this._pollTimer)
       this._pollTimer = null
     }
     if (this._pollInterval) {
@@ -517,17 +532,17 @@ Page({
         return
       }
 
-      const padL = 20
-      const padR = 20
-      const padT = 28
-      const padB = 30
+      const padL = 28
+      const padR = 8
+      const padT = 22
+      const padB = 28
       const n = trend.length
       const chartW = w - padL - padR
       const chartH = h - padT - padB
-      const barGap = 4
-      const barW = Math.max(8, snap((chartW - barGap * (n - 1)) / n))
+      const barGap = n > 12 ? 3 : 5
+      const barW = Math.max(6, snap((chartW - barGap * (n - 1)) / n))
 
-      // grid lines
+      // grid lines + y轴刻度
       for (let i = 0; i <= 4; i++) {
         const y = snap(padT + (chartH / 4) * i)
         ctx.strokeStyle = colors.grid
@@ -536,6 +551,11 @@ Page({
         ctx.moveTo(padL, y)
         ctx.lineTo(w - padR, y)
         ctx.stroke()
+        ctx.fillStyle = colors.textMuted
+        ctx.font = `9px ${font}`
+        ctx.textAlign = 'right'
+        ctx.textBaseline = 'middle'
+        ctx.fillText(String(100 - i * 25), padL - 4, y)
       }
 
       // bars
@@ -543,9 +563,8 @@ Page({
         const barX = snap(padL + i * (barW + barGap))
         const barH = Math.max(4, snap((Math.max(0, Math.min(100, item.score)) / 100) * chartH))
         const barY = snap(padT + chartH - barH)
-        const r = Math.min(4, barW / 2)
+        const r = Math.min(3, barW / 2)
 
-        // bar fill
         ctx.fillStyle = barColorForScore(item.score)
         ctx.beginPath()
         ctx.moveTo(barX, padT + chartH)
@@ -557,19 +576,31 @@ Page({
         ctx.closePath()
         ctx.fill()
 
-        // score label
-        ctx.fillStyle = colors.textPrimary || '#0f172a'
-        ctx.font = `600 10px ${font}`
-        ctx.textAlign = 'center'
-        ctx.textBaseline = 'bottom'
-        ctx.fillText(String(item.score), barX + barW / 2, barY - 3)
+        // score label：bar 够高时内嵌，否则顶部外显
+        if (barH >= 14) {
+          ctx.fillStyle = 'rgba(255,255,255,0.92)'
+          ctx.font = `9px ${font}`
+          ctx.textAlign = 'center'
+          ctx.textBaseline = 'top'
+          ctx.fillText(String(item.score), barX + barW / 2, barY + 2)
+        } else if (item.score > 0) {
+          ctx.fillStyle = colors.textPrimary || '#0f172a'
+          ctx.font = `600 9px ${font}`
+          ctx.textAlign = 'center'
+          ctx.textBaseline = 'bottom'
+          ctx.fillText(String(item.score), barX + barW / 2, barY - 2)
+        }
 
-        // date label
-        const dateLabel = (item.date || '').slice(5).replace('-', '/')
-        ctx.fillStyle = colors.textMuted
-        ctx.font = `9px ${font}`
-        ctx.textBaseline = 'top'
-        ctx.fillText(dateLabel, barX + barW / 2, padT + chartH + 6)
+        // 日期标签：稀疏显示（≤8根全显，>8根只显首尾及每隔几根）
+        const showDate = n <= 8 || i === 0 || i === n - 1 || i % Math.max(1, Math.ceil(n / 6)) === 0
+        if (showDate) {
+          const dateLabel = (item.date || '').slice(5).replace('-', '/')
+          ctx.fillStyle = colors.textMuted
+          ctx.font = `9px ${font}`
+          ctx.textAlign = 'center'
+          ctx.textBaseline = 'top'
+          ctx.fillText(dateLabel, barX + barW / 2, padT + chartH + 6)
+        }
       })
     })
   },
@@ -577,6 +608,10 @@ Page({
   goDetail() {
     if (this.data.scoreCalculating) return
     wx.navigateTo({ url: '/pages/detail/detail' })
+  },
+
+  goAuctionDetail() {
+    wx.navigateTo({ url: '/pages/auction/auction' })
   },
 
   resolveShareScore() {

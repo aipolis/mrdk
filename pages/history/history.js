@@ -11,9 +11,13 @@ const PERIODS = [
 
 function barColorForScore(score) {
   const s = Number(score) || 0
-  if (s > 70) return '#e63838'
-  if (s >= 30) return '#f5a60a'
-  return '#91d1ed'
+  if (s >= 90) return '#cf1322'
+  if (s >= 80) return '#cf1322'
+  if (s >= 60) return '#ff4d4f'
+  if (s >= 50) return '#faad14'
+  if (s >= 40) return '#52c41a'
+  if (s >= 30) return '#38bdf8'
+  return '#1890ff'
 }
 
 Page({

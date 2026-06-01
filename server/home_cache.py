@@ -36,6 +36,8 @@ def _refresh_interval_sec() -> int:
     """按时段调整刷新频率"""
     now = bj_now()
     hm = now.hour * 60 + now.minute
+    if 9 * 60 + 15 <= hm < 9 * 60 + 26:
+        return int(os.getenv("HOME_CACHE_REFRESH_AUCTION", "20"))
     if 8 * 60 + 30 <= hm < 10 * 60:
         return int(os.getenv("HOME_CACHE_REFRESH_OPEN", "120"))
     if 10 * 60 <= hm < 15 * 60 + 30:

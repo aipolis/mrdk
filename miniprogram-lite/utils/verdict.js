@@ -41,7 +41,7 @@ const EMPTY = {
   icon: '/images/icon-rain.png',
   heroIcon: '/images/weather-rain.png',
   themeClass: 'weather-empty',
-  insight: '昨天阴雨绵绵，雨天不出门是为了晴天走更远的路，今天宜在家静待。',
+  insight: '昨天阴雨绵绵，雨天不出门是为了晴天走更远的路，今天宜休息。',
 }
 
 /** 每日轮换语录（按日期 hash，同一天所有用户相同） */

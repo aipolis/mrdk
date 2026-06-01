@@ -52,17 +52,26 @@ function relativeDayLabel(dateStr, todayKey = getLocalCalendarKey()) {
   return `${ref.month}月${ref.day}日`
 }
 
-/** 展示分最后一次形成时间，如「昨日 15:00 更新」「盘中 14:35 更新」 */
+/** 展示分最后一次形成时间，如「5月29日 15:00 更新」「今日 14:35 更新」 */
 function formatGaugeUpdatedAt(data) {
   if (!data) return '更新中'
-  const label = data.generatedAtLabel || data.generatedAt
-  if (label && String(label).includes('更新')) {
-    return String(label)
+  const hm = data.generatedAtTime
+  const isLive = data.scoreMode === 'live' || !!data.live
+  if (isLive) {
+    // 盘中：日期取今日（adviceDate），时间跟随实时更新
+    const label = data.generatedAtLabel || data.generatedAt
+    if (label && String(label).includes('更新')) return String(label)
+    const todayRaw = data.adviceDate || data.date
+    const todayNorm = String(todayRaw || '').replace(/^(\d{4})(\d{2})(\d{2})$/, '$1-$2-$3')
+    const dayLabel = relativeDayLabel(todayNorm)
+    return `${dayLabel} ${hm || '更新中'} 更新`
   }
-  const refDate = data.refDate || data.adviceDate || data.date
-  const dayLabel = relativeDayLabel(refDate)
-  const hm = data.generatedAtTime || '15:00'
-  return `${dayLabel} ${hm} 更新`
+  // 非盘中：强制用 refDate 显示 x月x日
+  const refRaw = data.refDate || data.date
+  const refNorm = String(refRaw || '').replace(/^(\d{4})(\d{2})(\d{2})$/, '$1-$2-$3')
+  const parsed = parseDateKey(refNorm)
+  const dayLabel = parsed ? `${parsed.month}月${parsed.day}日` : ''
+  return `${dayLabel} ${hm || '15:00'} 更新`.trim()
 }
 
 module.exports = {

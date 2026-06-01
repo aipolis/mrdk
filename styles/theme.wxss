@@ -63,6 +63,24 @@
   line-height: 1.4;
 }
 
+.mr-section-meta-row {
+  display: flex;
+  align-items: center;
+  gap: 4rpx;
+}
+
+.mr-section-chevron {
+  font-size: 28rpx;
+  line-height: 1;
+  color: var(--mr-text-muted);
+  opacity: 0.55;
+  transform: translateY(-1rpx);
+}
+
+.section-card--drill:active {
+  opacity: 0.92;
+}
+
 .mr-pill {
   display: inline-flex;
   align-items: center;

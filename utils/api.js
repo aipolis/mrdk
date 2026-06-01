@@ -255,6 +255,13 @@ function getDaySentiment(date) {
   return request(`/api/sentiment/day?date=${d}`)
 }
 
+function getAuctionDetail(date, section = 'oneWord,topSectors') {
+  const d = String(date || '').replace(/-/g, '').slice(0, 8)
+  const parts = [`section=${encodeURIComponent(section)}`]
+  if (d) parts.unshift(`date=${d}`)
+  return request(`/api/auction/detail?${parts.join('&')}`, { timeout: 45000 })
+}
+
 function checkHealth() {
   return request('/api/health').catch(() => null)
 }
@@ -294,6 +301,7 @@ module.exports = {
   getAdvice,
   getHistory,
   getDaySentiment,
+  getAuctionDetail,
   checkHealth,
   loginUser,
   registerSubscribe,

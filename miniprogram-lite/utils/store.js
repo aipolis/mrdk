@@ -36,7 +36,7 @@ function fetchHistory(days = 30) {
 }
 
 function fetchTrend(days = 10, todayRaw) {
-  return api.getHistory(days).then(data => {
+  return api.getHistory(days + 6).then(data => {
     const todayItem = todayRaw
       ? {
           date: todayRaw.refDate || todayRaw.date,

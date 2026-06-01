@@ -1,0 +1,117 @@
+<view class="page mr-page auction-page theme-{{uiTheme}}">
+  <view class="auction-head mr-card" wx:if="{{!loading && ready}}">
+    <text class="auction-head__title">今日竞价详情</text>
+    <text class="auction-head__meta" wx:if="{{updatedAt}}">{{updatedAt}} 更新</text>
+  </view>
+
+  <view class="auction-tabs mr-card" wx:if="{{!loading && ready}}">
+    <view
+      wx:for="{{tabs}}"
+      wx:key="id"
+      class="auction-tab {{activeTab === item.id ? 'auction-tab--active' : ''}}"
+      data-id="{{item.id}}"
+      bindtap="onTabTap"
+    >
+      <text>{{item.label}}</text>
+    </view>
+  </view>
+
+  <view class="auction-loading" wx:if="{{loading}}">
+    <text>加载竞价一字与板块…</text>
+  </view>
+
+  <view class="auction-empty mr-card" wx:elif="{{error}}">
+    <text>{{error}}</text>
+  </view>
+
+  <block wx:elif="{{ready}}">
+    <!-- 竞价一字 -->
+    <view class="auction-panel" wx:if="{{activeTab === 'oneWord'}}">
+      <view class="auction-table mr-card" wx:if="{{oneWordStocks.length}}">
+        <view class="auction-row auction-row--head">
+          <text class="col-name">个股</text>
+          <text class="col-pct">涨幅</text>
+          <text class="col-seal">封单</text>
+          <text class="col-sector">板块</text>
+        </view>
+        <view class="auction-row" wx:for="{{oneWordStocks}}" wx:key="code">
+          <view class="col-name">
+            <text class="stock-name">{{item.name}}</text>
+            <text class="stock-code">{{item.code}}</text>
+          </view>
+          <text class="col-pct mr-up">{{item.openPctText}}</text>
+          <text class="col-seal">{{item.sealAmountText}}</text>
+          <text class="col-sector">{{item.sector}}</text>
+        </view>
+      </view>
+      <view class="auction-empty mr-card" wx:else>
+        <text>暂无竞价一字个股</text>
+      </view>
+    </view>
+
+    <!-- 板块 Top10 -->
+    <view class="auction-panel" wx:if="{{activeTab === 'topSectors'}}">
+      <view class="auction-note" wx:if="{{sourceNote}}">{{sourceNote}}</view>
+      <view class="auction-table mr-card" wx:if="{{topSectors.length}}">
+        <view class="auction-row auction-row--head">
+          <text class="col-rank">#</text>
+          <text class="col-board">板块</text>
+          <text class="col-pct">涨幅</text>
+          <text class="col-count">涨/跌</text>
+        </view>
+        <view class="auction-row" wx:for="{{topSectors}}" wx:key="code" wx:for-index="idx">
+          <text class="col-rank">{{idx + 1}}</text>
+          <text class="col-board">{{item.name}}</text>
+          <text class="col-pct {{item.chg >= 0 ? 'mr-up' : 'mr-down'}}">{{item.chgText}}</text>
+          <text class="col-count">{{item.upCount}}/{{item.downCount}}</text>
+        </view>
+      </view>
+      <view class="auction-empty mr-card" wx:else>
+        <text>暂无板块数据</text>
+      </view>
+    </view>
+
+    <!-- 量能异动 -->
+    <view class="auction-panel" wx:if="{{activeTab === 'volumeSurge'}}">
+      <view class="auction-subtitle">个股 · 竞价量较昨日 +15% 以上</view>
+      <view class="auction-table mr-card" wx:if="{{volumeSurgeStocks.length}}">
+        <view class="auction-row auction-row--head">
+          <text class="col-name">个股</text>
+          <text class="col-pct">增幅</text>
+          <text class="col-sector">板块</text>
+        </view>
+        <view class="auction-row" wx:for="{{volumeSurgeStocks}}" wx:key="code" wx:for-item="item">
+          <view class="col-name">
+            <text class="stock-name">{{item.name}}</text>
+            <text class="stock-code">{{item.code}}</text>
+          </view>
+          <text class="col-pct mr-up">{{item.volRatioText}}</text>
+          <text class="col-sector">{{item.sector}}</text>
+        </view>
+      </view>
+      <view class="auction-empty mr-card" wx:else>
+        <text>暂无量能异动个股（需有昨日竞价量缓存）</text>
+      </view>
+
+      <view class="auction-subtitle">板块排序 · 按异动家数</view>
+      <view class="auction-table mr-card" wx:if="{{volumeSurgeSectors.length}}">
+        <view class="auction-row auction-row--head">
+          <text class="col-board">板块</text>
+          <text class="col-count">家数</text>
+          <text class="col-pct">均增幅</text>
+          <text class="col-pct">最大</text>
+        </view>
+        <view class="auction-row" wx:for="{{volumeSurgeSectors}}" wx:key="sector" wx:for-item="item">
+          <text class="col-board">{{item.sector}}</text>
+          <text class="col-count">{{item.count}}</text>
+          <text class="col-pct mr-up">{{item.avgRatioText}}</text>
+          <text class="col-pct mr-up">{{item.maxRatioText}}</text>
+        </view>
+      </view>
+    </view>
+  </block>
+
+  <view class="page-footer-disclaimer">
+    <text class="page-footer-disclaimer__text">数据仅供参考，不构成任何证券投资咨询或操作建议</text>
+  </view>
+</view>

@@ -10,7 +10,7 @@ function getScoreColor(score, levelClass, levelColor) {
   if (levelClass === 'weak' || levelClass === 'cold')  return '#38bdf8'
   // 按分数区间回退
   if (s >= 90) return '#820014'
-  if (s >= 80) return '#cf1322'
+  if (s >= 75) return '#cf1322'
   if (s >= 60) return '#ff4d4f'
   if (s >= 50) return '#faad14'
   if (s >= 40) return '#52c41a'

@@ -393,14 +393,18 @@ def _fetch_market_breadth_spot() -> tuple[int, int]:
 
 def _one_word_count(df_up: pd.DataFrame) -> int:
     """收盘一字板：竞价即封死（首末封板时间相同且 ≤09:30）"""
+    sub = _zt_df_one_word_subset(df_up)
+    return len(sub) if sub is not None else 0
+
+
+def _zt_df_one_word_subset(df_up: pd.DataFrame) -> Optional[pd.DataFrame]:
     if df_up is None or df_up.empty:
-        return 0
+        return None
     if "首次封板时间" in df_up.columns and "最后封板时间" in df_up.columns:
         first = df_up["首次封板时间"].astype(str).str.replace(":", "", regex=False).str.zfill(6)
         last = df_up["最后封板时间"].astype(str).str.replace(":", "", regex=False).str.zfill(6)
         mask = (first == last) & (first <= "093000") & (first >= "092500")
-        return int(mask.sum())
-    # 旧版 akshare 字段名；不可用「炸板次数==0」（会把全天未开板算进去，数量偏大）
+        return df_up.loc[mask]
     if "开板次数" in df_up.columns:
         try:
             open_cnt = pd.to_numeric(df_up["开板次数"], errors="coerce").fillna(99)
@@ -408,38 +412,189 @@ def _one_word_count(df_up: pd.DataFrame) -> int:
             if "首次封板时间" in df_up.columns:
                 first_t = df_up["首次封板时间"].astype(str).str.replace(":", "", regex=False).str.zfill(6)
                 first_ok = first_t <= "093000"
-            return int(((open_cnt == 0) & first_ok).sum())
+            return df_up.loc[(open_cnt == 0) & first_ok]
         except Exception:
             pass
-    return 0
+    return None
+
+
+_EM_ONE_WORD_CLIST_FIELDS = "f12,f14,f3,f17,f15,f16,f18,f100"
+# 9:15–9:26 竞价 live 刷新间隔；9:26 起按日冻结
+AUCTION_LIVE_REFRESH_SEC = 20
+_AUCTION_ONE_WORD_FROZEN_TTL = 86400 * 8
+
+
+def _em_row_auction_one_word_open_pct(row: dict, min_open_pct: float = 9.8) -> Optional[float]:
+    """EM clist 行：开盘涨停且最低未破开 → 返回开盘涨幅，否则 None。"""
+    pre = pd.to_numeric(row.get("f18"), errors="coerce")
+    open_p = pd.to_numeric(row.get("f17"), errors="coerce")
+    high = pd.to_numeric(row.get("f15"), errors="coerce")
+    low = pd.to_numeric(row.get("f16"), errors="coerce")
+    if pre is None or pd.isna(pre) or float(pre) <= 0:
+        return None
+    if any(v is None or pd.isna(v) or float(v) <= 0 for v in (open_p, high, low)):
+        return None
+    open_pct = (float(open_p) - float(pre)) / float(pre) * 100
+    if open_pct < min_open_pct:
+        return None
+    if float(open_p) < float(high) * 0.998:
+        return None
+    if float(low) < float(open_p) * 0.998:
+        return None
+    return open_pct
+
+
+def _fetch_em_high_chg_stock_rows(
+    *,
+    page_size: int = 500,
+    max_pages: int = 2,
+    stop_f3: float = 8.0,
+) -> list[dict]:
+    """东财 clist 按涨幅降序拉取，页内最低 f3 低于 stop_f3 即停（通常 1 页够覆盖全部涨停候选）。"""
+    headers = {"User-Agent": "Mozilla/5.0", "Referer": "https://quote.eastmoney.com/"}
+    base = {
+        "po": "1",
+        "np": "1",
+        "ut": "bd1d9ddb04089700cf9c27f6f7426281",
+        "fltt": "2",
+        "invt": "2",
+        "fid": "f3",
+        "fs": _EM_A_SHARE_FS,
+        "fields": _EM_ONE_WORD_CLIST_FIELDS,
+        "pz": str(page_size),
+    }
+    for url in _EM_A_SHARE_CLIST_URLS:
+        rows: list[dict] = []
+        try:
+            for pn in range(1, max_pages + 1):
+                r = requests.get(url, params={**base, "pn": str(pn)}, headers=headers, timeout=12)
+                diff = (r.json().get("data") or {}).get("diff") or []
+                chunk = list(diff.values()) if isinstance(diff, dict) else list(diff)
+                if not chunk:
+                    break
+                rows.extend(chunk)
+                f3_vals = pd.to_numeric(pd.Series([x.get("f3") for x in chunk]), errors="coerce")
+                if f3_vals.notna().any() and float(f3_vals.min()) < stop_f3:
+                    break
+            if rows:
+                return rows
+        except Exception:
+            continue
+    return []
+
+
+def _parse_seal_amount_raw(val) -> Optional[float]:
+    if val is None:
+        return None
+    try:
+        s = str(val).replace(",", "").strip()
+        n = float(s.replace("万", "").replace("亿", ""))
+        if "亿" in str(val):
+            n *= 1e8
+        elif "万" in str(val):
+            n *= 1e4
+        return n if n > 0 else None
+    except (TypeError, ValueError):
+        return None
+
+
+def _one_word_items_from_zt_df(df_up: pd.DataFrame) -> list[dict]:
+    """从东财涨停池筛竞价一字（首封=末封且 09:25–09:30）。"""
+    sub = _zt_df_one_word_subset(df_up)
+    if sub is None or sub.empty:
+        return []
+    code_col = _df_col(sub, "代码")
+    name_col = _df_col(sub, "名称")
+    if not code_col:
+        return []
+    chg_col = next((c for c in ("涨跌幅", "今日涨跌幅") if c in sub.columns), None)
+    items: list[dict] = []
+    for _, row in sub.iterrows():
+        code = str(row.get(code_col) or "").zfill(6)
+        pct = pd.to_numeric(row.get(chg_col), errors="coerce") if chg_col else None
+        row_d = row.to_dict()
+        sector = "--"
+        for key in ("涨停原因类别", "涨停原因", "所属行业", "行业"):
+            val = row_d.get(key)
+            if val is not None and str(val).strip() not in ("", "--", "nan"):
+                sector = str(val).split("+")[0].strip() or str(val).strip()
+                break
+        seal = _parse_seal_amount_raw(row_d.get("封板资金") or row_d.get("封板金额"))
+        items.append({
+            "code": code,
+            "name": str(row.get(name_col) or code).strip() if name_col else code,
+            "openPct": round(float(pct), 2) if pct is not None and pd.notna(pct) else None,
+            "sector": sector,
+            "sealAmount": seal,
+        })
+    items.sort(key=lambda x: (-(x.get("sealAmount") or 0), -(x.get("openPct") or 0)))
+    return items
+
+
+def _one_word_items_from_clist() -> list[dict]:
+    """9:25 前后涨停池未就绪时的兜底：clist 涨幅榜 + 开盘一字判定。"""
+    items: list[dict] = []
+    for row in _fetch_em_high_chg_stock_rows():
+        open_pct = _em_row_auction_one_word_open_pct(row)
+        if open_pct is None:
+            continue
+        code = str(row.get("f12") or "").zfill(6)
+        sector = str(row.get("f100") or "").strip()
+        items.append({
+            "code": code,
+            "name": str(row.get("f14") or code).strip(),
+            "openPct": round(open_pct, 2),
+            "sector": sector if sector not in ("", "--", "nan") else "--",
+            "sealAmount": None,
+        })
+    items.sort(key=lambda x: (-(x.get("openPct") or 0),))
+    return items
+
+
+def fetch_auction_one_word_stocks(trade_d: str = "") -> list[dict]:
+    """
+    竞价一字板列表。9:25 后数据定格，按交易日缓存、日内不再刷新。
+
+    优先东财盘中涨停池 getTopicZTPool（ak.stock_zt_pool_em）；
+    9:25–9:30 池未就绪时 fallback clist 涨幅榜。
+    """
+    trade_d = (trade_d or date_str(bj_now()))[:8]
+    today = date_str(bj_now())
+    if trade_d > today:
+        return []
+    if trade_d == today and not _auction_data_ready():
+        return []
+
+    cache_key = f"auction_one_word_{trade_d}"
+    ttl = _auction_cache_ttl() if trade_d == today else _AUCTION_ONE_WORD_FROZEN_TTL
+    cached = _cache_get(cache_key, ttl)
+    if cached is not None:
+        return list(cached)
+
+    items = _one_word_items_from_zt_df(fetch_limit_up(trade_d))
+    if trade_d == today and not items:
+        items = _one_word_items_from_clist()
+        log.info("auction one-word zt pool empty, clist fallback n=%s", len(items))
+
+    _cache_set(cache_key, items)
+    log.info("auction one-word frozen %s n=%s", trade_d, len(items))
+    return items
+
+
+# 兼容旧名
+fetch_em_auction_one_word_stocks = fetch_auction_one_word_stocks
 
 
 def _auction_one_word_count(trade_d: str, spot_df: Optional[pd.DataFrame] = None) -> Optional[int]:
-    """竞价一字板：开盘即涨停且最低价未破开盘价；当日拉取失败返回 None"""
-    today = date_str(bj_now())
+    """竞价一字板：9:15–9:26 live 刷新，9:26 起日级冻结。"""
     trade_d = (trade_d or "")[:8]
-    if trade_d == today:
-        try:
-            df = spot_df if spot_df is not None else ak.stock_zh_a_spot_em()
-            if df is None or df.empty:
-                return None
-            open_p = pd.to_numeric(df.get("今开"), errors="coerce")
-            high = pd.to_numeric(df.get("最高"), errors="coerce")
-            low = pd.to_numeric(df.get("最低"), errors="coerce")
-            pre = pd.to_numeric(df.get("昨收"), errors="coerce").replace(0, pd.NA)
-            open_pct = (open_p - pre) / pre * 100
-            mask = (
-                (open_pct >= 9.8)
-                & (open_p > 0)
-                & (high > 0)
-                & (open_p >= high * 0.998)
-                & (low >= open_p * 0.998)
-            )
-            return int(mask.sum())
-        except Exception:
-            return None
-    # 历史日：用当日涨停池早盘封板口径
-    return _one_word_count(fetch_limit_up(trade_d))
+    today = date_str(bj_now())
+    if trade_d == today and not _auction_data_ready():
+        return None
+    try:
+        return len(fetch_auction_one_word_stocks(trade_d))
+    except Exception:
+        return None
 
 
 PERIPHERAL_CACHE_TTL = 600  # 外围情绪 10 分钟刷新
@@ -2078,9 +2233,56 @@ def _auction_prev_display(val) -> str:
 
 
 def _after_auction_925(now: Optional[datetime] = None) -> bool:
-    """是否已过当日 9:25 竞价撮合"""
+    """是否已过 9:25 竞价撮合（一字判定等口径仍用此边界）"""
     now = now or bj_now()
     return now.hour > 9 or (now.hour == 9 and now.minute >= 25)
+
+
+def _auction_hm(now: Optional[datetime] = None) -> int:
+    now = now or bj_now()
+    return now.hour * 60 + now.minute
+
+
+def _auction_data_ready(now: Optional[datetime] = None) -> bool:
+    """9:15 起展示/刷新竞价数据"""
+    return _auction_hm(now) >= 9 * 60 + 15
+
+
+def _in_auction_live_window(now: Optional[datetime] = None) -> bool:
+    """9:15–9:26 竞价 live 窗口（不含 9:26 整点起）"""
+    hm = _auction_hm(now)
+    return 9 * 60 + 15 <= hm < 9 * 60 + 26
+
+
+def _after_auction_frozen(now: Optional[datetime] = None) -> bool:
+    """9:26 起竞价数据固化"""
+    return _auction_hm(now) >= 9 * 60 + 26
+
+
+def _auction_cache_ttl(now: Optional[datetime] = None) -> int:
+    """当日竞价缓存 TTL：live 20s / 固化后按日"""
+    if _after_auction_frozen(now):
+        return _AUCTION_ONE_WORD_FROZEN_TTL
+    if _in_auction_live_window(now):
+        return AUCTION_LIVE_REFRESH_SEC
+    return 0
+
+
+def invalidate_auction_day_cache(trade_d: str = "") -> None:
+    """9:26 固化前清 live 缓存，确保最终快照重新拉取"""
+    trade_d = (trade_d or date_str(bj_now()))[:8]
+    exact_keys = (
+        f"auction_one_word_{trade_d}",
+        f"auction_vol_yi_{trade_d}",
+        f"auction_stock_vol_{trade_d}",
+        f"auction_stock_vol_all_{trade_d}",
+        f"auction_vol_meta_{trade_d}",
+        f"auction_top_sectors_{trade_d}",
+        f"auction_volume_surge_{trade_d}",
+    )
+    for key in list(_cache.keys()):
+        if key.startswith(f"auction_detail_{trade_d}_") or key in exact_keys:
+            _cache.pop(key, None)
 
 
 def _yi_display(yi: Optional[float]) -> str:
@@ -2155,20 +2357,26 @@ def _compute_market_auction_volume_yi() -> Optional[float]:
 def get_market_auction_volume_yi(trade_d: str) -> Optional[float]:
     """
     指定交易日 9:25 全市场竞价成交额（亿）。
-    当日 9:25 后首次抓取并缓存，当日不再更新。
+    当日 9:15–9:26 每 20s 刷新，9:26 起固化。
     """
     trade_d = (trade_d or "")[:8]
     if not trade_d:
         return None
     key = f"auction_vol_yi_{trade_d}"
-    cached = _cache_get(key, 86400 * 30)
+    today = date_str(bj_now())
+    ttl = _auction_cache_ttl() if trade_d == today else 86400 * 30
+    if trade_d == today:
+        if not _auction_data_ready():
+            return None
+        cached = _cache_get(key, ttl or AUCTION_LIVE_REFRESH_SEC)
+    else:
+        cached = _cache_get(key, ttl)
     if cached is not None:
         return float(cached)
 
-    today = date_str(bj_now())
     if trade_d > today:
         return None
-    if trade_d == today and not _after_auction_925():
+    if trade_d == today and not _auction_data_ready():
         return None
 
     yi = _compute_market_auction_volume_yi()
@@ -2209,9 +2417,10 @@ def build_auction_sentiment(
         spot_df = None
 
     now = bj_now()
-    live_auction = advice_d == today and _after_auction_925()
-    # 15:00 后不再依赖盘中 spot，避免收盘后接口抖动导致今日竞价整块为 --
-    live_ready = live_auction and spot_ok and now.hour < 15
+    live_auction = advice_d == today and _auction_data_ready()
+    auction_frozen = bool(metrics.get("auction_frozen")) or (advice_d == today and _after_auction_frozen(now))
+    # 15:00 后不再依赖盘中 spot；9:26 固化后走归档 metrics
+    live_ready = live_auction and not auction_frozen and spot_ok and now.hour < 15
 
     if spot_ok and spot_df is not None:
         top10_codes = _normalize_code_list(metrics.get("top10_codes"))
@@ -2539,10 +2748,10 @@ def build_section_metas(
     else:
         peripheral_meta = f"{adv_label} 09:00 更新"
 
-    if adv_m.get("auction_frozen") or adv_m.get("auction_phase") == "0935":
-        auction_meta = f"{adv_label} 09:35 固化"
-    elif adv_m.get("auction_phase") == "0926":
-        auction_meta = f"{adv_label} 09:26 更新"
+    if adv_m.get("auction_frozen") or adv_m.get("auction_phase") in ("0926", "0935") or _after_auction_frozen():
+        auction_meta = f"{adv_label} 09:26 固化"
+    elif _in_auction_live_window(now):
+        auction_meta = f"{adv_label} {now_hm} 更新"
     elif advice_d == today and is_ready:
         auction_meta = f"{adv_label} {now_hm} 更新"
     else:

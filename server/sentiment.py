@@ -175,8 +175,17 @@ def score_seal(rate: float) -> int:
 
 
 def score_promote(rate: float) -> int:
-    # lo=0% → 20  hi=40% → 90  mid=20% → 55
-    return _linear_high(float(rate or 0), lo=0.0, hi=40.0)
+    """
+    昨日涨停今日晋级率。低晋级区惩罚加重：约 9%→22，20%→50，35%+→90。
+    """
+    rate = float(rate or 0)
+    if rate <= 0:
+        return 10
+    if rate >= 35:
+        return 90
+    if rate <= 15:
+        return round(10 + rate / 15.0 * 22)
+    return round(32 + (rate - 15) / 20.0 * 58)
 
 
 def score_limit_down(count: int) -> int:
@@ -207,14 +216,18 @@ def score_sector_concentration(top3_ratio: float, total: int) -> int:
 def score_continuation_depth(multi_board: int, limit_up: int) -> int:
     """
     连板占比 = multi_board / limit_up：接力深度。
-    lo=0%（全是首板）→20；hi=40%（40%以上是连板）→90；mid=15%→55。
-    limit_up=0 时返回中性。
+    低占比惩罚加重：约 18%→36，25%→55，40%+→90。
     """
     if not limit_up:
         return SCORE_NEUTRAL
-    ratio = multi_board / limit_up * 100  # 转为百分比
-    # lo=0% → 20  hi=40% → 90  mid=15% → 46（偏低，符合现实：连板占15%已属不错）
-    return _linear_high(ratio, lo=0.0, hi=40.0)
+    ratio = multi_board / limit_up * 100
+    if ratio <= 0:
+        return 10
+    if ratio >= 40:
+        return 90
+    if ratio <= 15:
+        return round(10 + ratio / 15.0 * 18)
+    return round(28 + (ratio - 15) / 25.0 * 62)
 
 
 def score_one_word(count: int) -> int:
@@ -225,13 +238,13 @@ def score_one_word(count: int) -> int:
 def score_volume_yi(yi: float, avg_20d: Optional[float] = None) -> int:
     """
     有 avg_20d（20日均量）时：相对均量百分比评分，-25%→20，+25%→90，0%→55。
-    无均量时：绝对阈值兜底（4000–9000亿）。
+    无均量时：绝对阈值兜底（1.5万–3.8万亿≈15000–38000亿，2.7万≈55分）。
     """
     yi = float(yi or 0)
     if avg_20d and avg_20d > 0:
         pct = (yi - avg_20d) / avg_20d * 100
         return _linear_high(pct, lo=-25.0, hi=25.0)
-    return _linear_high(yi, lo=4000.0, hi=9000.0)
+    return _linear_high(yi, lo=15000.0, hi=38000.0)
 
 
 def score_volume_intraday(amount_raw: float, vol_pct: Optional[float] = None) -> int:

@@ -1,0 +1,162 @@
+@import '../../styles/theme.wxss';
+
+.auction-page {
+  padding-top: 16rpx;
+}
+
+.auction-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 24rpx 28rpx;
+  margin-bottom: 16rpx;
+}
+
+.auction-head__title {
+  font-size: 30rpx;
+  font-weight: 600;
+  color: var(--mr-text-headline);
+}
+
+.auction-head__meta {
+  font-size: 24rpx;
+  color: var(--mr-text-secondary);
+}
+
+.auction-tabs {
+  display: flex;
+  gap: 8rpx;
+  padding: 8rpx;
+  margin-bottom: 16rpx;
+}
+
+.auction-tab {
+  flex: 1;
+  text-align: center;
+  padding: 16rpx 8rpx;
+  border-radius: 12rpx;
+  font-size: 24rpx;
+  color: var(--mr-text-secondary);
+}
+
+.auction-tab--active {
+  background: rgba(255, 77, 79, 0.12);
+  color: #ff4d4f;
+  font-weight: 600;
+}
+
+.auction-panel {
+  margin-bottom: 24rpx;
+}
+
+.auction-subtitle {
+  font-size: 26rpx;
+  color: var(--mr-text-secondary);
+  margin: 8rpx 0 12rpx 4rpx;
+}
+
+.auction-note {
+  font-size: 22rpx;
+  color: var(--mr-text-secondary);
+  margin: 0 0 12rpx 4rpx;
+}
+
+.auction-table {
+  overflow: hidden;
+  margin-bottom: 16rpx;
+}
+
+.auction-row {
+  display: flex;
+  align-items: center;
+  padding: 20rpx 16rpx;
+  border-bottom: 1rpx solid var(--mr-table-border);
+  font-size: 24rpx;
+}
+
+.auction-row:last-child {
+  border-bottom: none;
+}
+
+.auction-row--head {
+  background: rgba(255, 255, 255, 0.03);
+  color: var(--mr-text-secondary);
+  font-size: 22rpx;
+}
+
+.col-rank {
+  width: 48rpx;
+  flex-shrink: 0;
+  text-align: center;
+}
+
+.col-name {
+  flex: 1.2;
+  min-width: 0;
+}
+
+.col-board {
+  flex: 1.4;
+  min-width: 0;
+}
+
+.col-pct {
+  width: 120rpx;
+  flex-shrink: 0;
+  text-align: right;
+}
+
+.col-seal {
+  width: 120rpx;
+  flex-shrink: 0;
+  text-align: right;
+}
+
+.col-sector {
+  flex: 1;
+  min-width: 0;
+  text-align: right;
+  color: var(--mr-text-secondary);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.col-count {
+  width: 100rpx;
+  flex-shrink: 0;
+  text-align: right;
+  color: var(--mr-text-secondary);
+}
+
+.stock-name {
+  display: block;
+  color: var(--mr-text-headline);
+  font-size: 26rpx;
+}
+
+.stock-code {
+  display: block;
+  font-size: 20rpx;
+  color: var(--mr-text-secondary);
+  margin-top: 4rpx;
+}
+
+.auction-loading,
+.auction-empty {
+  padding: 48rpx 32rpx;
+  text-align: center;
+  color: var(--mr-text-secondary);
+  font-size: 26rpx;
+}
+
+.page-footer-disclaimer {
+  margin-top: 32rpx;
+  padding: 16rpx 0 8rpx;
+}
+
+.page-footer-disclaimer__text {
+  font-size: 22rpx;
+  color: var(--mr-text-secondary);
+  line-height: 1.5;
+}

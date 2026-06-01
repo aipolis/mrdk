@@ -585,6 +585,10 @@
   padding: 16rpx;
 }
 
+.section-card--drill {
+  transition: opacity 0.15s ease;
+}
+
 .peripheral-row {
   display: flex;
   flex-direction: row;

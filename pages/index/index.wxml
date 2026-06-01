@@ -134,13 +134,17 @@
 
         <text class="mr-section-title">{{item.title}}</text>
 
-        <text class="mr-section-meta">{{item.meta}}</text>
+        <view class="mr-section-meta-row" wx:if="{{item.id === 'auction'}}">
+          <text class="mr-section-meta">{{item.meta}}</text>
+          <text class="mr-section-chevron" aria-hidden="true">›</text>
+        </view>
+        <text class="mr-section-meta" wx:else>{{item.meta}}</text>
 
       </view>
 
 
 
-      <view class="section-card mr-card">
+      <view class="section-card mr-card {{item.id === 'auction' ? 'section-card--drill' : ''}}" bindtap="{{item.id === 'auction' ? 'goAuctionDetail' : ''}}">
 
         <block wx:if="{{item.layout !== 'row3'}}">
 
@@ -176,16 +180,16 @@
 
           </view>
 
-          <view class="grid-empty" wx:else>{{item.id === 'auction' ? '竞价数据等待 9:25 后更新' : '暂无数据'}}</view>
+          <view class="grid-empty" wx:else>{{item.id === 'auction' ? '竞价数据等待 9:15 后更新' : '暂无数据'}}</view>
 
           <!-- 概念集中度柱状图：紧跟 yesterday grid，在 block 内部，不破坏 elif 链 -->
           <view class="sector-bars-card" wx:if="{{item.id === 'yesterday' && sectorConcentration && sectorConcentration.topSectors && sectorConcentration.topSectors.length}}">
             <view class="sector-bar-row" wx:for="{{sectorConcentration.topSectors}}" wx:key="name" wx:for-item="s">
               <text class="sector-bar-name">{{s.name}}</text>
               <view class="sector-bar-track">
-                <view class="sector-bar-fill" style="width:{{Math.round(s.chg / sectorConcentration.topSectors[0].chg * 100)}}%"></view>
+                <view class="sector-bar-fill" style="width:{{Math.min(100, Math.round(s.count / 30 * 100))}}%"></view>
               </view>
-              <text class="sector-bar-count">+{{s.chg}}%</text>
+              <text class="sector-bar-count">{{s.count}}家</text>
             </view>
           </view>
 

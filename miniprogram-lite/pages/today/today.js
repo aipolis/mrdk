@@ -72,26 +72,37 @@ Page({
     this.loadData(true).finally(() => wx.stopPullDownRefresh())
   },
 
-  _isTradingHours() {
+  _getPollIntervalMs() {
     const now = new Date()
-    const day = now.getDay()
-    if (day === 0 || day === 6) return false
     const hm = now.getHours() * 60 + now.getMinutes()
-    return hm >= 9 * 60 + 25 && hm <= 15 * 60 + 5
+    if (hm >= 9 * 60 + 15 && hm < 9 * 60 + 26) return 20000
+    if (hm >= 9 * 60 + 25 && hm <= 15 * 60 + 5) return 120000
+    return 0
+  },
+
+  _isTradingHours() {
+    return this._getPollIntervalMs() > 0
   },
 
   _startPolling() {
     this._stopPolling()
-    if (!this._isTradingHours()) return
+    const interval = this._getPollIntervalMs()
+    if (!interval) return
     this._pollTimer = setTimeout(() => {
       this.loadData().catch(() => {})
       this._pollInterval = setInterval(() => {
-        if (!this._isTradingHours()) {
+        const ms = this._getPollIntervalMs()
+        if (!ms) {
           this._stopPolling()
           return
         }
+        if (ms !== interval) {
+          this._stopPolling()
+          this._startPolling()
+          return
+        }
         this.loadData().catch(() => {})
-      }, 120000)
+      }, interval)
     }, 3000)
   },
 
