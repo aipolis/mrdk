@@ -403,7 +403,7 @@ def _zt_df_one_word_subset(df_up: pd.DataFrame) -> Optional[pd.DataFrame]:
     if "首次封板时间" in df_up.columns and "最后封板时间" in df_up.columns:
         first = df_up["首次封板时间"].astype(str).str.replace(":", "", regex=False).str.zfill(6)
         last = df_up["最后封板时间"].astype(str).str.replace(":", "", regex=False).str.zfill(6)
-        mask = (first == last) & (first <= "093000") & (first >= "091500")
+        mask = (first == last) & (first <= "092500")
         return df_up.loc[mask]
     if "开板次数" in df_up.columns:
         try:
