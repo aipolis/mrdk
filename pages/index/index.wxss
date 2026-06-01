@@ -400,6 +400,12 @@
   width: 26rpx;
   height: 26rpx;
   box-shadow: 0 0 20rpx currentColor;
+  animation: light-dot-pulse 1.6s ease-in-out infinite;
+}
+
+@keyframes light-dot-pulse {
+  0%, 100% { opacity: 1; box-shadow: 0 0 20rpx currentColor; }
+  50% { opacity: 0.35; box-shadow: 0 0 6rpx currentColor; }
 }
 
 .longkong-light-label {

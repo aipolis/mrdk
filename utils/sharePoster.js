@@ -440,7 +440,7 @@ function drawPoster(ctx, width, height, data, qrImage) {
 }
 
 function createOffscreen(w, h) {
-  const dpr = getPixelRatio()
+  const dpr = Math.min(getPixelRatio(), 2)
   const pxW = Math.floor(w * dpr)
   const pxH = Math.floor(h * dpr)
   const canvas = wx.createOffscreenCanvas({ type: '2d', width: pxW, height: pxH })

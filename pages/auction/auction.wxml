@@ -4,7 +4,7 @@
     <text class="auction-head__meta" wx:if="{{updatedAt}}">{{updatedAt}} 更新</text>
   </view>
 
-  <view class="auction-tabs mr-card" wx:if="{{!loading && ready}}">
+  <view class="auction-tabs mr-card">
     <view
       wx:for="{{tabs}}"
       wx:key="id"
