@@ -222,7 +222,7 @@ def _build_fallback_home_payload(ref_d: str, prev_d: Optional[str], advice_d: st
         {"key": "top10AuctionChg", "label": "昨日成交额前10平均竞价涨幅", "value": "--", "prev": "--", "yesterday": "--", "trend": "flat"},
     ]
     fallback_intraday = [
-        {"key": "sseIndex", "label": "上证涨跌", "value": "--", "prev": "--", "yesterday": "--", "trend": "flat"},
+        {"key": "sseIndex", "label": "昨日涨停指数", "value": "--", "prev": "--", "yesterday": "--", "trend": "flat"},
         {"key": "upRatio", "label": "上涨占比", "value": "--", "prev": "--", "yesterday": "--", "trend": "flat"},
         {"key": "limitUpLive", "label": "实时涨停", "value": "--", "prev": "--", "yesterday": "--", "trend": "flat"},
         {"key": "limitDownLive", "label": "实时跌停", "value": "--", "prev": "--", "yesterday": "--", "trend": "flat"},
