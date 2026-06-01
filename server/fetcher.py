@@ -532,18 +532,27 @@ def _one_word_items_from_zt_df(df_up: pd.DataFrame) -> list[dict]:
 
 
 def _one_word_items_from_clist() -> list[dict]:
-    """9:25 前后涨停池未就绪时的兜底：clist 涨幅榜 + 开盘一字判定。"""
+    """
+    9:25 竞价快照：当前价 >= 涨停价 → 视为竞价一字板。
+    直接用 f3（涨跌幅）判断，不依赖 high/low（竞价阶段 low=昨收，检查无意义）。
+    """
     items: list[dict] = []
     for row in _fetch_em_high_chg_stock_rows():
-        open_pct = _em_row_auction_one_word_open_pct(row)
-        if open_pct is None:
+        chg = pd.to_numeric(row.get("f3"), errors="coerce")
+        pre = pd.to_numeric(row.get("f18"), errors="coerce")
+        if chg is None or pd.isna(chg) or pre is None or pd.isna(pre) or float(pre) <= 0:
             continue
         code = str(row.get("f12") or "").zfill(6)
+        # 科创板(688)/创业板(300) 20% 涨停，其余 10%
+        min_pct = 19.5 if code[:3] in ("688", "300") else 9.5
+        if float(chg) < min_pct:
+            continue
+        open_pct = (float(pd.to_numeric(row.get("f17"), errors="coerce") or 0) - float(pre)) / float(pre) * 100
         sector = str(row.get("f100") or "").strip()
         items.append({
             "code": code,
             "name": str(row.get("f14") or code).strip(),
-            "openPct": round(open_pct, 2),
+            "openPct": round(float(chg), 2),
             "sector": sector if sector not in ("", "--", "nan") else "--",
             "sealAmount": None,
         })
