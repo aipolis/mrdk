@@ -638,7 +638,7 @@ export function posterFilename(data) {
   const displayScore = data.displayScore != null ? data.displayScore : data.score
   const d = data.adviceDate || data.date || ''
   const day = /^\d{8}$/.test(String(d)) ? String(d) : new Date().toISOString().slice(0, 10).replace(/-/g, '')
-  return `明日当空-情绪${Math.round(Number(displayScore) || 0)}-${day}.png`
+  return `明日当空-情绪${Math.round(Number(displayScore) || 0)}-${day}.jpg`
 }
 
 export async function posterToBlob(data) {
@@ -648,7 +648,7 @@ export async function posterToBlob(data) {
     canvas.toBlob((blob) => {
       if (blob) resolve(blob)
       else reject(new Error('生成图片失败'))
-    }, 'image/png')
+    }, 'image/jpeg', 0.92)
   })
 }
 

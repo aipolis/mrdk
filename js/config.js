@@ -22,7 +22,7 @@ function resolveApiBase() {
 export const API_BASE = resolveApiBase()
 export { resolveApiBase }
 
-export const FETCH_TIMEOUT_MS = 45000
+export const FETCH_TIMEOUT_MS = 20000
 
 /** 首页自动刷新间隔（毫秒），与后端盘中 2 分钟节奏一致 */
 export const AUTO_REFRESH_MS = 2 * 60 * 1000

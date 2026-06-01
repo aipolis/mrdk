@@ -442,6 +442,12 @@ a {
   height: 10px;
   opacity: 1;
   box-shadow: 0 0 12px currentColor;
+  animation: light-dot-pulse 1.6s ease-in-out infinite;
+}
+
+@keyframes light-dot-pulse {
+  0%, 100% { opacity: 1; box-shadow: 0 0 12px currentColor; }
+  50% { opacity: 0.3; box-shadow: 0 0 4px currentColor; }
 }
 
 /* ── 风险分级视觉提示（叠加在活跃灯上）── */

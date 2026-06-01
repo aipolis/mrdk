@@ -36,7 +36,7 @@ closeModal?.addEventListener('click', () => {
 })
 
 async function tryNativeShare(blob, filename) {
-  const file = new File([blob], filename, { type: 'image/png' })
+  const file = new File([blob], filename, { type: 'image/jpeg' })
   if (!navigator.canShare || !navigator.canShare({ files: [file] })) return false
   await navigator.share({ files: [file], title: '明日当空 · 市场情绪' })
   return true
