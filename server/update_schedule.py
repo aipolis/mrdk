@@ -35,7 +35,6 @@ class HomeRefreshMode(str, Enum):
 # 各板块在何种模式下允许实时抓取（API 请求路径）
 _SECTION_LIVE: dict[str, frozenset[HomeRefreshMode]] = {
     "yesterday": frozenset({HomeRefreshMode.PREOPEN}),
-    "peripheral": frozenset({HomeRefreshMode.PREOPEN, HomeRefreshMode.AUCTION}),
     "auction": frozenset({HomeRefreshMode.PREOPEN, HomeRefreshMode.AUCTION}),
     "longkongRisk": frozenset({HomeRefreshMode.PREOPEN, HomeRefreshMode.INTRADAY}),
     "intraday": frozenset({HomeRefreshMode.INTRADAY}),
@@ -81,6 +80,5 @@ def cron_interval_minutes(job: str) -> int:
     """文档化各定时任务频率（分钟）。"""
     return {
         "intraday": 2,
-        "peripheral": 10,
         "home_warm": 600,
     }.get(job, 0)

@@ -83,13 +83,12 @@ def is_intraday_pinned_window(now: Optional[datetime] = None) -> bool:
     return 9 * 60 <= hm <= 15 * 60 + 30
 
 
-# 交易时段完整顺序：盘中 → 龙空风控 → 竞价 → 昨日 → 外围
+# 交易时段完整顺序：盘中 → 龙空风控 → 竞价 → 昨日
 _TRADING_SECTION_ORDER = (
     "intraday",
     "longkongRisk",
     "auction",
     "yesterday",
-    "peripheral",
 )
 
 

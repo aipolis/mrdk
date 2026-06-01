@@ -14,7 +14,6 @@ from fetcher import (
     display_level_label,
     load_auction_snapshot,
     load_longkong_risk_cached,
-    load_peripheral_snapshot,
 )
 from history_store import fetch_daily_detail
 from intraday import order_indicator_sections
@@ -85,12 +84,6 @@ def assemble_home_from_archive(
     if not grid9:
         grid9 = build_yesterday_sentiment(metrics, prev_metrics)
 
-    peripheral = (
-        load_peripheral_snapshot(advice_d)
-        or advice_detail.get("peripheral")
-        or ref_detail.get("peripheral")
-        or []
-    )
     auction = load_auction_snapshot(
         advice_d,
         ref_d,
@@ -121,7 +114,6 @@ def assemble_home_from_archive(
 
     sentiment = calc_sentiment(
         metrics,
-        peripheral=peripheral,
         auction=auction,
         grid9=grid9,
     )
@@ -155,9 +147,6 @@ def assemble_home_from_archive(
             if sid == "yesterday":
                 sec["items"] = grid9
                 sec["meta"] = metas.get("yesterday", sec.get("meta"))
-            elif sid == "peripheral":
-                sec["items"] = peripheral
-                sec["meta"] = metas.get("peripheral", sec.get("meta"))
             elif sid == "auction":
                 sec["items"] = auction
                 sec["meta"] = metas.get("auction", sec.get("meta"))
@@ -168,6 +157,8 @@ def assemble_home_from_archive(
                 sec["items"] = intraday
                 sec["meta"] = metas.get("intraday", sec.get("meta"))
                 sec["pending"] = False
+        # Filter out any legacy peripheral sections from DB
+        indicator_sections = [sec for sec in indicator_sections if sec.get("id") != "peripheral"]
         indicator_sections = order_indicator_sections(indicator_sections)
     else:
         from fetcher import build_indicator_sections
@@ -179,8 +170,6 @@ def assemble_home_from_archive(
             sid = sec.get("id")
             if sid == "yesterday":
                 sec["items"] = grid9
-            elif sid == "peripheral":
-                sec["items"] = peripheral
             elif sid == "auction":
                 sec["items"] = auction
             elif sid == "longkongRisk":
@@ -202,10 +191,9 @@ def assemble_home_from_archive(
         "generatedAtLabel": gauge_label,
         "generatedAtTime": now_hm,
         "dailyQuote": "买在分歧，卖在一致",
-        "overview": peripheral,
+        "overview": [],
         "foreignCards": [],
         "grid9": grid9,
-        "peripheral": peripheral,
         "auction": auction,
         "intraday": intraday or [],
         "longkongRisk": longkong_risk,

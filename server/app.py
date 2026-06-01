@@ -40,14 +40,10 @@ from fetcher import (
     display_level_class,
     display_level_label,
     fetch_foreign_sentiment,
-    fetch_peripheral_sentiment,
-    load_peripheral_snapshot,
-    load_peripheral_best_available,
     fetch_sse_index_change,
     get_longkong_risk_payload_cached,
     get_recent_trade_dates,
     invalidate_intraday_caches,
-    invalidate_peripheral_cache,
     invalidate_sector_concentration_cache,
     load_advice_metrics,
     load_auction_snapshot,
@@ -79,7 +75,6 @@ from history_sync import (
     persist_auction_snapshot,
     persist_day,
     persist_from_home,
-    persist_peripheral_db_0900,
     persist_trading_day_snapshot,
     request_stop_sync,
     sync_history_days,
@@ -208,11 +203,6 @@ def _build_fallback_home_payload(ref_d: str, prev_d: Optional[str], advice_d: st
         {"key": "volume", "label": "市场量能", "value": "--", "prev": "--", "trend": "flat"},
         {"key": "advance", "label": "上涨家数", "value": "--", "prev": "--", "trend": "flat"},
     ]
-    fallback_peripheral = [
-        {"key": "ftseA50", "label": "富时A50指数", "price": "--", "value": "--", "chgText": "--", "up": False, "trend": "flat"},
-        {"key": "sp500", "label": "标普500", "price": "--", "value": "--", "chgText": "--", "up": False, "trend": "flat"},
-        {"key": "cnh", "label": "离岸人民币", "price": "--", "value": "--", "chgText": "--", "up": False, "trend": "flat"},
-    ]
     fallback_auction = [
         {"key": "auctionOneWord", "label": "竞价一字板", "value": "--", "prev": "--", "yesterday": "--", "trend": "flat"},
         {"key": "auctionVolume", "label": "竞价量能", "value": "--", "prev": "--", "yesterday": "--", "trend": "flat"},
@@ -242,7 +232,6 @@ def _build_fallback_home_payload(ref_d: str, prev_d: Optional[str], advice_d: st
     ]
     fallback_sections = [
         {"id": "yesterday", "title": "昨日情绪概览", "meta": "基础参考", "layout": "grid3", "cols": 3, "items": fallback_grid9},
-        {"id": "peripheral", "title": "今天外围情绪及指数", "meta": "基础参考", "layout": "row3", "cols": 3, "items": fallback_peripheral},
         {"id": "auction", "title": "今天竞价情绪", "meta": "基础参考", "layout": "grid3", "cols": 3, "items": fallback_auction},
         {"id": "longkongRisk", "title": "龙空龙专属风控", "meta": "基础参考", "layout": "grid3", "cols": 3, "items": fallback_longkong_risk},
         {"id": "intraday", "title": "盘中实时情绪", "meta": "基础参考", "layout": "grid3", "cols": 3, "items": fallback_intraday},
@@ -258,7 +247,6 @@ def _build_fallback_home_payload(ref_d: str, prev_d: Optional[str], advice_d: st
         "overview": [],
         "foreignCards": [],
         "grid9": fallback_grid9,
-        "peripheral": fallback_peripheral,
         "auction": fallback_auction,
         "intraday": fallback_intraday,
         "longkongRisk": fallback_longkong_risk,
@@ -319,14 +307,11 @@ def _build_home_payload(ref_d: str, prev_d: Optional[str], advice_d: str, is_rea
     sector_conc = calc_sector_concentration(ref_d)
     if sector_conc.get("total", 0) > 0 or sector_conc.get("hotConceptCount", 0) > 0:
         metrics = {**metrics, "sector_concentration": sector_conc}
-    # 外围：始终显示最近有效数据（不因 archive-only 模式返回空）
-    peripheral = load_peripheral_best_available(advice_d, ref_d)
     auction = load_auction_snapshot(
         advice_d, ref_d, prev_d, metrics, prev_metrics, is_ready=is_ready
     )
     sentiment = calc_sentiment(
         metrics,
-        peripheral=peripheral,
         auction=auction,
         grid9=grid9,
     )
@@ -386,9 +371,6 @@ def _build_home_payload(ref_d: str, prev_d: Optional[str], advice_d: str, is_rea
         if sid == "yesterday":
             sec["items"] = grid9
             sec["meta"] = metas["yesterday"]
-        elif sid == "peripheral":
-            sec["items"] = peripheral
-            sec["meta"] = metas["peripheral"]
         elif sid == "auction":
             sec["items"] = auction
             sec["meta"] = metas["auction"]
@@ -426,10 +408,9 @@ def _build_home_payload(ref_d: str, prev_d: Optional[str], advice_d: str, is_rea
         "generatedAtLabel": gauge_display,
         "generatedAtTime": intraday_payload.get("updatedAt") or now_hm,
         "dailyQuote": "买在分歧，卖在一致",
-        "overview": peripheral,
+        "overview": [],
         "foreignCards": fetch_foreign_sentiment(),
         "grid9": grid9,
-        "peripheral": peripheral,
         "auction": auction,
         "intraday": intraday_payload.get("items") or [],
         "longkongRisk": longkong_risk,
@@ -525,45 +506,6 @@ def _run_snapshot_1505() -> None:
 def _run_snapshot_1800() -> None:
     persist_trading_day_snapshot(freeze=True)
     build_and_store(_build_home_for_cache)
-
-
-def _refresh_peripheral_live() -> None:
-    """外围情绪：交易时段每 10 分钟刷新展示（入库仍以 9:00 快照为准）。"""
-    now = bj_now()
-    if now.weekday() >= 5:
-        return
-    hm = now.hour * 60 + now.minute
-    if hm < 9 * 60 or hm > 15 * 60:
-        return
-
-    ref_d, prev_d, advice_d, is_ready = resolve_advice_dates()
-    advice_metrics = load_advice_metrics(advice_d)
-
-    def patch(p: dict) -> dict:
-        invalidate_peripheral_cache()
-        peripheral = fetch_peripheral_sentiment()
-        metas, _, _ = build_section_metas(
-            ref_d,
-            advice_d,
-            is_ready,
-            ref_metrics=p.get("metrics") or {},
-            advice_metrics=advice_metrics,
-        )
-        p["peripheral"] = peripheral
-        p["overview"] = peripheral
-        for sec in p.get("indicatorSections") or []:
-            if sec.get("id") == "peripheral":
-                sec["items"] = peripheral
-                sec["meta"] = metas["peripheral"]
-        return p
-
-    if not patch_home_cache(patch):
-        build_and_store(_build_home_for_cache)
-
-
-def _run_peripheral_0900() -> None:
-    persist_peripheral_db_0900()
-    _refresh_peripheral_live()
 
 
 def _run_auction_0926() -> None:
@@ -883,11 +825,8 @@ def _payload_quality(data: dict) -> dict:
     grid_missing = _missing_item_keys(data.get("grid9") or (sections.get("yesterday") or {}).get("items") or [])
     auction_missing = _missing_item_keys(data.get("auction") or (sections.get("auction") or {}).get("items") or [], auction_required)
     intraday_missing = _missing_item_keys(data.get("intraday") or (sections.get("intraday") or {}).get("items") or [], intraday_required)
-    peripheral_items = data.get("peripheral") or data.get("overview") or (sections.get("peripheral") or {}).get("items") or []
-    peripheral_missing = _missing_item_keys(peripheral_items)
     missing = {
         "yesterday": grid_missing,
-        "peripheral": peripheral_missing,
         "auction": auction_missing,
         "intraday": intraday_missing,
     }
@@ -896,7 +835,6 @@ def _payload_quality(data: dict) -> dict:
         "missing": missing,
         "counts": {
             "yesterday": len(data.get("grid9") or (sections.get("yesterday") or {}).get("items") or []),
-            "peripheral": len(peripheral_items),
             "auction": len(data.get("auction") or (sections.get("auction") or {}).get("items") or []),
             "intraday": len(data.get("intraday") or (sections.get("intraday") or {}).get("items") or []),
         },
@@ -906,7 +844,6 @@ def _payload_quality(data: dict) -> dict:
 def _patch_section_metas(sections: list, metas: dict) -> list:
     meta_map = {
         "yesterday": metas.get("yesterday"),
-        "peripheral": metas.get("peripheral"),
         "auction": metas.get("auction"),
         "intraday": metas.get("intraday"),
         "longkongRisk": metas.get("intraday"),
@@ -1125,8 +1062,6 @@ async def lifespan(app: FastAPI):
         daily_push_fn=lambda: run_async_coro(_daily_push_coro),
         snapshot_1505_fn=_run_snapshot_1505,
         snapshot_1800_fn=_run_snapshot_1800,
-        peripheral_0900_fn=_run_peripheral_0900,
-        peripheral_10m_fn=_refresh_peripheral_live,
         auction_0926_fn=_run_auction_0926,
         auction_0935_fn=_run_auction_0935,
         auction_live_fn=_run_auction_live,
@@ -1483,7 +1418,6 @@ def snapshot_daily_cache(
     """
     分板块定时快照（内置 cron 或控制台触发）：
     - 1505 / 1800：昨日情绪（收盘）
-    - 0900：外围情绪入库
     - 0926：今日竞价固化；0915–0926 间每 20 秒 live 刷新
     """
     if err := _cron_auth_error(x_cron_secret):
@@ -1493,7 +1427,6 @@ def snapshot_daily_cache(
     handlers = {
         "1505": lambda: persist_trading_day_snapshot(freeze=False),
         "1800": lambda: persist_trading_day_snapshot(freeze=True),
-        "0900": persist_peripheral_db_0900,
         "0926": lambda: persist_auction_snapshot(freeze=True),
         "0935": lambda: persist_auction_snapshot(freeze=True),
     }
@@ -1503,9 +1436,7 @@ def snapshot_daily_cache(
 
     result = fn()
     if result.get("ok"):
-        if phase == "0900":
-            _refresh_peripheral_live()
-        elif phase in ("1505", "1800", "0926", "0935"):
+        if phase in ("1505", "1800", "0926", "0935"):
             build_and_store(_build_home_for_cache)
     return {"code": 0 if result.get("ok") else 1, "data": result}
 

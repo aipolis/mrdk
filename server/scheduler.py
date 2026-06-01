@@ -26,8 +26,6 @@ def start_internal_cron(
     daily_push_fn: Callable[[], None],
     snapshot_1505_fn: Callable[[], None],
     snapshot_1800_fn: Callable[[], None],
-    peripheral_0900_fn: Callable[[], None],
-    peripheral_10m_fn: Callable[[], None],
     auction_0926_fn: Callable[[], None],
     auction_0935_fn: Callable[[], None],
     auction_live_fn: Callable[[], None],
@@ -77,12 +75,6 @@ def start_internal_cron(
         replace_existing=True,
     )
     sched.add_job(
-        lambda: _safe("peripheral-0900", peripheral_0900_fn),
-        CronTrigger(day_of_week=weekday, hour=9, minute=0),
-        id="peripheral-0900",
-        replace_existing=True,
-    )
-    sched.add_job(
         lambda: _safe("auction-0926", auction_0926_fn),
         CronTrigger(day_of_week=weekday, hour=9, minute=26),
         id="auction-0926",
@@ -110,12 +102,6 @@ def start_internal_cron(
         lambda: _safe("intraday-2m", intraday_2m_fn),
         IntervalTrigger(minutes=2),
         id="intraday-2m",
-        replace_existing=True,
-    )
-    sched.add_job(
-        lambda: _safe("peripheral-10m", peripheral_10m_fn),
-        IntervalTrigger(minutes=10),
-        id="peripheral-10m",
         replace_existing=True,
     )
     sched.add_job(

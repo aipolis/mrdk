@@ -1,5 +1,5 @@
 # -*- coding: utf-8 -*-
-"""情绪评分引擎 — 基准分：T 日 9:00 前（昨日+外围）；盘中分：9:00 后含竞价 + 9 项实时"""
+"""情绪评分引擎 — 基准分：T 日 9:00 前（昨日）；盘中分：9:00 后含竞价 + 9 项实时"""
 from __future__ import annotations
 
 import re
@@ -7,10 +7,6 @@ from datetime import datetime
 from typing import Optional
 
 from config import bj_now
-
-# 基准分：仅昨日 + 外围（竞价已移入盘中分）
-W_YESTERDAY_BASE = 0.80
-W_PERIPHERAL_BASE = 0.20
 
 # 盘中分内：竞价块权重随时间从 9:30 的 65% 线性降至 15:00 的 15%
 LIVE_AUC_W_AT_930 = 0.65
@@ -504,43 +500,6 @@ def calc_live_score(
     return None
 
 
-# ── 外围 3 项（收窄阈值，提高敏感度）──────────────────────────
-
-
-def _match_peripheral(items: list, *keywords: str) -> Optional[dict]:
-    for it in items:
-        blob = f"{it.get('key', '')} {it.get('label', '')} {it.get('name', '')}"
-        if any(kw in blob for kw in keywords):
-            return it
-    return None
-
-
-def _score_peripheral_block(peripheral: Optional[list]) -> dict[str, int]:
-    items = peripheral or []
-    a50 = _match_peripheral(items, "A50", "富时")
-    sp = _match_peripheral(items, "标普")
-    cnh = _match_peripheral(items, "人民币", "CNH", "离岸")
-
-    a50_chg = _item_pct(a50)
-    sp_chg = _item_pct(sp)
-    cnh_chg = _item_pct(cnh)
-
-    return {
-        # 富时A50：lo=-0.3% → 20，hi=+0.3% → 90，0% → 55（收窄，更敏感）
-        "ftseA50": _linear_high(a50_chg, lo=-0.3, hi=0.3)
-        if a50_chg is not None
-        else SCORE_NEUTRAL,
-        # 标普500：lo=-0.3% → 20，hi=+0.3% → 90
-        "sp500": _linear_high(sp_chg, lo=-0.3, hi=0.3)
-        if sp_chg is not None
-        else SCORE_NEUTRAL,
-        # 离岸人民币：贬值（chg>0）偏空；lo=-0.05（升值）→90，hi=+0.35（贬值）→20
-        "cnh": _linear_low(cnh_chg, lo=-0.05, hi=0.35)
-        if cnh_chg is not None
-        else SCORE_NEUTRAL,
-    }
-
-
 # ── 竞价 6 项 ───────────────────────────────────────────────
 
 
@@ -609,7 +568,6 @@ def _has_auction_data(auction: Optional[list]) -> bool:
 
 def _collect_weak_reasons(
     y: dict[str, int],
-    p: dict[str, int],
     metrics: dict,
 ) -> list[str]:
     """收集偏弱信号原因。Leading indicators 使用更高阈值 _SIGNAL_WEAK_PRIMARY=45。"""
@@ -644,8 +602,6 @@ def _collect_weak_reasons(
     high10 = metrics.get("high10_count")
     if high10 is not None and y.get("high10", 99) < _SIGNAL_WEAK:
         reasons.append(f"10日新高仅{int(high10)}只")
-    if p.get("ftseA50", 99) < _SIGNAL_WEAK and p.get("sp500", 99) < _SIGNAL_WEAK:
-        reasons.append("外围指数偏弱")
     return reasons
 
 
@@ -698,37 +654,24 @@ def _apply_risk_to_position(position: int, risk_level: str) -> int:
 def calc_sentiment(
     metrics: dict,
     *,
-    peripheral: Optional[list] = None,
     auction: Optional[list] = None,
     grid9: Optional[list] = None,
 ) -> dict:
     """
-    基准情绪分 0–100（T 日 9:00 前口径：昨日 + 外围，不含竞价）。
-    - 有 peripheral：昨日 × 80% + 外围 × 20%
-    - 仅 metrics：历史归档 / 趋势图
+    基准情绪分 0–100（T 日 9:00 前口径：昨日，不含竞价）。
     auction 参数保留兼容，不参与基准分；竞价计分见 calc_live_score。
     """
     metrics = metrics or {}
     y_scores = _score_yesterday_block(metrics, grid9)
     y_avg = _weighted_yesterday_avg(y_scores)
 
-    has_peripheral = bool(peripheral)
-
-    p_scores: dict[str, int] = {}
     a_scores: dict[str, int] = {}
 
-    if has_peripheral:
-        p_scores = _score_peripheral_block(peripheral)
     if _has_auction_data(auction):
         a_scores = _score_auction_block(auction, metrics)
 
-    if has_peripheral:
-        p_avg = _block_avg(p_scores)
-        score = round(y_avg * W_YESTERDAY_BASE + p_avg * W_PERIPHERAL_BASE)
-        mode = "yesterday+peripheral"
-    else:
-        score = round(y_avg * W_YESTERDAY_ONLY)
-        mode = "yesterday_only"
+    score = round(y_avg * W_YESTERDAY_ONLY)
+    mode = "yesterday_only"
 
     score = max(0, min(100, score))
 
@@ -754,7 +697,7 @@ def calc_sentiment(
         level, color, signal = "冰点", "#1890FF", "极弱"
         position = 0
 
-    empty_reasons = _collect_weak_reasons(y_scores, p_scores, metrics)
+    empty_reasons = _collect_weak_reasons(y_scores, metrics)
     risk_level = _calc_risk_level(empty_reasons, score)
     position = _apply_risk_to_position(position, risk_level)
     empty_warning = risk_level == "critical"
@@ -772,10 +715,8 @@ def calc_sentiment(
         "scoreMode": mode,
         "subScores": {
             "yesterday": y_scores,
-            "peripheral": p_scores,
             "auction": a_scores,
             "yesterdayAvg": round(y_avg, 1),
-            "peripheralAvg": round(_block_avg(p_scores), 1) if p_scores else None,
             "auctionAvg": round(_weighted_auction_avg(a_scores), 1) if a_scores else None,
         },
     }

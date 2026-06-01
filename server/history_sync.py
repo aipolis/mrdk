@@ -120,7 +120,6 @@ def _merge_save_daily(
     if rebuild_sentiment or not existing.get("sentiment"):
         sentiment = calc_sentiment(
             merged_metrics,
-            peripheral=peripheral_out,
             auction=auction_out,
             grid9=grid9_out,
         )
@@ -223,39 +222,6 @@ def persist_trading_day_snapshot(*, freeze: bool = False) -> dict:
         "phase": phase,
         "frozen": freeze,
     }
-
-
-def persist_peripheral_db_0900() -> dict:
-    """外围情绪：每日 9:00 快照写入 MySQL（展示仍每 10 分钟刷新）。"""
-    from fetcher import fetch_peripheral_sentiment, invalidate_peripheral_cache
-
-    today, prev_d = _resolve_today_prev()
-    if not today:
-        return {"ok": False, "skipped": True, "reason": "not_trading_day"}
-
-    invalidate_peripheral_cache()
-    peripheral = fetch_peripheral_sentiment()
-    metrics = {
-        "date": f"{today[:4]}-{today[4:6]}-{today[6:8]}",
-        "peripheral_db_phase": "0900",
-        "peripheral_db_at": bj_now().isoformat(timespec="seconds"),
-    }
-    existing = fetch_daily_detail(today) or {}
-    sections = _patch_indicator_sections(
-        existing.get("indicatorSections"),
-        peripheral=peripheral,
-    ) if existing.get("indicatorSections") else None
-
-    ok = _merge_save_daily(
-        today,
-        prev_d,
-        metrics=metrics,
-        peripheral=peripheral,
-        indicator_sections=sections,
-        rebuild_sentiment=False,
-    )
-    log.info("peripheral db 0900 trade_d=%s saved=%s", today, ok)
-    return {"ok": ok, "trade_d": today, "phase": "0900"}
 
 
 def persist_auction_snapshot(*, freeze: bool = False) -> dict:
@@ -393,7 +359,6 @@ def persist_day(
         )
     sentiment = calc_sentiment(
         metrics,
-        peripheral=sections.get("peripheral"),
         auction=sections.get("auction"),
         grid9=sections.get("grid9"),
     )
@@ -411,7 +376,7 @@ def persist_day(
         history_item=history_item,
         indicators=indicators,
         grid9=sections.get("grid9"),
-        peripheral=sections.get("peripheral"),
+        peripheral=[],
         auction=sections.get("auction"),
         indicator_sections=sections.get("indicatorSections"),
     )
@@ -440,7 +405,6 @@ def persist_from_home(
     )
     sections = {
         "grid9": home_data.get("grid9") or [],
-        "peripheral": home_data.get("peripheral") or home_data.get("overview") or [],
         "auction": home_data.get("auction") or [],
         "indicatorSections": home_data.get("indicatorSections") or [],
     }
@@ -452,7 +416,7 @@ def persist_from_home(
         history_item=history_item,
         indicators=home_data.get("indicators"),
         grid9=sections["grid9"],
-        peripheral=sections["peripheral"],
+        peripheral=[],
         auction=sections["auction"],
         indicator_sections=sections["indicatorSections"],
     )

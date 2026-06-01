@@ -606,184 +606,6 @@ def _auction_one_word_count(trade_d: str, spot_df: Optional[pd.DataFrame] = None
         return None
 
 
-PERIPHERAL_CACHE_TTL = 600  # 外围情绪 10 分钟刷新
-
-
-def invalidate_peripheral_cache() -> None:
-    _cache.pop("peripheral_sent", None)
-
-
-def fetch_peripheral_sentiment() -> list[dict]:
-    """外围情绪及指数（3项）：富时A50、标普500、离岸人民币"""
-    key = "peripheral_sent"
-    cached = _cache_get(key, PERIPHERAL_CACHE_TTL)
-    if cached:
-        return cached
-    result: list[dict] = []
-
-    def _append_index(label: str, price, chg: float):
-        price_s = _display_text(price)
-        chg_f = _safe_float(chg)
-        has_price = price_s != "--"
-        chg_text = f"{chg_f:+.2f}%" if has_price and chg_f is not None else "--"
-        result.append({
-            "key": label,
-            "name": label,
-            "label": label,
-            "price": price_s,
-            "value": price_s,
-            "chg": chg_f if chg_f is not None else None,
-            "chgText": chg_text,
-            "up": chg_f >= 0 if chg_f is not None else False,
-            "trend": "up" if (chg_f is not None and chg_f >= 0) else "down" if chg_f is not None else "flat",
-        })
-
-    def _append_fx(label: str, price, chg: float = 0.0):
-        price_s = _display_text(price)
-        chg_f = _safe_float(chg)
-        has_price = price_s != "--"
-        chg_text = f"{chg_f:+.2f}%" if has_price and chg_f is not None and chg_f != 0 else "--"
-        result.append({
-            "key": label,
-            "name": label,
-            "label": label,
-            "price": price_s,
-            "value": price_s,
-            "chg": chg_f if chg_f is not None else None,
-            "chgText": chg_text,
-            "up": chg_f >= 0 if chg_f is not None else False,
-            "trend": "up" if (chg_f is not None and chg_f >= 0) else "down" if chg_f is not None else "flat",
-        })
-
-    def _quote_yahoo(symbols: tuple[str, ...]) -> tuple[Optional[float], Optional[float]]:
-        """轻量兜底行情：返回最新价与涨跌幅。Yahoo 接口缺字段时自动跳过。"""
-        headers = {"User-Agent": "Mozilla/5.0"}
-        hosts = ("query1.finance.yahoo.com", "query2.finance.yahoo.com")
-        for symbol in symbols:
-            try:
-                result = None
-                for host in hosts:
-                    url = f"https://{host}/v8/finance/chart/{symbol}"
-                    r = requests.get(url, params={"range": "1d", "interval": "1m"}, headers=headers, timeout=6)
-                    if r.status_code >= 400:
-                        continue
-                    result = ((r.json().get("chart") or {}).get("result") or [None])[0]
-                    if result:
-                        break
-                if not result:
-                    continue
-                meta = result.get("meta") or {}
-                price = _safe_float(meta.get("regularMarketPrice") or meta.get("previousClose"))
-                prev = _safe_float(meta.get("previousClose"))
-                if price is None:
-                    closes = (((result.get("indicators") or {}).get("quote") or [{}])[0]).get("close") or []
-                    for v in reversed(closes):
-                        price = _safe_float(v)
-                        if price is not None:
-                            break
-                chg = None
-                if price is not None and prev and prev > 0:
-                    chg = round((price - prev) / prev * 100, 2)
-                if price is not None:
-                    return price, chg
-            except Exception:
-                continue
-        return None, None
-
-    a50_done = False
-    try:
-        df = ak.index_global_spot_em()
-        if df is not None and not df.empty:
-            name_col = "名称" if "名称" in df.columns else df.columns[0]
-            for kw in ("富时中国A50", "富时A50", "A50"):
-                row = df[df[name_col].astype(str).str.contains(kw, na=False)]
-                if not row.empty:
-                    r0 = row.iloc[0]
-                    chg = _safe_float(r0.get("涨跌幅", 0), 0.0) or 0.0
-                    price = _display_text(r0.get("最新价", r0.get("当前价")))
-                    if price != "--":
-                        _append_index("富时A50指数", price, chg)
-                        a50_done = True
-                        break
-    except Exception:
-        pass
-    if not a50_done:
-        try:
-            df = ak.stock_hk_index_spot_em()
-            row = df[df["名称"].astype(str).str.contains("富时中国A50|富时A50", na=False)]
-            if not row.empty:
-                r0 = row.iloc[0]
-                chg = _safe_float(r0.get("涨跌幅", 0), 0.0) or 0.0
-                price = _display_text(r0.get("最新价", r0.get("当前价")))
-                if price != "--":
-                    _append_index("富时A50指数", price, chg)
-                    a50_done = True
-        except Exception:
-            pass
-    if not a50_done:
-        price, chg = _quote_yahoo(("CN=F", "XIN9.F", "XIN9.SI"))
-        if price is not None:
-            _append_index("富时A50指数", round(price, 2), chg or 0.0)
-            a50_done = True
-    if not a50_done:
-        _append_index("富时A50指数", "--", None)
-
-    sp_done = False
-    try:
-        df_us = ak.index_us_stock_sina()
-        if df_us is not None and not df_us.empty:
-            name_col_us = "名称" if "名称" in df_us.columns else df_us.columns[0]
-            sp = df_us[df_us[name_col_us].astype(str).str.contains("标普|S&P|SP500|SPX|500", na=False, case=False)]
-            if not sp.empty:
-                r0 = sp.iloc[0]
-                chg = _safe_float(r0.get("涨跌幅", 0), 0.0) or 0.0
-                price = _display_text(r0.get("最新价", r0.get("当前价")))
-                if price != "--":
-                    _append_index("标普500", price, chg)
-                    sp_done = True
-    except Exception:
-        pass
-    if not sp_done:
-        price, chg = _quote_yahoo(("^GSPC", "SPY", "^SPX"))
-        if price is not None:
-            _append_index("标普500", round(price, 2), chg or 0.0)
-            sp_done = True
-    if not sp_done:
-        _append_index("标普500", "--", None)
-
-    fx_done = False
-    try:
-        df_fx = ak.fx_spot_quote()
-        if df_fx is not None and not df_fx.empty:
-            usd = df_fx[df_fx["货币对"].astype(str).str.contains("USD/CNH", na=False)]
-            if usd.empty:
-                usd = df_fx.head(1)
-            if not usd.empty:
-                r0 = usd.iloc[0]
-                price = _display_text(r0.get("最新价", r0.iloc[-1] if len(r0) else None))
-                chg = _safe_float(r0.get("涨跌幅", 0))
-                if price != "--":
-                    _append_fx("离岸人民币", price, chg if chg is not None else 0.0)
-                    fx_done = True
-    except Exception:
-        pass
-    if not fx_done:
-        price, chg = _quote_yahoo(("CNH=X", "USDCNH=X"))
-        if price is not None:
-            _append_fx("离岸人民币", round(price, 4), chg or 0.0)
-            fx_done = True
-    if not fx_done:
-        _append_fx("离岸人民币", "--", None)
-
-    _cache_set(key, result[:3])
-    return result[:3]
-
-
-def fetch_overview_spot() -> list[dict]:
-    """兼容旧字段：等同外围情绪三项"""
-    return fetch_peripheral_sentiment()
-
-
 def fetch_foreign_sentiment() -> list[dict]:
     """外盘情绪小卡（6项）"""
     key = "foreign_sent"
@@ -2753,13 +2575,6 @@ def build_section_metas(
         yesterday_meta = f"{ref_label} 15:00 更新"
         gauge_hm = "15:00"
 
-    if advice_d == today:
-        peripheral_meta = f"{adv_label} {now_hm} 更新"
-    elif adv_m.get("peripheral_db_phase") == "0900":
-        peripheral_meta = f"{adv_label} 09:00 入库"
-    else:
-        peripheral_meta = f"{adv_label} 09:00 更新"
-
     if adv_m.get("auction_frozen") or adv_m.get("auction_phase") in ("0926", "0935") or _after_auction_frozen():
         auction_meta = f"{adv_label} 09:26 固化"
     elif _in_auction_live_window(now):
@@ -2789,7 +2604,6 @@ def build_section_metas(
 
     metas = {
         "yesterday": yesterday_meta,
-        "peripheral": peripheral_meta,
         "auction": auction_meta,
         "intraday": intraday_meta,
     }
@@ -3107,56 +2921,6 @@ def load_longkong_risk_cached(
     )
 
 
-def load_peripheral_snapshot(advice_d: str) -> list:
-    """外围 3 项：9:00 入库后盘中不变，直接读 MySQL。"""
-    advice_d = (advice_d or "")[:8]
-    if len(advice_d) != 8:
-        return []
-    try:
-        from history_store import fetch_daily_detail
-    except Exception:
-        return []
-    detail = fetch_daily_detail(advice_d)
-    if not detail:
-        return []
-    items = detail.get("peripheral") or []
-    if not items:
-        for sec in detail.get("indicatorSections") or []:
-            if sec.get("id") == "peripheral" and sec.get("items"):
-                items = sec["items"]
-                break
-    if not items:
-        return []
-    m = detail.get("metrics") or {}
-    if m.get("peripheral_db_phase") == "0900":
-        return items
-    if any(
-        str(it.get("price") or it.get("value") or "").strip() not in ("", "--")
-        for it in items
-    ):
-        return items
-    return []
-
-
-def load_peripheral_best_available(advice_d: str, ref_d: str = "") -> list:
-    """
-    外围数据最优来源：始终返回最近有效快照，非交易时段也不显示 --。
-    优先级：advice_d 快照 → ref_d 快照 → 实时拉取
-    A50/标普/人民币均为全球市场，非 A 股交易日也有行情数据。
-    """
-    # 1. advice_d 快照（当日 9:00 入库）
-    data = load_peripheral_snapshot(advice_d)
-    if data:
-        return data
-    # 2. ref_d 快照（最近一个完整交易日的外围归档）
-    if ref_d and ref_d != advice_d:
-        data = load_peripheral_snapshot(ref_d)
-        if data:
-            return data
-    # 3. 实时拉取（全球市场非交易日也有数据）
-    return fetch_peripheral_sentiment() or []
-
-
 def build_indicator_sections(
     ref_d: str,
     prev_d: Optional[str],
@@ -3181,14 +2945,6 @@ def build_indicator_sections(
             "layout": "grid3",
             "cols": 3,
             "items": build_yesterday_sentiment(metrics, prev_metrics),
-        },
-        {
-            "id": "peripheral",
-            "title": f"{adv_label}外围情绪及指数",
-            "meta": metas["peripheral"],
-            "layout": "row3",
-            "cols": 3,
-            "items": load_peripheral_best_available(advice_d, ref_d),
         },
         {
             "id": "auction",
@@ -3258,12 +3014,10 @@ def build_home_trend(ref_d: str, days: int = HOME_TREND_DAYS) -> list[dict]:
         if score is None:
             p = dates[i - 1] if i > 0 else None
             m = _fill_metrics_breadth(build_ref_day_metrics(d, p), d)
-            peripheral = (detail or {}).get("peripheral")
             auction = (detail or {}).get("auction")
             grid9 = (detail or {}).get("grid9")
             score = calc_sentiment(
                 m,
-                peripheral=peripheral,
                 auction=auction,
                 grid9=grid9,
             ).get("score")

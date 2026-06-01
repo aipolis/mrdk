@@ -1,18 +1,14 @@
 # -*- coding: utf-8 -*-
-"""构建单日 9+3+6 指标块（用于按日落库）"""
+"""构建单日 9+6 指标块（用于按日落库）"""
 from __future__ import annotations
 
-from datetime import datetime
 from typing import Optional
 
-from config import bj_now
 from fetcher import (
     build_auction_sentiment,
     build_indicator_sections,
     build_longkong_risk_items,
     build_yesterday_sentiment,
-    date_str,
-    fetch_peripheral_sentiment,
 )
 
 
@@ -26,7 +22,7 @@ def build_daily_sections(
     is_ready: bool = True,
     include_live_peripheral: bool = False,
 ) -> dict:
-    """返回 grid9 / peripheral / auction / indicatorSections 四块。"""
+    """返回 grid9 / auction / indicatorSections 三块。"""
     trade_d = (trade_d or "")[:8]
     advice_d = (advice_d or trade_d)[:8]
     prev_metrics = prev_metrics or {}
@@ -43,15 +39,9 @@ def build_daily_sections(
         advice_d=advice_d,
         is_ready=is_ready,
     )
-    today = date_str(bj_now())
-    peripheral = (
-        fetch_peripheral_sentiment()
-        if include_live_peripheral or trade_d == today or advice_d == today
-        else []
-    )
     return {
         "grid9": grid9,
-        "peripheral": peripheral,
+        "peripheral": [],
         "auction": auction,
         "longkongRisk": build_longkong_risk_items(
             trade_d, prev_d, metrics, prev_metrics, advice_d=advice_d
