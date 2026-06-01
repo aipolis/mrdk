@@ -403,7 +403,7 @@ def _zt_df_one_word_subset(df_up: pd.DataFrame) -> Optional[pd.DataFrame]:
     if "首次封板时间" in df_up.columns and "最后封板时间" in df_up.columns:
         first = df_up["首次封板时间"].astype(str).str.replace(":", "", regex=False).str.zfill(6)
         last = df_up["最后封板时间"].astype(str).str.replace(":", "", regex=False).str.zfill(6)
-        mask = (first == last) & (first <= "093000") & (first >= "092500")
+        mask = (first == last) & (first <= "093000") & (first >= "091500")
         return df_up.loc[mask]
     if "开板次数" in df_up.columns:
         try:
@@ -712,7 +712,7 @@ def fetch_peripheral_sentiment() -> list[dict]:
         except Exception:
             pass
     if not a50_done:
-        price, chg = _quote_yahoo(("CN=F", "XIN9.FGI"))
+        price, chg = _quote_yahoo(("CN=F", "XIN9.F", "XIN9.SI"))
         if price is not None:
             _append_index("富时A50指数", round(price, 2), chg or 0.0)
             a50_done = True
@@ -723,7 +723,8 @@ def fetch_peripheral_sentiment() -> list[dict]:
     try:
         df_us = ak.index_us_stock_sina()
         if df_us is not None and not df_us.empty:
-            sp = df_us[df_us["名称"].astype(str).str.contains("标普500", na=False)]
+            name_col_us = "名称" if "名称" in df_us.columns else df_us.columns[0]
+            sp = df_us[df_us[name_col_us].astype(str).str.contains("标普|S&P|SP500|SPX|500", na=False, case=False)]
             if not sp.empty:
                 r0 = sp.iloc[0]
                 chg = _safe_float(r0.get("涨跌幅", 0), 0.0) or 0.0
@@ -734,7 +735,7 @@ def fetch_peripheral_sentiment() -> list[dict]:
     except Exception:
         pass
     if not sp_done:
-        price, chg = _quote_yahoo(("^GSPC",))
+        price, chg = _quote_yahoo(("^GSPC", "SPY", "^SPX"))
         if price is not None:
             _append_index("标普500", round(price, 2), chg or 0.0)
             sp_done = True
@@ -2920,6 +2921,9 @@ def build_longkong_risk_items(
     high_break = max(prev_max_board - ref_max_board, 0) if prev_max_board else 0
 
     premium = _avg_pct_chg(spot_df, ref_codes) if ref_codes else None
+    # 盘后兜底：spot_df 失败时直接用涨停池的涨跌幅列
+    if premium is None and ref_codes and df_ref_up is not None and "涨跌幅" in df_ref_up.columns:
+        premium = _avg_pct_chg(df_ref_up, ref_codes)
     promote_rate = float(metrics.get("promote_rate") or 0)
     multi_fail_rate = round(max(0.0, 100.0 - promote_rate), 1)
 
@@ -3508,17 +3512,31 @@ def _top_board_stock_chg(prev_d: str, ref_d: str) -> Optional[float]:
         if cached is not None:
             chgs.append(float(cached))
             continue
+        got = False
         try:
             df_h = ak.stock_zh_a_hist(
                 symbol=code, period="daily",
-                start_date=ref_d[:8], end_date=ref_d[:8], adjust="qfq",
+                start_date=ref_d[:8], end_date=ref_d[:8], adjust="",
             )
             if df_h is not None and not df_h.empty and "涨跌幅" in df_h.columns:
                 v = float(pd.to_numeric(df_h.iloc[0]["涨跌幅"], errors="coerce"))
-                _cache_set(key, v)
-                chgs.append(v)
+                if not pd.isna(v):
+                    _cache_set(key, v)
+                    chgs.append(v)
+                    got = True
         except Exception:
             pass
+        if not got:
+            # 兜底：跌停池 → -9.9，炸板池 → 3.0（近似）
+            try:
+                dn_codes = _normalize_stock_codes(fetch_limit_down(ref_d))
+                brk_codes = _normalize_stock_codes(fetch_broken_board(ref_d))
+                if code in dn_codes:
+                    chgs.append(-9.9)
+                elif code in brk_codes:
+                    chgs.append(3.0)
+            except Exception:
+                pass
     return round(sum(chgs) / len(chgs), 2) if chgs else None
 
 
