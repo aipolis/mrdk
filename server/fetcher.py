@@ -2817,14 +2817,13 @@ def _recent_zt_big_drop_count(
     spot_df=None,
 ) -> Optional[int]:
     """
-    近3日曾触板（涨停封住 + 炸板）、今日跌停的股票数量。
-    非交易日（advice_d 不是交易日）返回 None → 显示 --。
+    近2日曾涨停或炸板，从当时高点回落超10个百分点的股票数量。
+    high = 涨停/炸板池中的最新价（涨停时最新价即涨停价 = 当日最高价）
+    current = 今日现价（spot_df）；spot_df 缺失时返回 None。
     """
-    # 非交易日无「今日跌停」，返回 None
     advice_d = (advice_d or "")[:8]
     today = date_str(bj_now())
     if advice_d != today:
-        # advice_d 是历史日期，或非当天 → 查是否是真实交易日
         try:
             from intraday import is_trading_day
             from datetime import datetime
@@ -2833,45 +2832,63 @@ def _recent_zt_big_drop_count(
                 return None
         except Exception:
             pass
-    # 近3个交易日的触板代码合集（涨停 + 炸板）
-    recent_zt: set[str] = set()
+
+    # 步骤1：近2日触板股票的参考高价（取涨停/炸板池最新价，即涨停价）
+    stock_highs: dict[str, float] = {}
     for d in [ref_d, prev_d]:
-        if d:
-            recent_zt |= _normalize_stock_codes(fetch_limit_up(d))
-            recent_zt |= _normalize_stock_codes(fetch_broken_board(d))
-    # 第3日：从交易日历往前推
-    dates = get_recent_trade_dates(6)
-    try:
-        ri = dates.index(ref_d)
-        if ri + 2 < len(dates):
-            d3 = dates[ri + 2]
-            recent_zt |= _normalize_stock_codes(fetch_limit_up(d3))
-            recent_zt |= _normalize_stock_codes(fetch_broken_board(d3))
-    except ValueError:
-        pass
-
-    if not recent_zt:
-        return 0
-
-    # 今日跌停代码：优先 spot_df 实时（盘中），否则跌停池
-    today_down: set[str] = set()
-    if spot_df is not None and not spot_df.empty:
-        pct_col = _df_col(spot_df, "涨跌幅")
-        code_col = _df_col(spot_df, "代码")
-        if pct_col and code_col:
-            pcts = pd.to_numeric(spot_df[pct_col], errors="coerce")
-            mask = pcts <= -9.8
-            codes = (
-                spot_df.loc[mask, code_col]
-                .astype(str)
+        if not d:
+            continue
+        for df_pool in [fetch_limit_up(d), fetch_broken_board(d)]:
+            if df_pool is None or df_pool.empty:
+                continue
+            code_col = _df_col(df_pool, "代码")
+            price_col = (
+                _df_col(df_pool, "最高价")
+                or _df_col(df_pool, "最新价")
+                or _df_col(df_pool, "当前价")
+            )
+            if not code_col or not price_col:
+                continue
+            codes_n = (
+                df_pool[code_col].astype(str)
                 .str.replace(r"\D", "", regex=True)
                 .str.zfill(6)
             )
-            today_down = set(codes.tolist())
-    if not today_down:
-        today_down = _normalize_stock_codes(fetch_limit_down(advice_d))
+            prices = pd.to_numeric(df_pool[price_col], errors="coerce")
+            for code, p in zip(codes_n, prices):
+                if not pd.isna(p) and float(p) > 0:
+                    if float(p) > stock_highs.get(code, 0):
+                        stock_highs[code] = float(p)
 
-    return len(recent_zt & today_down)
+    if not stock_highs:
+        return 0
+
+    # 步骤2：今日现价（需要 spot_df）
+    if spot_df is None or spot_df.empty:
+        return None
+
+    code_col_s = _df_col(spot_df, "代码")
+    price_col_s = _df_col(spot_df, "最新价") or _df_col(spot_df, "当前价")
+    if not code_col_s or not price_col_s:
+        return None
+
+    codes_s = (
+        spot_df[code_col_s].astype(str)
+        .str.replace(r"\D", "", regex=True)
+        .str.zfill(6)
+    )
+    prices_s = pd.to_numeric(spot_df[price_col_s], errors="coerce")
+    today_prices = dict(zip(codes_s, prices_s))
+
+    # 步骤3：统计回落超10个百分点的股票数
+    count = 0
+    for code, high in stock_highs.items():
+        curr = today_prices.get(code)
+        if curr is None or pd.isna(curr) or high <= 0:
+            continue
+        if (high - float(curr)) / high * 100 >= 10.0:
+            count += 1
+    return count
 
 
 def _build_risk_placeholder(metrics: dict, prev_metrics: dict) -> list[dict]:
@@ -2983,7 +3000,7 @@ def build_longkong_risk_items(
              str(big_loss) if big_loss is not None else "--",
              "--",
              "down" if big_loss is not None and big_loss > 5 else "flat",
-             "\u8fd13\u65e5\u89e6\u677f\u80a1\u4eca\u65e5\u8dcc\u505c\u5bb6\u6570"),
+             "\u8fd12\u65e5\u89e6\u677f\u80a1\u3001\u9ad8\u70b9\u56de\u843d\u8d8510\u4e2a\u767e\u5206\u70b9\u5bb6\u6570"),
     ]
 
 
