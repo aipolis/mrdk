@@ -156,13 +156,13 @@ def _item_num(item: Optional[dict]) -> Optional[float]:
 # ── 昨日情绪 9 项（连续线性评分）─────────────────────────────
 
 def score_height(max_board: int) -> int:
-    # lo=0（1板平淡）→20  hi=6（6板龙头）→90  mid=3→55
-    return _linear_high(float(max_board or 0), lo=0, hi=6)
+    # lo=0→20  hi=12→90  3板→38(触发) 4板→43(不触发)
+    return _linear_high(float(max_board or 0), lo=0, hi=12)
 
 
 def score_limit_up(count: int) -> int:
-    # lo=0 → 20  hi=80 → 90  mid=40 → 55
-    return _linear_high(float(count or 0), lo=0, hi=80)
+    # lo=14 → 20  hi=140 → 90  boundary≈50只→40
+    return _linear_high(float(count or 0), lo=14, hi=140)
 
 
 def score_seal(rate: float) -> int:
@@ -263,8 +263,8 @@ def score_advance_breadth(adv: int, dec: int) -> int:
     if adv <= 0 or dec <= 0 or total < 500:
         return SCORE_NEUTRAL
     ratio = adv / total * 100  # 转为百分比
-    # lo=34% → 20  hi=66% → 90  mid=50% → 55
-    return _linear_high(ratio, lo=34.0, hi=66.0)
+    # lo=26% → 20  hi=75% → 90  boundary=40%→40
+    return _linear_high(ratio, lo=26.0, hi=75.0)
 
 
 def score_high10(count: int) -> int:
@@ -632,11 +632,11 @@ def _calc_risk_level(reasons: list[str], score: int) -> str:
     - critical（高风险）：4+ 条弱信号或极低分，仓位归零
     """
     n = len(reasons)
-    if score <= 14 or n >= 4:
+    if score <= 30 or n >= 4:
         return "critical"
-    if n >= 3 or score <= 25:
+    if score <= 40 or n >= 3:
         return "warning"
-    if n >= 1 or score <= 35:
+    if score <= 45 or n >= 1:
         return "caution"
     return "none"
 
@@ -824,7 +824,7 @@ def apply_display_longkong(
     _levels = ("none", "caution", "warning", "critical")
     risk_level = _levels[max(_levels.index(baseline_risk), _levels.index(risk_level))]
 
-    empty_warning = baseline_empty or risk_level == "critical" or display_score <= 14
+    empty_warning = baseline_empty or risk_level == "critical" or display_score <= 30
 
     position = int(baseline_sentiment.get("positionPercent") or 0)
     position = _apply_risk_to_position(position, risk_level)
@@ -866,7 +866,7 @@ def strategy_note_for_home(
 
 def position_desc(score: int, empty_warning: bool, risk_level: str = "none") -> str:
     score = int(score or 0)
-    if risk_level == "critical" or (empty_warning and score <= 14):
+    if risk_level == "critical" or (empty_warning and score <= 30):
         return "综合情绪极弱，盘面偏冷"
     if risk_level == "warning" or (empty_warning and score < DISPLAY_LONGKONG_THRESHOLD):
         return "综合情绪走弱，展示分低于50，宜控节奏"
