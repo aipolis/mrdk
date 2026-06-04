@@ -2742,7 +2742,7 @@ def _build_risk_placeholder(metrics: dict, prev_metrics: dict) -> list[dict]:
         ph("multiFailRate", "连板晋级失败率", multi_fail_prev),
         ph("resealRate", "炸板后回封率", reseal_prev),
         ph("limitDownRisk", "跌停家数", str(prev_limit_down) if prev_limit_down is not None else "--"),
-        ph("bigLossCount", "跌幅>7%家数"),
+        ph("bigLossCount", "跌幅>7%"),
     ]
 
 
@@ -2854,7 +2854,7 @@ def build_longkong_risk_items(
         item("multiFailRate", "\u8fde\u677f\u664b\u7ea7\u5931\u8d25\u7387", f"{multi_fail_rate:.0f}%", f"{max(0.0, 100.0 - float(prev_promote or 0)):.0f}%" if prev_promote is not None else "--", _trend(multi_fail_rate, max(0.0, 100.0 - float(prev_promote or 0)) if prev_promote is not None else None, inverse=True), "\u664b\u7ea7\u7387\u7684\u53cd\u5411\u98ce\u9669\u53e3\u5f84"),
         item("resealRate", "\u70b8\u677f\u540e\u56de\u5c01\u7387", f"{reseal_rate:.0f}%", f"{max(0.0, 100.0 - float(prev_break_rate or 0)):.0f}%" if prev_break_rate is not None else "--", _trend(reseal_rate, max(0.0, 100.0 - float(prev_break_rate or 0)) if prev_break_rate is not None else None), "\u6da8\u505c\u5c01\u4f4f\u5360\u6da8\u505c\u52a0\u70b8\u677f\u7684\u6bd4\u4f8b"),
         item("limitDownRisk", "\u8dcc\u505c\u5bb6\u6570", str(limit_down_n), str(prev_limit_down) if prev_limit_down is not None else "--", _trend(limit_down_n, prev_limit_down, inverse=True), "\u6781\u7aef\u4e8f\u94b1\u6548\u5e94\u6e29\u5ea6"),
-        item("bigLossCount", "\u8dcc\u5e45>7%\u5bb6\u6570",
+        item("bigLossCount", "\u8dcc\u5e45>7%",
              str(big_loss) if big_loss is not None else "--",
              "--",
              "down" if big_loss is not None and big_loss > 50 else "flat",

@@ -228,7 +228,7 @@ def _build_fallback_home_payload(ref_d: str, prev_d: Optional[str], advice_d: st
         {"key": "multiFailRate", "label": "连板晋级失败率", "value": "--", "prev": "--", "yesterday": "--", "trend": "flat"},
         {"key": "resealRate", "label": "炸板后回封率", "value": "--", "prev": "--", "yesterday": "--", "trend": "flat"},
         {"key": "limitDownRisk", "label": "跌停家数", "value": "--", "prev": "--", "yesterday": "--", "trend": "flat"},
-        {"key": "bigLossCount", "label": "跌幅>7%家数", "value": "--", "prev": "--", "yesterday": "--", "trend": "flat"},
+        {"key": "bigLossCount", "label": "跌幅>7%", "value": "--", "prev": "--", "yesterday": "--", "trend": "flat"},
     ]
     fallback_sections = [
         {"id": "yesterday", "title": "昨日情绪概览", "meta": "基础参考", "layout": "grid3", "cols": 3, "items": fallback_grid9},
