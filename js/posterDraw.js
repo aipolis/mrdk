@@ -3,7 +3,7 @@
  */
 import { drawSteeringGauge } from './gaugeDraw.js?v=20260531a'
 import { getDisplayLevel, formatHeaderDate, HOME_QUOTE } from './theme.js?v=20260531a'
-import { scoreToLongkongState, LONGKONG_STATE_STEPS, buildRiskCopy } from './longkongState.js?v=20260531a'
+import { scoreToLongkongState, LONGKONG_STATE_STEPS, buildRiskCopy } from './longkongState.js?v=20260604a'
 import { normalizeSections } from './indicators.js?v=20260531a'
 import { drawQrCode } from './qrDraw.js?v=20260531a'
 

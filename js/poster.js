@@ -1,5 +1,5 @@
 import { fetchToday } from './api.js'
-import { renderPosterToCanvas, posterFilename, posterToBlob } from './posterDraw.js?v=20260531a'
+import { renderPosterToCanvas, posterFilename, posterToBlob } from './posterDraw.js?v=20260604a'
 
 const preview = document.getElementById('previewCanvas')
 const statusBar = document.getElementById('statusBar')
