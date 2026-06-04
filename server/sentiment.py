@@ -746,7 +746,7 @@ def longkong_state(
     intraday_sub_scores: Optional[dict] = None,
 ) -> dict:
     """
-    龙空龙短线状态：龙>70 / 较强50–70 / 较弱30–50 / 空<30。
+    龙空龙短线状态：龙>75 / 较强60–75 / 较弱40–60 / 空<40。
     风险等级会压低状态上限：
       critical → 强制为空
       warning  → 最高为较弱（即使分数在较强/龙区间）
@@ -758,13 +758,13 @@ def longkong_state(
     if empty_warning or risk_level == "critical":
         state, label = "empty", "空"
         desc = "风险偏高，宜控节奏"
-    elif score > 70:
+    elif score > 75:
         state, label = "dragon", "龙"
         desc = "接力结构较强"
-    elif score >= 50:
+    elif score >= 60:
         state, label = "repair", "较强"
         desc = "有较强迹象，待确认"
-    elif score >= 30:
+    elif score >= 40:
         state, label = "retreat", "较弱"
         desc = "接力偏弱"
     else:

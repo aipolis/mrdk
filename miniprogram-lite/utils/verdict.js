@@ -94,14 +94,15 @@ function scoreOf(data) {
   return Number(v) || 0
 }
 
-/** 龙 >70 · 空 <30 · 其余为中 */
+/** 龙 >75 · 空 <40 · 其余为中 */
 function calcVerdictFromScore(score) {
-  if (score < 30) return EMPTY
-  if (score > 70) return LONG
+  if (score < 40) return EMPTY
+  if (score > 75) return LONG
   return MID
 }
 
 function calcVerdict(data) {
+  if (data && data.emptyWarning) return EMPTY
   return calcVerdictFromScore(scoreOf(data))
 }
 
