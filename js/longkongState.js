@@ -13,19 +13,19 @@ export const GAUGE_LEVEL_CLASSES = [
   'frenzy', 'climax', 'optimistic', 'neutral', 'caution', 'weak', 'cold',
 ]
 
-/** 龙 >70 · 较强 50–70 · 较弱 30–50 · 空 <30；龙空风险强制为空 */
+/** 龙 >75 · 较强 60–75 · 较弱 40–60 · 空 <40；龙空风险强制为空 */
 export function scoreToLongkongState(score, emptyWarning = false) {
   if (emptyWarning) {
     return { state: 'empty', label: '空', desc: '风险偏高，宜控节奏' }
   }
   const s = Number(score) || 0
-  if (s > 70) {
+  if (s > 75) {
     return { state: 'dragon', label: '龙', desc: '接力结构较强' }
   }
-  if (s >= 50) {
+  if (s >= 60) {
     return { state: 'repair', label: '较强', desc: '有较强迹象，待确认' }
   }
-  if (s >= 30) {
+  if (s >= 40) {
     return { state: 'retreat', label: '较弱', desc: '接力偏弱' }
   }
   return { state: 'empty', label: '空', desc: '风险偏高，宜控节奏' }
