@@ -669,7 +669,7 @@ function inferValueGood(item) {
   if (key === 'multiFailRate') return n <= 60
   if (key === 'resealRate') return n >= 70
   if (key === 'limitDownRisk') return n <= 10
-  if (key === 'bigLossCount') return n <= 20
+  if (key === 'bigLossCount') return n <= 50
   if (key === 'oneWord' || key === 'auctionOneWord' || key === 'high10Live') return n > 0
   if (key === 'volume' || key === 'marketVolumeLive' || key === 'auctionVolume') return n > 0
   return null
