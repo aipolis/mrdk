@@ -2881,13 +2881,28 @@ def _section_items_complete(items: list, required_keys: tuple[str, ...]) -> bool
     return bool(by_key)
 
 
+_LONGKONG_EXPECTED_LABELS = {
+    "bigLossCount": "跌幅>7%",
+}
+
+
+def _longkong_labels_valid(items: list) -> bool:
+    """校验关键 label 是否与当前版本一致，避免返回旧缓存的错误标签。"""
+    by_key = {it.get("key"): it for it in (items or []) if it and it.get("key")}
+    for key, expected in _LONGKONG_EXPECTED_LABELS.items():
+        item = by_key.get(key)
+        if item and item.get("label") != expected:
+            return False
+    return True
+
+
 def _longkong_from_detail(detail: Optional[dict]) -> list:
     if not detail:
         return []
     for sec in detail.get("indicatorSections") or []:
         if sec.get("id") == "longkongRisk":
             items = sec.get("items") or []
-            if _section_items_complete(items, LONGKONG_RISK_KEYS):
+            if _section_items_complete(items, LONGKONG_RISK_KEYS) and _longkong_labels_valid(items):
                 return items
     return []
 
