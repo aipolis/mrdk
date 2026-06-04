@@ -2629,6 +2629,7 @@ def _recent_zt_big_drop_count(
     prev_d: Optional[str],
     advice_d: str,
     spot_df=None,
+    _fallback_pool_dfs: Optional[list] = None,
 ) -> Optional[int]:
     """
     近2日曾涨停或炸板，从当时高点回落超10个百分点的股票数量。
@@ -2679,7 +2680,32 @@ def _recent_zt_big_drop_count(
 
     # 步骤2：今日现价（需要 spot_df）
     if spot_df is None or spot_df.empty:
-        return None
+        # 盘后兜底：用已加载的涨停/炸板池涨跌幅反推回落比例
+        # 近似公式：drop = (limit_pct - 涨跌幅) / (100 + limit_pct)
+        # 主板 10%：涨跌幅 <= -1% 时 drop >= 10%
+        # 科创/创业 20%：涨跌幅 <= +8% 时 drop >= 10%
+        chg_by_code: dict[str, float] = {}
+        for df_p in (_fallback_pool_dfs or []):
+            if df_p is None or df_p.empty or "涨跌幅" not in df_p.columns:
+                continue
+            col = _df_col(df_p, "代码")
+            if not col:
+                continue
+            norm = df_p[col].astype(str).str.replace(r"\D", "", regex=True).str.zfill(6)
+            for c, v in zip(norm, pd.to_numeric(df_p["涨跌幅"], errors="coerce")):
+                if not pd.isna(v) and c not in chg_by_code:
+                    chg_by_code[c] = float(v)
+        if not chg_by_code:
+            return None
+        count = 0
+        for code in stock_highs:
+            chg = chg_by_code.get(code)
+            if chg is None:
+                continue
+            lp = 20.0 if str(code).startswith(("688", "300")) else 10.0
+            if (lp - chg) / (100.0 + lp) >= 0.10:
+                count += 1
+        return count
 
     code_col_s = _df_col(spot_df, "代码")
     price_col_s = _df_col(spot_df, "最新价") or _df_col(spot_df, "当前价")
@@ -2798,7 +2824,10 @@ def build_longkong_risk_items(
 
     # \u5927\u9762\u5bb6\u6570\uff1a\u8fd13\u65e5\u66fe\u6da8\u505c\u3001\u4eca\u65e5\u8dcc\u505c\u7684\u80a1\u7968\u6570\u91cf
     # \u6bd4\u300c\u5168\u5e02\u8dcc\u5e45\u2264-7%\u300d\u66f4\u7cbe\u51c6 \u2014\u2014 \u4e13\u6307\u70ed\u94b1\u9ad8\u4f4d\u5d29\u76d8
-    big_loss = _recent_zt_big_drop_count(ref_d, prev_d, advice_d or ref_d, spot_df)
+    big_loss = _recent_zt_big_drop_count(
+        ref_d, prev_d, advice_d or ref_d, spot_df,
+        _fallback_pool_dfs=[df_ref_up, df_ref_broken],
+    )
 
     prev_limit_down = prev_metrics.get("limit_down_count")
     prev_break_rate = prev_metrics.get("break_rate")
