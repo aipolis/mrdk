@@ -3322,6 +3322,20 @@ def _top_board_stock_chg(prev_d: str, ref_d: str) -> Optional[float]:
     return round(sum(chgs) / len(chgs), 2) if chgs else None
 
 
+def _get_prev_trade_d(d: str) -> Optional[str]:
+    """返回 d 的上一个交易日（8位字符串），利用缓存的交易日列表。"""
+    d8 = (d or "")[:8]
+    if not d8:
+        return None
+    dates = get_recent_trade_dates(35)
+    try:
+        idx = dates.index(d8)
+        return dates[idx - 1] if idx > 0 else None
+    except ValueError:
+        return None
+
+
+
 def _high_board_promote(prev_d: str, curr_d: str, min_boards: int = 3) -> Optional[tuple[int, int]]:
     """
     高位股（≥min_boards 连板）的晋级情况：返回 (continued, total)。
@@ -3735,6 +3749,7 @@ def load_ref_day_snapshot(ref_d: str, prev_d: Optional[str] = None) -> tuple[dic
     """
     ref_d = (ref_d or "")[:8]
     prev_d = (prev_d or "")[:8] if prev_d else None
+    prev_prev_d = _get_prev_trade_d(prev_d) if prev_d else None
 
     try:
         from history_store import fetch_daily_detail
@@ -3758,7 +3773,7 @@ def load_ref_day_snapshot(ref_d: str, prev_d: Optional[str] = None) -> tuple[dic
             _fill_metrics_breadth(build_ref_day_metrics(ref_d, prev_d), ref_d), ref_d
         )
         prev_metrics = (
-            _fill_metrics_breadth(build_ref_day_metrics(prev_d, None), prev_d)
+            _fill_metrics_breadth(build_ref_day_metrics(prev_d, prev_prev_d), prev_d)
             if prev_d
             else None
         )
@@ -3784,7 +3799,7 @@ def load_ref_day_snapshot(ref_d: str, prev_d: Optional[str] = None) -> tuple[dic
         _fill_metrics_breadth(build_ref_day_metrics(ref_d, prev_d), ref_d), ref_d
     )
     prev_metrics = (
-        _fill_metrics_breadth(build_ref_day_metrics(prev_d, None), prev_d)
+        _fill_metrics_breadth(build_ref_day_metrics(prev_d, prev_prev_d), prev_d)
         if prev_d
         else None
     )

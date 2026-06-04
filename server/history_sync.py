@@ -185,7 +185,11 @@ def persist_trading_day_snapshot(*, freeze: bool = False) -> dict:
     if not today:
         return {"ok": False, "skipped": True, "reason": "not_trading_day"}
 
-    prev_metrics = _load_or_build_ref_metrics(prev_d, None, force=True) if prev_d else None
+    dates = get_recent_trade_dates(5)
+    prev_idx = dates.index(prev_d) if prev_d and prev_d in dates else -1
+    prev_prev_d = dates[prev_idx - 1] if prev_idx > 0 else None
+
+    prev_metrics = _load_or_build_ref_metrics(prev_d, prev_prev_d, force=True) if prev_d else None
     metrics = _load_or_build_ref_metrics(today, prev_d, force=True)
     phase = "1800" if freeze else "1505"
     metrics = dict(metrics)
@@ -345,7 +349,13 @@ def persist_day(
         metrics["snapshot_phase"] = phase or ("1800" if freeze else "1505")
         metrics["snapshot_frozen"] = freeze
         metrics["snapshot_at"] = bj_now().isoformat(timespec="seconds")
-    prev_metrics = _load_or_build_ref_metrics(prev_d, None, force=force) if prev_d else None
+    if prev_d:
+        dates = get_recent_trade_dates(35)
+        prev_idx = next((i for i, d in enumerate(dates) if d == prev_d), -1)
+        prev_prev_d = dates[prev_idx - 1] if prev_idx > 0 else None
+        prev_metrics = _load_or_build_ref_metrics(prev_d, prev_prev_d, force=force)
+    else:
+        prev_metrics = None
     if sections is None:
         today = date_str(bj_now())
         sections = build_daily_sections(
