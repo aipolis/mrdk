@@ -1,6 +1,26 @@
 const { SUBSCRIBE_TEMPLATES } = require('./config')
 const api = require('./api')
 
+const STORAGE_KEY = 'subscribe_sentimentDaily'
+
+function todayStr() {
+  const d = new Date()
+  return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`
+}
+
+/** 今天是否已授权（一次性订阅：每天重置） */
+function isSubscribedToday() {
+  try {
+    return wx.getStorageSync(STORAGE_KEY) === todayStr()
+  } catch (e) { return false }
+}
+
+function setSubscribedToday() {
+  try {
+    wx.setStorageSync(STORAGE_KEY, todayStr())
+  } catch (e) {}
+}
+
 function registerOpenid() {
   wx.login({
     success: ({ code }) => {
@@ -26,9 +46,9 @@ function requestDailySubscribe() {
       success(res) {
         const ok = res[tmplId] === 'accept'
         if (ok) {
-          wx.setStorageSync('subscribe_sentimentDaily', true)
+          setSubscribedToday()
           registerOpenid()
-          wx.showToast({ title: '已开启提醒，避免淋雨', icon: 'success' })
+          wx.showToast({ title: '已预约今日提醒', icon: 'success' })
         } else if (res[tmplId] === 'reject') {
           wx.showToast({ title: '已取消', icon: 'none' })
         }
@@ -42,4 +62,4 @@ function requestDailySubscribe() {
   })
 }
 
-module.exports = { requestDailySubscribe }
+module.exports = { requestDailySubscribe, isSubscribedToday }

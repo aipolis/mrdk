@@ -1,5 +1,8 @@
 {
-  "navigationBarTitleText": "历史",
-  "enablePullDownRefresh": true,
-  "backgroundTextStyle": "light"
+  "navigationBarTitleText": "走势",
+  "navigationBarBackgroundColor": "#F0F9FF",
+  "navigationBarTextStyle": "black",
+  "backgroundColor": "#F0F9FF",
+  "backgroundTextStyle": "dark",
+  "enablePullDownRefresh": true
 }

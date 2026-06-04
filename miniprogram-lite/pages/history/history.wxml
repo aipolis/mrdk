@@ -122,8 +122,8 @@
     <text class="state-text">暂无记录</text>
   </view>
 
-  <!-- 列表 -->
-  <view wx:else class="list-card">
+  <!-- 列表（仅走势图模式下显示） -->
+  <view wx:elif="{{viewMode === 'chart'}}" class="list-card">
     <view
       wx:for="{{list}}"
       wx:key="date"
@@ -135,4 +135,5 @@
       <text class="history-line" style="color: {{item.color}};">{{item.weatherLine}}</text>
     </view>
   </view>
+
 </view>

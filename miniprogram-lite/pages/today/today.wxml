@@ -45,7 +45,7 @@
       <!-- 今日解读 -->
       <view class="insight-row" wx:if="{{insight}}">
         <text class="insight-label">今日解读</text>
-        <text class="insight-text" selectable>{{insight}}</text>
+        <text class="insight-text" user-select="all">{{insight}}</text>
       </view>
 
       <view class="hero-pills">
@@ -128,7 +128,7 @@
         <text class="quote-card-tag">今日精选</text>
       </view>
       <view class="quote-box quote-box--blue">
-        <text class="quote-text" selectable>{{dailyQuote.text}}</text>
+        <text class="quote-text" user-select="all">{{dailyQuote.text}}</text>
         <text class="quote-author">—— {{dailyQuote.author}}</text>
       </view>
     </view>
@@ -136,23 +136,22 @@
     <!-- 订阅 / 已订阅后改为分享 -->
     <view class="subscribe-wrap">
       <!-- 未订阅：订阅按钮 -->
-      <button
-        wx:if="{{!subscribed}}"
-        class="subscribe-btn"
-        bindtap="onSubscribe"
-      >
-        <text class="subscribe-text">订阅每日9:10天气提醒</text>
-        <view class="subscribe-bell">
-          <image class="subscribe-icon" src="/images/icon-bell.png" mode="aspectFit"/>
-          <text class="subscribe-bell-text">立即订阅</text>
-        </view>
-      </button>
+      <block wx:if="{{!subscribed}}">
+        <button class="subscribe-btn" bindtap="onSubscribe">
+          <text class="subscribe-text">预约明日 9:10 天气提醒</text>
+          <view class="subscribe-bell">
+            <image class="subscribe-icon" src="/images/icon-bell.png" mode="aspectFit"/>
+            <text class="subscribe-bell-text">立即预约</text>
+          </view>
+        </button>
+        <text class="subscribe-hint">受品类限制，每次预约仅次日有效；如需持续提醒，建议每晚睡前订阅一次</text>
+      </block>
 
       <!-- 已订阅：提示 + 分享 -->
       <view wx:else class="subscribed-row">
         <view class="subscribed-done">
           <text class="subscribed-check">✓</text>
-          <text class="subscribed-label">已开启每日提醒</text>
+          <text class="subscribed-label">明日提醒已预约</text>
         </view>
         <button class="share-btn" open-type="share">
           <text class="share-btn-text">分享给朋友</text>

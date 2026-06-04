@@ -1,6 +1,6 @@
 {
   "libVersion": "3.16.1",
-  "projectname": "%E6%98%8E%E6%97%A5%E5%BD%93%E7%A9%BA",
+  "projectname": "mrdk",
   "setting": {
     "urlCheck": false,
     "coverView": true,

@@ -1,6 +1,6 @@
-const { fetchToday, fetchTrend, loadCachedToday } = require('../../utils/store')
+const { fetchToday, fetchTrend, loadCachedToday, loadCachedTrend, saveCachedTrend } = require('../../utils/store')
 const { getScoreColor } = require('../../utils/scoreColor')
-const { requestDailySubscribe } = require('../../utils/subscribe')
+const { requestDailySubscribe, isSubscribedToday } = require('../../utils/subscribe')
 const { APP_TITLE, APP_SUBTITLE } = require('../../utils/config')
 const { formatHeaderDate, formatUpdateBadge, LONG, MID, EMPTY, getDailyQuote, calcStreak, recordTodayUsage } = require('../../utils/verdict')
 const { formatErrMsg } = require('../../utils/errMsg')
@@ -44,20 +44,27 @@ Page({
   onLoad() {
     this.setData({
       headerDate: formatHeaderDate(),
-      subscribed: !!wx.getStorageSync('subscribe_sentimentDaily'),
+      subscribed: isSubscribedToday(),
       dailyQuote: getDailyQuote(),
     })
     const cached = loadCachedToday()
     if (cached) this.applyData(cached)
+    const cachedTrend = loadCachedTrend()
+    if (cachedTrend && cachedTrend.length) {
+      this.setData({ trendBars: cachedTrend })
+      this._loadStreak(cachedTrend)
+    }
     this.loadData().catch(() => {})
   },
 
   onShow() {
     this.setData({
-      subscribed: !!wx.getStorageSync('subscribe_sentimentDaily'),
+      subscribed: isSubscribedToday(),
     })
     this._refreshDisplayMeta()
-    this._startPolling()
+    if (!this._pollTimer && !this._pollInterval) {
+      this._startPolling()
+    }
   },
 
   onHide() {
@@ -162,6 +169,7 @@ Page({
         fetchTrend(10, data.raw).then(bars => {
           this.setData({ trendBars: bars })
           this._loadStreak(bars)
+          saveCachedTrend(bars)
         }).catch(() => {})
       })
       .catch(err => {
@@ -191,7 +199,7 @@ Page({
 
   onSubscribe() {
     if (this.data.subscribed) {
-      wx.showToast({ title: '已开启每日提醒', icon: 'none' })
+      wx.showToast({ title: '明日提醒已预约', icon: 'none' })
       return
     }
     requestDailySubscribe().then(ok => {
@@ -205,13 +213,6 @@ Page({
       title: `明日当空 · ${line}`,
       path: '/pages/today/today',
     }
-  },
-
-  onShareFriend() {
-    wx.shareAppMessage({
-      title: `明日当空 · ${this.data.weatherLine || '今日天气'}`,
-      path: '/pages/today/today',
-    })
   },
 
   onBarTap(e) {

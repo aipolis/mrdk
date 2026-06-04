@@ -74,16 +74,19 @@
       <view class="stats-item">
         <text class="stats-num stats-num--long">{{usageLong}}</text>
         <text class="stats-desc">☀ 晴天</text>
+        <text class="stats-pct stats-pct--long" wx:if="{{usageDays > 0}}">{{usageLongPct}}%</text>
       </view>
       <view class="stats-divider"/>
       <view class="stats-item">
         <text class="stats-num stats-num--mid">{{usageMid}}</text>
         <text class="stats-desc">⛅ 多云</text>
+        <text class="stats-pct stats-pct--mid" wx:if="{{usageDays > 0}}">{{usageMidPct}}%</text>
       </view>
       <view class="stats-divider"/>
       <view class="stats-item">
         <text class="stats-num stats-num--empty">{{usageEmpty}}</text>
         <text class="stats-desc">🌧 雨天</text>
+        <text class="stats-pct stats-pct--empty" wx:if="{{usageDays > 0}}">{{usageEmptyPct}}%</text>
       </view>
     </view>
   </view>

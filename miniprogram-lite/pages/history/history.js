@@ -1,4 +1,4 @@
-const { fetchHistory } = require('../../utils/store')
+const { fetchHistory, loadCachedHistory } = require('../../utils/store')
 const { formatErrMsg } = require('../../utils/errMsg')
 const { formatHeaderDate, calcStreak } = require('../../utils/verdict')
 const { getScoreColor } = require('../../utils/scoreColor')
@@ -47,17 +47,16 @@ function buildCalendar(list, year, month) {
 
 function buildTrendBars(fullList, days) {
   const slice = (fullList || []).slice(0, days).slice().reverse()
-  const maxScore = Math.max(...slice.map(i => Number(i.score) || 0), 1)
   return slice.map(item => {
     const score = Number(item.score) || 0
-    const key = score >= 70 ? 'long' : score >= 30 ? 'mid' : 'empty'
-    const color = key === 'long' ? '#e63838' : key === 'mid' ? '#f59e0b' : '#91d1ed'
+    const key = score > 70 ? 'long' : score < 30 ? 'empty' : 'mid'
+    const color = getScoreColor(score)
     const dateStr = String(item.date || '')
     return {
       date: item.date,
       fullDate: item.date,
       score,
-      heightPct: Math.round((score / maxScore) * 100),
+      heightPct: Math.max(8, Math.min(100, score)),
       color,
       verdictKey: key,
       verdict: { key, emoji: key === 'long' ? '🔴' : key === 'mid' ? '🟡' : '🔵' },
@@ -91,7 +90,7 @@ Page({
     periods: PERIODS,
     summary: null,
     streakText: '',
-    viewMode: 'calendar',   // 'chart' | 'calendar'
+    viewMode: 'calendar',
     weekdays: WEEKDAYS,
     calYear: 0,
     calMonth: 0,
@@ -102,6 +101,11 @@ Page({
   onLoad() {
     const now = new Date()
     this.setData({ calYear: now.getFullYear(), calMonth: now.getMonth() + 1 })
+    const cached = loadCachedHistory()
+    if (cached && cached.length) {
+      this._applyList(cached)
+      this.setData({ loading: false })
+    }
     this.loadData().catch(() => {})
   },
 
@@ -109,46 +113,44 @@ Page({
     this.loadData(true).finally(() => wx.stopPullDownRefresh())
   },
 
+  _applyList(list) {
+    this._fullList = list || []
+    const summary = calcSummary(this._fullList)
+    const streak = calcStreak(this._fullList)
+    const { calYear, calMonth } = this.data
+    const listWithColor = this._fullList.map(item => {
+      const key = item.verdict && item.verdict.key
+      const color = getScoreColor(item.score > 0 ? item.score : 0)
+      return {
+        date: item.date,
+        fullDate: item.fullDate,
+        score: item.score,
+        verdictKey: key,
+        emoji: item.verdict && item.verdict.emoji,
+        weatherLine: item.weatherLine,
+        color,
+      }
+    })
+    this.setData({
+      list: listWithColor,
+      trendBars: buildTrendBars(this._fullList, this.data.trendDays),
+      summary,
+      streakText: streak ? `已连续 ${streak.count} 天${streak.label}` : '',
+      calCells: buildCalendar(this._fullList, calYear, calMonth),
+      calTitle: `${calYear}年${calMonth}月`,
+    })
+  },
+
   loadData(force) {
     if (!force && this._loading) return this._loading
     this.setData({ loading: true, error: '' })
     this._loading = fetchHistory(30)
       .then(list => {
-        this._fullList = list || []
-        const summary = calcSummary(this._fullList)
-        const streak = calcStreak(this._fullList)
-        const { calYear, calMonth } = this.data
-        const VERDICT_COLOR = { long: '#cf1322', mid: '#faad14', empty: '#38bdf8' }
-        const listWithColor = this._fullList.map(item => {
-          const key = item.verdict && item.verdict.key
-          const color = item.score > 0
-            ? getScoreColor(item.score)
-            : (VERDICT_COLOR[key] || '#94a3b8')
-          return {
-            date: item.date,
-            fullDate: item.fullDate,
-            score: item.score,
-            verdictKey: key,
-            emoji: item.verdict && item.verdict.emoji,
-            weatherLine: item.weatherLine,
-            color,
-          }
-        })
-        this.setData({
-          loading: false,
-          list: listWithColor,
-          trendBars: buildTrendBars(this._fullList, this.data.trendDays),
-          summary,
-          streakText: streak ? `已连续 ${streak.count} 天${streak.label}` : '',
-          calCells: buildCalendar(this._fullList, calYear, calMonth),
-          calTitle: `${calYear}年${calMonth}月`,
-        })
+        this._applyList(list)
+        this.setData({ loading: false })
       })
       .catch(err => {
-        this.setData({
-          loading: false,
-          error: formatErrMsg(err, '加载失败'),
-        })
+        this.setData({ loading: false, error: formatErrMsg(err, '加载失败') })
       })
       .finally(() => {
         this._loading = null
@@ -182,7 +184,7 @@ Page({
   onCalNext() {
     let { calYear, calMonth } = this.data
     const now = new Date()
-    if (calYear >= now.getFullYear() && calMonth >= now.getMonth() + 1) return
+    if (calYear > now.getFullYear() || (calYear === now.getFullYear() && calMonth >= now.getMonth() + 1)) return
     calMonth++
     if (calMonth > 12) { calMonth = 1; calYear++ }
     const cells = buildCalendar(this._fullList || [], calYear, calMonth)

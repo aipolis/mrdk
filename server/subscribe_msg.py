@@ -230,6 +230,7 @@ async def broadcast_daily_sentiment(
     users = data.get("users", [])
     results = {"ok": 0, "fail": 0, "skipped": 0, "details": []}
 
+    expired_openids = set()
     for u in users:
         openid = u.get("openid")
         types = u.get("types", [])
@@ -243,14 +244,24 @@ async def broadcast_daily_sentiment(
             continue
         try:
             res = await send_subscribe_message(openid, msg["wxData"])
-            if res.get("errcode") == 0:
+            errcode = res.get("errcode")
+            if errcode == 0:
                 results["ok"] += 1
+            elif errcode == 43101:
+                # 用户未授权或一次性授权已消耗，移出推送列表
+                expired_openids.add(openid)
+                results["skipped"] += 1
             else:
                 results["fail"] += 1
                 results["details"].append({"openid": openid[:8] + "…", "err": res})
         except Exception as e:
             results["fail"] += 1
             results["details"].append({"openid": openid[:8] + "…", "err": str(e)})
+
+    if expired_openids:
+        data["users"] = [u for u in users if u.get("openid") not in expired_openids]
+        _save_subscribers(data)
+        log.info("removed %d expired subscribers", len(expired_openids))
 
     results["preview"] = {
         "date": msg["date"],

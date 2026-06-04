@@ -20,7 +20,8 @@ let _isDevtools = null
 function isDevtoolsEnv() {
   if (_isDevtools != null) return _isDevtools
   try {
-    _isDevtools = wx.getSystemInfoSync().platform === 'devtools'
+    const info = wx.getDeviceInfo ? wx.getDeviceInfo() : wx.getSystemInfoSync()
+    _isDevtools = info.platform === 'devtools'
   } catch (e) {
     _isDevtools = false
   }

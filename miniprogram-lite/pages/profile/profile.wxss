@@ -280,6 +280,15 @@
 .stats-num--mid   { color: #f5a60a; }
 .stats-num--empty { color: #0284c7; }
 
+.stats-pct {
+  font-size: 20rpx;
+  font-weight: 500;
+  line-height: 1;
+}
+.stats-pct--long  { color: #e63838; opacity: 0.6; }
+.stats-pct--mid   { color: #f5a60a; opacity: 0.6; }
+.stats-pct--empty { color: #0284c7; opacity: 0.6; }
+
 .stats-desc {
   font-size: 22rpx;
   color: #64748b;

@@ -1,4 +1,4 @@
-const { requestDailySubscribe } = require('../../utils/subscribe')
+const { requestDailySubscribe, isSubscribedToday } = require('../../utils/subscribe')
 const {
   getDisplayProfile,
   saveProfile,
@@ -27,24 +27,39 @@ Page({
     usageLong: 0,
     usageMid: 0,
     usageEmpty: 0,
+    usageLongPct: 0,
+    usageMidPct: 0,
+    usageEmptyPct: 0,
     appVersion: APP_VERSION,
   },
 
   onShow() {
     this.loadProfile()
     this.setData({
-      pushEnabled: !!wx.getStorageSync('subscribe_sentimentDaily'),
+      pushEnabled: isSubscribedToday(),
     })
     this._loadUsage()
   },
 
+  onUnload() {
+    clearTimeout(this._nickAutoLoginTimer)
+  },
+
   _loadUsage() {
     const stats = loadUsageStats()
+    const longN = stats.long || 0
+    const midN = stats.mid || 0
+    const emptyN = stats.empty || 0
+    const total = longN + midN + emptyN
+    const pct = n => total > 0 ? Math.round(n / total * 100) : 0
     this.setData({
       usageDays: stats.days || 0,
-      usageLong: stats.long || 0,
-      usageMid: stats.mid || 0,
-      usageEmpty: stats.empty || 0,
+      usageLong: longN,
+      usageMid: midN,
+      usageEmpty: emptyN,
+      usageLongPct: pct(longN),
+      usageMidPct: pct(midN),
+      usageEmptyPct: pct(emptyN),
     })
   },
 
@@ -187,6 +202,7 @@ Page({
     if (!on) {
       wx.removeStorageSync('subscribe_sentimentDaily')
       this.setData({ pushEnabled: false })
+
       syncPrefsFromApp()
       if (this.data.loggedIn) refreshUserSession()
       return
