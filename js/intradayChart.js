@@ -18,6 +18,15 @@ function scoreToColor(score) {
   return '#6b7280'                     // gray – empty
 }
 
+/** hex(#rrggbb) → rgba，用于半透明光晕 */
+function hexToRgba(hex, alpha) {
+  const h = String(hex).replace('#', '')
+  const r = parseInt(h.slice(0, 2), 16)
+  const g = parseInt(h.slice(2, 4), 16)
+  const b = parseInt(h.slice(4, 6), 16)
+  return `rgba(${r},${g},${b},${alpha})`
+}
+
 function bandColor(score) {
   if (score >= 60) return 'rgba(248,113,113,0.07)'
   if (score >= 50) return 'rgba(251,191,36,0.07)'
@@ -125,7 +134,7 @@ export function drawIntradayChart(canvas, series) {
   ctx.fill()
   ctx.beginPath()
   ctx.arc(lx, ly, 6, 0, Math.PI * 2)
-  ctx.strokeStyle = scoreToColor(last.score).replace(')', ',0.35)').replace('rgb', 'rgba')
+  ctx.strokeStyle = hexToRgba(scoreToColor(last.score), 0.35)
   ctx.lineWidth = 1
   ctx.stroke()
 }

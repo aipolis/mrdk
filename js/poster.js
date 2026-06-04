@@ -1,5 +1,5 @@
 import { fetchToday } from './api.js'
-import { renderPosterToCanvas, posterFilename, posterToBlob } from './posterDraw.js?v=20260604a'
+import { renderPosterToCanvas, posterFilename, posterToBlob } from './posterDraw.js?v=20260604c'
 
 const preview = document.getElementById('previewCanvas')
 const statusBar = document.getElementById('statusBar')
@@ -68,7 +68,7 @@ async function loadAndDraw() {
         renderPosterToCanvas(latestData, preview)
         previewWrap?.classList.remove('loading')
         const score = latestData.displayScore != null ? latestData.displayScore : latestData.score
-        setStatus(`已生成 · 情绪分 ${score} · 可下载 PNG`, 'ok')
+        setStatus(`已生成 · 情绪分 ${score} · 可下载 JPG`, 'ok')
         if (downloadBtn) downloadBtn.disabled = false
         if (shareBtn) shareBtn.disabled = false
         // 预览完成后立即后台生成 blob，用户点分享时直接取缓存

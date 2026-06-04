@@ -1,1 +1,10 @@
 node_modules/
+
+# 本地预览 / 调试产物
+package.json
+package-lock.json
+preview-*.log
+preview-*.err.log
+preview-*.out.log
+debug_*.png
+*_fix.png

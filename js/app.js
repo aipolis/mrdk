@@ -9,9 +9,9 @@ import {
   setGaugeLevelClass,
   normalizeRiskReason,
   buildRiskCopy,
-} from './longkongState.js?v=20260601c'
+} from './longkongState.js?v=20260604c'
 import { fetchToday, fetchHistory, fetchDay, fetchIntradaySeries } from './api.js?v=20260529i'
-import { drawIntradayChart } from './intradayChart.js?v=20260601a'
+import { drawIntradayChart } from './intradayChart.js?v=20260604c'
 import { createTrendController } from './trendDraw.js?v=20260529i'
 import { createGaugeController, IDLE_MIN_MS, SKIP_ANIM_MS } from './gaugeAnim.js?v=20260529m'
 import { getHomeCache, saveHomeCache, isSameHomeSnapshot } from './homeCache.js?v=20260529m'
