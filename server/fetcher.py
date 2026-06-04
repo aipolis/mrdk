@@ -2721,12 +2721,32 @@ def _build_risk_placeholder(metrics: dict, prev_metrics: dict) -> list[dict]:
     reseal_prev = f"{max(0.0, 100.0-float(prev_break_rate or 0)):.0f}%" if prev_break_rate is not None else "--"
     return [
         ph("highBreakFeedback", "连板最高标涨幅", f"{prev_max_board}板" if prev_max_board else "--"),
-        ph("limitUpPremium", "昨日涨停溢价"),
+        ph("limitUpPremium", "昨日涨停溢价", _prev_limit_up_premium(str(prev_metrics.get("date") or "").replace("-", "")[:8]) or "--"),
         ph("multiFailRate", "连板晋级失败率", multi_fail_prev),
         ph("resealRate", "炸板后回封率", reseal_prev),
         ph("limitDownRisk", "跌停家数", str(prev_limit_down) if prev_limit_down is not None else "--"),
         ph("bigLossCount", "大面家数"),
     ]
+
+
+def _prev_limit_up_premium(prev_d: Optional[str]) -> Optional[str]:
+    """从 MySQL 读取 prev_d 当天存储的 limitUpPremium.value，作为昨日对比值。"""
+    if not prev_d:
+        return None
+    try:
+        from history_store import fetch_daily_detail
+    except Exception:
+        return None
+    detail = fetch_daily_detail(prev_d)
+    if not detail:
+        return None
+    for sec in (detail.get("indicatorSections") or []):
+        if sec.get("id") == "longkongRisk":
+            for it in (sec.get("items") or []):
+                if it.get("key") == "limitUpPremium":
+                    v = str(it.get("value") or "").strip()
+                    return v if v and v != "--" else None
+    return None
 
 
 def build_longkong_risk_items(
@@ -2806,7 +2826,7 @@ def build_longkong_risk_items(
              f"{prev_max_board}\u677f" if prev_max_board else "--",
              top_chg_trend,
              "\u6628\u65e5\u6700\u9ad8\u8fde\u677f\u80a1\u4eca\u65e5\u6da8\u5e45\uff1a\u7eed\u677f+10%\u4e3a\u5f3a\uff0c\u8dcc\u7eff\u4e3a\u9ad8\u4f4d\u5927\u9762\u4fe1\u53f7"),
-        item("limitUpPremium", "\u6628\u65e5\u6da8\u505c\u6ea2\u4ef7", f"{float(premium):+.2f}%" if premium is not None else "--", "--", "up" if premium is not None and float(premium) >= 0 else "down" if premium is not None else "flat", "\u6628\u65e5\u6da8\u505c\u6c60\u4eca\u65e5\u5e73\u5747\u8868\u73b0"),
+        item("limitUpPremium", "\u6628\u65e5\u6da8\u505c\u6ea2\u4ef7", f"{float(premium):+.2f}%" if premium is not None else "--", _prev_limit_up_premium(prev_d) or "--", "up" if premium is not None and float(premium) >= 0 else "down" if premium is not None else "flat", "\u6628\u65e5\u6da8\u505c\u6c60\u4eca\u65e5\u5e73\u5747\u8868\u73b0"),
         item("multiFailRate", "\u8fde\u677f\u664b\u7ea7\u5931\u8d25\u7387", f"{multi_fail_rate:.0f}%", f"{max(0.0, 100.0 - float(prev_promote or 0)):.0f}%" if prev_promote is not None else "--", _trend(multi_fail_rate, max(0.0, 100.0 - float(prev_promote or 0)) if prev_promote is not None else None, inverse=True), "\u664b\u7ea7\u7387\u7684\u53cd\u5411\u98ce\u9669\u53e3\u5f84"),
         item("resealRate", "\u70b8\u677f\u540e\u56de\u5c01\u7387", f"{reseal_rate:.0f}%", f"{max(0.0, 100.0 - float(prev_break_rate or 0)):.0f}%" if prev_break_rate is not None else "--", _trend(reseal_rate, max(0.0, 100.0 - float(prev_break_rate or 0)) if prev_break_rate is not None else None), "\u6da8\u505c\u5c01\u4f4f\u5360\u6da8\u505c\u52a0\u70b8\u677f\u7684\u6bd4\u4f8b"),
         item("limitDownRisk", "\u8dcc\u505c\u5bb6\u6570", str(limit_down_n), str(prev_limit_down) if prev_limit_down is not None else "--", _trend(limit_down_n, prev_limit_down, inverse=True), "\u6781\u7aef\u4e8f\u94b1\u6548\u5e94\u6e29\u5ea6"),
