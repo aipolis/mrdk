@@ -2624,6 +2624,17 @@ def _pool_codes_all(df_up: pd.DataFrame) -> list[str]:
     return _normalize_code_list(df_up[col].tolist())
 
 
+def _big_drop_count(spot_df, threshold: float = -7.0) -> Optional[int]:
+    """全市场涨跌幅 < threshold 的股票数量（默认 -7%）。"""
+    if spot_df is None or spot_df.empty:
+        return None
+    chg_col = _df_col(spot_df, "涨跌幅")
+    if not chg_col:
+        return None
+    chg = pd.to_numeric(spot_df[chg_col], errors="coerce").dropna()
+    return int((chg < threshold).sum())
+
+
 def _recent_zt_big_drop_count(
     ref_d: str,
     prev_d: Optional[str],
@@ -2631,11 +2642,18 @@ def _recent_zt_big_drop_count(
     spot_df=None,
     _fallback_pool_dfs: Optional[list] = None,
 ) -> Optional[int]:
-    """
-    近2日曾涨停或炸板，从当时高点回落超10个百分点的股票数量。
-    high = 涨停/炸板池中的最新价（涨停时最新价即涨停价 = 当日最高价）
-    current = 今日现价（spot_df）；spot_df 缺失时返回 None。
-    """
+    """全市场今日涨跌幅 < -7% 的股票数量。"""
+    return _big_drop_count(spot_df)
+
+
+def _recent_zt_big_drop_count_UNUSED(
+    ref_d: str,
+    prev_d: Optional[str],
+    advice_d: str,
+    spot_df=None,
+    _fallback_pool_dfs: Optional[list] = None,
+) -> Optional[int]:
+    """（已废弃）近2日触板股从高点回落超10%家数。"""
     advice_d = (advice_d or "")[:8]
     today = date_str(bj_now())
     if advice_d != today:
@@ -2648,7 +2666,6 @@ def _recent_zt_big_drop_count(
         except Exception:
             pass
 
-    # 步骤1：近2日触板股票的参考高价（取涨停/炸板池最新价，即涨停价）
     stock_highs: dict[str, float] = {}
     for d in [ref_d, prev_d]:
         if not d:
@@ -2678,34 +2695,8 @@ def _recent_zt_big_drop_count(
     if not stock_highs:
         return 0
 
-    # 步骤2：今日现价（需要 spot_df）
     if spot_df is None or spot_df.empty:
-        # 盘后兜底：用已加载的涨停/炸板池涨跌幅反推回落比例
-        # 近似公式：drop = (limit_pct - 涨跌幅) / (100 + limit_pct)
-        # 主板 10%：涨跌幅 <= -1% 时 drop >= 10%
-        # 科创/创业 20%：涨跌幅 <= +8% 时 drop >= 10%
-        chg_by_code: dict[str, float] = {}
-        for df_p in (_fallback_pool_dfs or []):
-            if df_p is None or df_p.empty or "涨跌幅" not in df_p.columns:
-                continue
-            col = _df_col(df_p, "代码")
-            if not col:
-                continue
-            norm = df_p[col].astype(str).str.replace(r"\D", "", regex=True).str.zfill(6)
-            for c, v in zip(norm, pd.to_numeric(df_p["涨跌幅"], errors="coerce")):
-                if not pd.isna(v) and c not in chg_by_code:
-                    chg_by_code[c] = float(v)
-        if not chg_by_code:
-            return None
-        count = 0
-        for code in stock_highs:
-            chg = chg_by_code.get(code)
-            if chg is None:
-                continue
-            lp = 20.0 if str(code).startswith(("688", "300")) else 10.0
-            if (lp - chg) / (100.0 + lp) >= 0.10:
-                count += 1
-        return count
+        return None
 
     code_col_s = _df_col(spot_df, "代码")
     price_col_s = _df_col(spot_df, "最新价") or _df_col(spot_df, "当前价")
@@ -2751,7 +2742,7 @@ def _build_risk_placeholder(metrics: dict, prev_metrics: dict) -> list[dict]:
         ph("multiFailRate", "连板晋级失败率", multi_fail_prev),
         ph("resealRate", "炸板后回封率", reseal_prev),
         ph("limitDownRisk", "跌停家数", str(prev_limit_down) if prev_limit_down is not None else "--"),
-        ph("bigLossCount", "大面家数"),
+        ph("bigLossCount", "跌幅>7%家数"),
     ]
 
 
@@ -2808,10 +2799,14 @@ def build_longkong_risk_items(
     prev_max_board = int(prev_metrics.get("max_board") or 0)
     high_break = max(prev_max_board - ref_max_board, 0) if prev_max_board else 0
 
-    premium = _avg_pct_chg(spot_df, ref_codes) if ref_codes else None
-    # 盘后兜底：spot_df 失败时直接用涨停池的涨跌幅列
-    if premium is None and ref_codes and df_ref_up is not None and "涨跌幅" in df_ref_up.columns:
-        premium = _avg_pct_chg(df_ref_up, ref_codes)
+    # 竞价涨幅：昨日涨停股今日开盘相对昨收的涨幅均值
+    premium = _avg_auction_chg_from_spot(ref_codes, spot_df) if ref_codes else None
+    # 盘后兜底：spot_df 不可用时，用历史开盘价接口逐股计算
+    if premium is None and ref_codes and advice_d:
+        advice_d8 = (advice_d or "")[:8]
+        chgs = [c for c in (_code_open_pct_on_date(code, advice_d8) for code in ref_codes[:30]) if c is not None]
+        if chgs:
+            premium = round(sum(chgs) / len(chgs), 2)
     promote_rate = float(metrics.get("promote_rate") or 0)
     multi_fail_rate = round(max(0.0, 100.0 - promote_rate), 1)
 
@@ -2859,11 +2854,11 @@ def build_longkong_risk_items(
         item("multiFailRate", "\u8fde\u677f\u664b\u7ea7\u5931\u8d25\u7387", f"{multi_fail_rate:.0f}%", f"{max(0.0, 100.0 - float(prev_promote or 0)):.0f}%" if prev_promote is not None else "--", _trend(multi_fail_rate, max(0.0, 100.0 - float(prev_promote or 0)) if prev_promote is not None else None, inverse=True), "\u664b\u7ea7\u7387\u7684\u53cd\u5411\u98ce\u9669\u53e3\u5f84"),
         item("resealRate", "\u70b8\u677f\u540e\u56de\u5c01\u7387", f"{reseal_rate:.0f}%", f"{max(0.0, 100.0 - float(prev_break_rate or 0)):.0f}%" if prev_break_rate is not None else "--", _trend(reseal_rate, max(0.0, 100.0 - float(prev_break_rate or 0)) if prev_break_rate is not None else None), "\u6da8\u505c\u5c01\u4f4f\u5360\u6da8\u505c\u52a0\u70b8\u677f\u7684\u6bd4\u4f8b"),
         item("limitDownRisk", "\u8dcc\u505c\u5bb6\u6570", str(limit_down_n), str(prev_limit_down) if prev_limit_down is not None else "--", _trend(limit_down_n, prev_limit_down, inverse=True), "\u6781\u7aef\u4e8f\u94b1\u6548\u5e94\u6e29\u5ea6"),
-        item("bigLossCount", "\u5927\u9762\u5bb6\u6570",
+        item("bigLossCount", "\u8dcc\u5e45>7%\u5bb6\u6570",
              str(big_loss) if big_loss is not None else "--",
              "--",
-             "down" if big_loss is not None and big_loss > 5 else "flat",
-             "\u8fd12\u65e5\u89e6\u677f\u80a1\u3001\u9ad8\u70b9\u56de\u843d\u8d8510\u4e2a\u767e\u5206\u70b9\u5bb6\u6570"),
+             "down" if big_loss is not None and big_loss > 50 else "flat",
+             "\u5168\u5e02\u573a\u4eca\u65e5\u6da8\u8dcc\u5e45\u4f4e\u4e8e-7%\u7684\u80a1\u7968\u6570\u91cf"),
     ]
 
 
