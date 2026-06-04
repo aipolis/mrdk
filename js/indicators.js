@@ -78,6 +78,16 @@ const INTRADAY_DEFS = [
 
 const ZERO_PCT = new Set(['+0.00%', '-0.00%', '0.00%', '0%', '0', '0.0'])
 
+/** 北京时间（Asia/Shanghai）的 { wd, hm }，避免浏览器本地时区漂移 */
+function bjNowParts() {
+  const utc = Date.now()
+  const bj = new Date(utc + 8 * 60 * 60 * 1000)
+  return {
+    wd: bj.getUTCDay(),
+    hm: bj.getUTCHours() * 60 + bj.getUTCMinutes(),
+  }
+}
+
 function shouldShowAuctionTodayValues() {
   return true
 }
@@ -489,27 +499,14 @@ function mergeIntradayItems(rawItems, data) {
 
 
 function resolveIntradayMeta(data) {
-
   if (data?.generatedAtLabel && String(data.generatedAtLabel).includes('盘中')) {
-
     return String(data.generatedAtLabel).replace(/^盘中\s*/, '今日 ')
-
   }
-
-  const now = new Date()
-
-  const hm = now.getHours() * 60 + now.getMinutes()
-
-  const wd = now.getDay()
-
+  const { wd, hm } = bjNowParts()
   if (wd === 0 || wd === 6) return '休市'
-
   if (hm < 9 * 60 + 30) return '今日 9:30 起更新'
-
   if (hm > 15 * 60) return '今日 15:00 已收盘'
-
   return '盘中更新'
-
 }
 
 
@@ -519,6 +516,11 @@ function ensureIntradaySection(sections, data) {
   const list = Array.isArray(sections) ? [...sections] : []
 
   const idx = list.findIndex((s) => s?.id === 'intraday')
+
+  // 盘后/休市且无数据时不渲染本 section（既无原始 section，又无数据）
+  if (idx < 0 && shouldSkipIntradaySection(data)) {
+    return list
+  }
 
   const rawItems = idx >= 0 ? list[idx].items : []
 
@@ -725,11 +727,24 @@ function normalizeCell(item, sectionId) {
 
 
 function isIntradayPinnedWindow() {
-  const now = new Date()
-  const wd = now.getDay()
+  const { wd, hm } = bjNowParts()
   if (wd === 0 || wd === 6) return false
-  const hm = now.getHours() * 60 + now.getMinutes()
   return hm >= 9 * 60 && hm <= 15 * 60 + 30
+}
+
+/** 盘后/休市且无 intraday 数据时跳过该 section，避免渲染全 -- 占位 */
+function shouldSkipIntradaySection(data) {
+  const fromApi = Array.isArray(data?.intraday) ? data.intraday : []
+  const hasApiData = fromApi.some((it) => {
+    const v = String(it?.displayValue ?? it?.value ?? '').trim()
+    return v && v !== '--'
+  })
+  if (hasApiData) return false
+  if (data?.scoreMode === 'live') return false
+  const { wd, hm } = bjNowParts()
+  if (wd === 0 || wd === 6) return true
+  // 收盘后（15:30 之后）无盘中数据 → 跳过
+  return hm > 15 * 60 + 30
 }
 
 const TRADING_SECTION_ORDER = [
