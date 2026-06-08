@@ -6,8 +6,6 @@ import logging
 import time
 from pathlib import Path
 
-import httpx
-
 from wechat_http import wechat_post
 
 from config import WX_APPID
@@ -54,13 +52,13 @@ async def get_share_wxacode_bytes() -> bytes:
     }
     r = await wechat_post(url, json_body=payload, timeout=20)
     body = r.content
-        ctype = (r.headers.get("content-type") or "").lower()
-        if r.status_code != 200 or "json" in ctype:
-            try:
-                err = r.json()
-            except Exception:
-                err = {"errmsg": r.text[:200]}
-            raise RuntimeError(err.get("errmsg") or "生成小程序码失败")
+    ctype = (r.headers.get("content-type") or "").lower()
+    if r.status_code != 200 or "json" in ctype:
+        try:
+            err = r.json()
+        except Exception:
+            err = {"errmsg": r.text[:200]}
+        raise RuntimeError(err.get("errmsg") or "生成小程序码失败")
     if not body or len(body) < 128:
         raise RuntimeError("小程序码数据无效")
     _write_cache(body)
