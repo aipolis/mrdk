@@ -7,6 +7,8 @@ ENV PYTHONDONTWRITEBYTECODE=1
 ENV PYTHONUNBUFFERED=1
 ENV HOST=0.0.0.0
 ENV PORT=80
+# 云托管访问 api.weixin.qq.com 常见 CA 问题；仅影响微信固定域名
+ENV WECHAT_HTTP_VERIFY=false
 
 RUN apt-get update && apt-get install -y --no-install-recommends \
     gcc g++ libgomp1 ca-certificates \

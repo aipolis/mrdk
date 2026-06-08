@@ -8,7 +8,7 @@ from pathlib import Path
 
 import httpx
 
-from wechat_http import wechat_http_client
+from wechat_http import wechat_post
 
 from config import WX_APPID
 from subscribe_msg import get_access_token
@@ -52,9 +52,8 @@ async def get_share_wxacode_bytes() -> bytes:
         "check_path": False,
         "env_version": "release",
     }
-    async with wechat_http_client(20) as client:
-        r = await client.post(url, json=payload)
-        body = r.content
+    r = await wechat_post(url, json_body=payload, timeout=20)
+    body = r.content
         ctype = (r.headers.get("content-type") or "").lower()
         if r.status_code != 200 or "json" in ctype:
             try:

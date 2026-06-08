@@ -12,7 +12,7 @@ from config import bj_now
 
 import httpx
 
-from wechat_http import wechat_http_client
+from wechat_http import wechat_get, wechat_post
 
 from config import (
     SUBSCRIBE_FIELD_KEYS,
@@ -208,9 +208,7 @@ async def get_access_token() -> str:
         "appid": WX_APPID,
         "secret": WX_SECRET,
     }
-    async with wechat_http_client(15) as client:
-        r = await client.get(url, params=params)
-        body = r.json()
+    body = await wechat_get(url, params=params)
     if body.get("errcode"):
         raise RuntimeError(body.get("errmsg", "获取 access_token 失败"))
     _token_cache["token"] = body["access_token"]
@@ -226,9 +224,7 @@ async def code_to_session(js_code: str) -> dict:
         "js_code": js_code,
         "grant_type": "authorization_code",
     }
-    async with wechat_http_client(15) as client:
-        r = await client.get(url, params=params)
-        body = r.json()
+    body = await wechat_get(url, params=params)
     if body.get("errcode"):
         raise RuntimeError(body.get("errmsg", "code2session 失败"))
     return {
@@ -263,9 +259,8 @@ async def send_subscribe_message(
         "data": wx_data,
         "miniprogram_state": "formal",
     }
-    async with wechat_http_client(15) as client:
-        r = await client.post(url, json=payload)
-        body = r.json()
+    r = await wechat_post(url, json_body=payload)
+    body = r.json()
     return body
 
 
