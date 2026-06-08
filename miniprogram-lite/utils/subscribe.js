@@ -22,11 +22,22 @@ function setSubscribedToday() {
 }
 
 function registerOpenid() {
-  wx.login({
-    success: ({ code }) => {
-      if (!code) return
-      api.registerSubscribe(code, 'sentiment_daily').catch(() => {})
-    },
+  return new Promise((resolve) => {
+    wx.login({
+      success: ({ code }) => {
+        if (!code) {
+          resolve(false)
+          return
+        }
+        api.registerSubscribe(code, 'sentiment_daily')
+          .then((data) => resolve(!!(data && data.registered)))
+          .catch(() => {
+            wx.showToast({ title: '登记失败，请检查网络', icon: 'none' })
+            resolve(false)
+          })
+      },
+      fail: () => resolve(false),
+    })
   })
 }
 
@@ -46,13 +57,21 @@ function requestDailySubscribe() {
       success(res) {
         const ok = res[tmplId] === 'accept'
         if (ok) {
-          setSubscribedToday()
-          registerOpenid()
-          wx.showToast({ title: '已预约今日提醒', icon: 'success' })
-        } else if (res[tmplId] === 'reject') {
+          registerOpenid().then((registered) => {
+            if (registered) {
+              setSubscribedToday()
+              wx.showToast({ title: '已预约明日提醒', icon: 'success' })
+              resolve(true)
+            } else {
+              resolve(false)
+            }
+          })
+          return
+        }
+        if (res[tmplId] === 'reject') {
           wx.showToast({ title: '已取消', icon: 'none' })
         }
-        resolve(ok)
+        resolve(false)
       },
       fail() {
         wx.showToast({ title: '订阅失败', icon: 'none' })

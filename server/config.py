@@ -61,3 +61,6 @@ SUBSCRIBE_FIELD_KEYS = {
     "score": "number10",
     "tips": "thing5",
 }
+
+# Lite 首页路径；完整版小程序可设 SUBSCRIBE_PAGE=pages/index/index
+SUBSCRIBE_PAGE = os.getenv("SUBSCRIBE_PAGE", "pages/today/today")

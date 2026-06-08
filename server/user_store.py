@@ -207,6 +207,58 @@ def register_user_push(openid: str, subscribe_type: str) -> None:
         log.exception("register user push failed openid=%s type=%s", mask_openid(openid), subscribe_type)
 
 
+def _push_col(subscribe_type: str) -> Optional[str]:
+    if subscribe_type == "sentiment_daily":
+        return "push_sentiment"
+    if subscribe_type == "empty_alert":
+        return "push_empty"
+    return None
+
+
+def list_push_subscribers(subscribe_type: str = "sentiment_daily") -> list[str]:
+    """MySQL 中已登记推送的 openid 列表（云托管重启不丢）。"""
+    col = _push_col(subscribe_type)
+    if not col or not ensure_users_table():
+        return []
+
+    def _run(conn):
+        with conn.cursor() as cur:
+            cur.execute(
+                f"SELECT openid FROM `{TABLE_USERS}` WHERE {col}=1 AND openid<>''",
+            )
+            return [str(r["openid"]) for r in (cur.fetchall() or []) if r.get("openid")]
+
+    try:
+        return with_retry(_run)
+    except Exception:
+        log.exception("list push subscribers failed type=%s", subscribe_type)
+        return []
+
+
+def unregister_user_push(openid: str, subscribe_type: str) -> None:
+    """43101 等失效后清除推送标记。"""
+    col = _push_col(subscribe_type)
+    if not openid or not col or not ensure_users_table():
+        return
+
+    def _run(conn):
+        with conn.cursor() as cur:
+            cur.execute(
+                f"UPDATE `{TABLE_USERS}` SET {col}=0 WHERE openid=%s",
+                (openid,),
+            )
+        conn.commit()
+
+    try:
+        with_retry(_run)
+    except Exception:
+        log.exception(
+            "unregister user push failed openid=%s type=%s",
+            mask_openid(openid),
+            subscribe_type,
+        )
+
+
 def users_status() -> dict:
     if not mysql_enabled():
         return {"enabled": False, "ready": False}
@@ -217,11 +269,23 @@ def users_status() -> dict:
     def _count(conn):
         with conn.cursor() as cur:
             cur.execute(f"SELECT COUNT(*) AS c FROM `{TABLE_USERS}`")
-            return int((cur.fetchone() or {}).get("c") or 0)
+            total = int((cur.fetchone() or {}).get("c") or 0)
+            cur.execute(f"SELECT COUNT(*) AS c FROM `{TABLE_USERS}` WHERE push_sentiment=1")
+            push_sentiment = int((cur.fetchone() or {}).get("c") or 0)
+            cur.execute(f"SELECT COUNT(*) AS c FROM `{TABLE_USERS}` WHERE push_empty=1")
+            push_empty = int((cur.fetchone() or {}).get("c") or 0)
+            return total, push_sentiment, push_empty
 
     try:
-        total = with_retry(_count)
-        return {"enabled": True, "ready": True, "table": TABLE_USERS, "userCount": total}
+        total, push_sentiment, push_empty = with_retry(_count)
+        return {
+            "enabled": True,
+            "ready": True,
+            "table": TABLE_USERS,
+            "userCount": total,
+            "pushSentimentCount": push_sentiment,
+            "pushEmptyCount": push_empty,
+        }
     except Exception:
         log.exception("users status failed")
         return {"enabled": True, "ready": False}

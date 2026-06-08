@@ -4,9 +4,7 @@ from __future__ import annotations
 
 import json
 import logging
-import os
 import time
-from datetime import datetime
 from pathlib import Path
 from typing import Optional
 
@@ -16,11 +14,11 @@ import httpx
 
 from config import (
     SUBSCRIBE_FIELD_KEYS,
+    SUBSCRIBE_PAGE,
     SUBSCRIBE_TEMPLATES,
     WX_APPID,
     WX_SECRET,
 )
-from fetcher import display_level_label
 
 log = logging.getLogger("mingri.subscribe")
 
@@ -92,7 +90,7 @@ def build_subscribe_message(
     }
 
 
-def _load_subscribers() -> dict:
+def _load_subscribers_json() -> dict:
     if not SUBSCRIBERS_FILE.exists():
         return {"users": []}
     try:
@@ -101,12 +99,69 @@ def _load_subscribers() -> dict:
         return {"users": []}
 
 
-def _save_subscribers(data: dict) -> None:
+def _save_subscribers_json(data: dict) -> None:
     SUBSCRIBERS_FILE.parent.mkdir(parents=True, exist_ok=True)
     SUBSCRIBERS_FILE.write_text(
         json.dumps(data, ensure_ascii=False, indent=2),
         encoding="utf-8",
     )
+
+
+def _subscribe_type(only_empty: bool) -> str:
+    return "empty_alert" if only_empty else "sentiment_daily"
+
+
+def _load_push_openids(*, only_empty: bool) -> tuple[list[str], str]:
+    """
+    推送名单：优先 MySQL（持久），JSON 文件兜底。
+    返回 (openid 列表, 来源 mysql|json|merged)
+    """
+    sub_type = _subscribe_type(only_empty)
+    mysql_ids: list[str] = []
+    try:
+        from user_store import list_push_subscribers
+
+        mysql_ids = list_push_subscribers(sub_type)
+    except Exception:
+        log.exception("load push openids from mysql failed")
+
+    json_ids: list[str] = []
+    for u in _load_subscribers_json().get("users", []):
+        openid = u.get("openid")
+        types = u.get("types") or []
+        if not openid:
+            continue
+        if sub_type in types:
+            json_ids.append(openid)
+
+    if mysql_ids and json_ids:
+        merged = list(dict.fromkeys(mysql_ids + json_ids))
+        return merged, "merged"
+    if mysql_ids:
+        return mysql_ids, "mysql"
+    if json_ids:
+        return json_ids, "json"
+    return [], "none"
+
+
+def _purge_expired_subscribers(expired_openids: set[str], subscribe_type: str) -> None:
+    if not expired_openids:
+        return
+    data = _load_subscribers_json()
+    users = data.get("users", [])
+    for u in users:
+        if u.get("openid") in expired_openids:
+            u["types"] = [t for t in (u.get("types") or []) if t != subscribe_type]
+    data["users"] = [u for u in users if u.get("types")]
+    _save_subscribers_json(data)
+    try:
+        from user_store import unregister_user_push
+
+        for openid in expired_openids:
+            unregister_user_push(openid, subscribe_type)
+    except Exception:
+        log.exception("purge expired subscribers in mysql failed")
+    log.info("removed %d expired subscribers type=%s", len(expired_openids), subscribe_type)
 
 
 def register_subscriber(openid: str, subscribe_type: str = "sentiment_daily") -> None:
@@ -118,7 +173,7 @@ def register_subscriber(openid: str, subscribe_type: str = "sentiment_daily") ->
         register_user_push(openid, subscribe_type)
     except Exception:
         log.exception("register user push in mysql failed")
-    data = _load_subscribers()
+    data = _load_subscribers_json()
     users = data.get("users", [])
     found = next((u for u in users if u.get("openid") == openid), None)
     now = bj_now().isoformat()
@@ -135,7 +190,7 @@ def register_subscriber(openid: str, subscribe_type: str = "sentiment_daily") ->
             "updatedAt": now,
         })
     data["users"] = users
-    _save_subscribers(data)
+    _save_subscribers_json(data)
 
 
 async def get_access_token() -> str:
@@ -191,7 +246,7 @@ async def send_subscribe_message(
     wx_data: dict,
     *,
     template_id: Optional[str] = None,
-    page: str = "pages/index/index",
+    page: Optional[str] = None,
 ) -> dict:
     tmpl = template_id or SUBSCRIBE_TEMPLATES.get("sentiment_daily")
     if not tmpl:
@@ -202,7 +257,7 @@ async def send_subscribe_message(
     payload = {
         "touser": openid,
         "template_id": tmpl,
-        "page": page,
+        "page": page or SUBSCRIBE_PAGE,
         "data": wx_data,
         "miniprogram_state": "formal",
     }
@@ -226,21 +281,20 @@ async def broadcast_daily_sentiment(
         advice_date=advice_date,
         push_kind="empty_alert" if only_empty else "sentiment_daily",
     )
-    data = _load_subscribers()
-    users = data.get("users", [])
-    results = {"ok": 0, "fail": 0, "skipped": 0, "details": []}
+    sub_type = _subscribe_type(only_empty)
+    openids, source = _load_push_openids(only_empty=only_empty)
+    results = {
+        "ok": 0,
+        "fail": 0,
+        "skipped": 0,
+        "total": len(openids),
+        "source": source,
+        "details": [],
+    }
 
-    expired_openids = set()
-    for u in users:
-        openid = u.get("openid")
-        types = u.get("types", [])
+    expired_openids: set[str] = set()
+    for openid in openids:
         if not openid:
-            continue
-        if only_empty and "empty_alert" not in types:
-            results["skipped"] += 1
-            continue
-        if not only_empty and "sentiment_daily" not in types:
-            results["skipped"] += 1
             continue
         try:
             res = await send_subscribe_message(openid, msg["wxData"])
@@ -248,7 +302,6 @@ async def broadcast_daily_sentiment(
             if errcode == 0:
                 results["ok"] += 1
             elif errcode == 43101:
-                # 用户未授权或一次性授权已消耗，移出推送列表
                 expired_openids.add(openid)
                 results["skipped"] += 1
             else:
@@ -258,10 +311,7 @@ async def broadcast_daily_sentiment(
             results["fail"] += 1
             results["details"].append({"openid": openid[:8] + "…", "err": str(e)})
 
-    if expired_openids:
-        data["users"] = [u for u in users if u.get("openid") not in expired_openids]
-        _save_subscribers(data)
-        log.info("removed %d expired subscribers", len(expired_openids))
+    _purge_expired_subscribers(expired_openids, sub_type)
 
     results["preview"] = {
         "date": msg["date"],
