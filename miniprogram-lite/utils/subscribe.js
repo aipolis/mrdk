@@ -1,5 +1,6 @@
 const { SUBSCRIBE_TEMPLATES } = require('./config')
 const api = require('./api')
+const { formatErrMsg } = require('./errMsg')
 
 const STORAGE_KEY = 'subscribe_sentimentDaily'
 
@@ -31,8 +32,13 @@ function registerOpenid() {
         }
         api.registerSubscribe(code, 'sentiment_daily')
           .then((data) => resolve(!!(data && data.registered)))
-          .catch(() => {
-            wx.showToast({ title: '登记失败，请检查网络', icon: 'none' })
+          .catch((err) => {
+            const msg = formatErrMsg(err, '登记失败')
+            wx.showToast({
+              title: msg.length > 18 ? msg.slice(0, 17) + '…' : msg,
+              icon: 'none',
+              duration: 3000,
+            })
             resolve(false)
           })
       },

@@ -12,6 +12,8 @@ from config import bj_now
 
 import httpx
 
+from wechat_http import wechat_http_client
+
 from config import (
     SUBSCRIBE_FIELD_KEYS,
     SUBSCRIBE_PAGE,
@@ -206,7 +208,7 @@ async def get_access_token() -> str:
         "appid": WX_APPID,
         "secret": WX_SECRET,
     }
-    async with httpx.AsyncClient(timeout=15) as client:
+    async with wechat_http_client(15) as client:
         r = await client.get(url, params=params)
         body = r.json()
     if body.get("errcode"):
@@ -224,7 +226,7 @@ async def code_to_session(js_code: str) -> dict:
         "js_code": js_code,
         "grant_type": "authorization_code",
     }
-    async with httpx.AsyncClient(timeout=15) as client:
+    async with wechat_http_client(15) as client:
         r = await client.get(url, params=params)
         body = r.json()
     if body.get("errcode"):
@@ -261,7 +263,7 @@ async def send_subscribe_message(
         "data": wx_data,
         "miniprogram_state": "formal",
     }
-    async with httpx.AsyncClient(timeout=15) as client:
+    async with wechat_http_client(15) as client:
         r = await client.post(url, json=payload)
         body = r.json()
     return body

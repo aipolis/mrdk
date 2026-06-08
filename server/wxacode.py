@@ -8,6 +8,8 @@ from pathlib import Path
 
 import httpx
 
+from wechat_http import wechat_http_client
+
 from config import WX_APPID
 from subscribe_msg import get_access_token
 
@@ -50,7 +52,7 @@ async def get_share_wxacode_bytes() -> bytes:
         "check_path": False,
         "env_version": "release",
     }
-    async with httpx.AsyncClient(timeout=20) as client:
+    async with wechat_http_client(20) as client:
         r = await client.post(url, json=payload)
         body = r.content
         ctype = (r.headers.get("content-type") or "").lower()

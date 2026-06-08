@@ -266,9 +266,16 @@ function loginUser(payload, options = {}) {
 }
 
 function registerSubscribe(code, type = 'sentiment_daily') {
-  return request('/api/subscribe/register', {
+  const opts = {
     method: 'POST',
-    data: { code, type }
+    data: { code, type },
+    timeout: 20000,
+  }
+  return request('/api/subscribe/register', opts).catch(err => {
+    if (shouldUseCloudCall() && API_BASE && isRetryableError(err)) {
+      return httpRequest('/api/subscribe/register', opts)
+    }
+    throw err
   })
 }
 

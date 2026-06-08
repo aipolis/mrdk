@@ -9,7 +9,7 @@ $files = @(
     "fetcher.py", "home_cache.py", "home_archive.py", "db_store.py",
     "daily_sections.py", "scheduler.py", "update_schedule.py",
     "history_store.py", "history_sync.py", "intraday.py",
-    "sentiment.py", "subscribe_msg.py", "user_store.py", "wxacode.py", "ocr.py", ".dockerignore"
+    "sentiment.py", "subscribe_msg.py", "user_store.py", "wechat_http.py", "wxacode.py", "ocr.py", ".dockerignore"
 )
 
 Add-Type -AssemblyName System.IO.Compression.FileSystem

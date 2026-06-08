@@ -9,7 +9,7 @@ ENV HOST=0.0.0.0
 ENV PORT=80
 
 RUN apt-get update && apt-get install -y --no-install-recommends \
-    gcc g++ libgomp1 \
+    gcc g++ libgomp1 ca-certificates \
     && rm -rf /var/lib/apt/lists/*
 
 COPY requirements.txt .

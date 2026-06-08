@@ -1682,6 +1682,8 @@ async def subscribe_register(body: SubscribeRegisterBody):
     """用户授权订阅后，用 wx.login 的 code 登记 openid"""
     try:
         openid = await code_to_openid(body.code)
+        if not openid:
+            return {"code": 1, "message": "无法获取 openid，请重新打开小程序后再试"}
         register_subscriber(openid, body.type)
         return {"code": 0, "data": {"registered": True, "type": body.type}}
     except Exception as e:
