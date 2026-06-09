@@ -1,3 +1,5 @@
+import { beijingParts } from './time.js?v=20260609a'
+
 /** 
  * API_BASE 配置策略：优先级从高到低
  * 1. 运行时注入：window.__API_BASE__ （Cloudflare/浏览器可设置）
@@ -34,21 +36,21 @@ export const AUCTION_REFRESH_MS = 20 * 1000
 export const VOLUME_SURGE_REFRESH_MS = 30 * 1000
 
 export function resolveAutoRefreshMs(now = new Date()) {
-  const hm = now.getHours() * 60 + now.getMinutes()
+  const { hm } = beijingParts(now)
   if (hm >= 9 * 60 + 15 && hm < 9 * 60 + 26) return AUCTION_REFRESH_MS
   return AUTO_REFRESH_MS
 }
 
 /** 竞价详情页轮询：竞价窗口内 20s，其余 5 分钟 */
 export function resolveAuctionDetailPollMs(now = new Date()) {
-  const hm = now.getHours() * 60 + now.getMinutes()
+  const { hm } = beijingParts(now)
   if (hm >= 9 * 60 + 15 && hm < 9 * 60 + 26) return AUCTION_REFRESH_MS
   return 5 * 60 * 1000
 }
 
 /** 量能异动轮询：9:20–9:26 每 30s，其余不轮询 */
 export function resolveVolumeSurgePollMs(now = new Date()) {
-  const hm = now.getHours() * 60 + now.getMinutes()
+  const { hm } = beijingParts(now)
   if (hm >= 9 * 60 + 20 && hm < 9 * 60 + 26) return VOLUME_SURGE_REFRESH_MS
   return 0
 }

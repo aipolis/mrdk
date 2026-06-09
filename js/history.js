@@ -1,6 +1,7 @@
-import { fetchHistory } from './api.js'
-import { getDisplayLevel } from './theme.js'
+import { fetchHistory } from './api.js?v=20260609c'
+import { getDisplayLevel } from './theme.js?v=20260609c'
 import { createTrendController } from './trendDraw.js'
+import { beijingParts } from './time.js?v=20260609a'
 
 const $ = (sel) => document.querySelector(sel)
 
@@ -27,8 +28,8 @@ function buildCalCells(list, year, month) {
   }
   const daysInMonth = new Date(year, month, 0).getDate()
   const startWd = new Date(year, month - 1, 1).getDay()
-  const today = new Date()
-  const todayStr = `${today.getFullYear()}-${pad(today.getMonth()+1)}-${pad(today.getDate())}`
+  const today = beijingParts()
+  const todayStr = `${today.year}-${pad(today.month)}-${pad(today.day)}`
   const cells = []
   for (let i = 0; i < startWd; i++) cells.push(null)
   for (let d = 1; d <= daysInMonth; d++) {
@@ -66,8 +67,8 @@ let calInited = false
 function initCalendar(list) {
   calList = list
   if (!calYear) {
-    const now = new Date()
-    calYear = now.getFullYear(); calMonth = now.getMonth() + 1
+    const now = beijingParts()
+    calYear = now.year; calMonth = now.month
   }
   renderCalendar()
   if (calInited) return
@@ -77,8 +78,8 @@ function initCalendar(list) {
     renderCalendar()
   })
   $('#calNext')?.addEventListener('click', () => {
-    const now = new Date()
-    if (calYear >= now.getFullYear() && calMonth >= now.getMonth() + 1) return
+    const now = beijingParts()
+    if (calYear >= now.year && calMonth >= now.month) return
     calMonth++; if (calMonth > 12) { calMonth = 1; calYear++ }
     renderCalendar()
   })

@@ -2,10 +2,11 @@
  * 分享海报：手机竖屏适配（格言 + 表盘 + 昨日/盘中 + 页脚）
  */
 import { drawSteeringGauge } from './gaugeDraw.js?v=20260531a'
-import { getDisplayLevel, formatHeaderDate, HOME_QUOTE } from './theme.js?v=20260531a'
+import { getDisplayLevel, formatHeaderDate, HOME_QUOTE } from './theme.js?v=20260609c'
 import { scoreToLongkongState, LONGKONG_STATE_STEPS, buildRiskCopy } from './longkongState.js?v=20260604c'
 import { normalizeSections } from './indicators.js?v=20260609b'
 import { drawQrCode } from './qrDraw.js?v=20260531a'
+import { beijingDateKey } from './time.js?v=20260609a'
 
 export const POSTER_W = 1080
 const SCALE = POSTER_W / 750
@@ -86,7 +87,7 @@ function wrapText(ctx, text, maxWidth) {
 }
 
 function getSections(data) {
-  return normalizeSections(data.indicatorSections || data.sections || [])
+  return normalizeSections(data.indicatorSections || data.sections || [], data)
 }
 
 /** 海报仅保留昨日概览、盘中实时（不含外围、竞价、趋势图） */
@@ -637,7 +638,7 @@ export function renderPosterToCanvas(data, canvas) {
 export function posterFilename(data) {
   const displayScore = data.displayScore != null ? data.displayScore : data.score
   const d = data.adviceDate || data.date || ''
-  const day = /^\d{8}$/.test(String(d)) ? String(d) : new Date().toISOString().slice(0, 10).replace(/-/g, '')
+  const day = /^\d{8}$/.test(String(d)) ? String(d) : beijingDateKey()
   return `明日当空-情绪${Math.round(Number(displayScore) || 0)}-${day}.jpg`
 }
 

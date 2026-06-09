@@ -1,3 +1,5 @@
+import { beijingParts } from './time.js?v=20260609a'
+
 export const HOME_QUOTE = '不怕错过，就怕做错。不出门的时候，就在家修炼。'
 
 const QUOTES = [
@@ -35,9 +37,9 @@ export function dailyQuote(dateStr) {
 }
 
 export function formatHeaderDate() {
-  const d = new Date()
-  const w = ['周日', '周一', '周二', '周三', '周四', '周五', '周六'][d.getDay()]
-  const m = d.getMonth() + 1
-  const day = d.getDate()
+  const d = beijingParts()
+  const w = ['周日', '周一', '周二', '周三', '周四', '周五', '周六'][d.weekday]
+  const m = d.month
+  const day = d.day
   return `${m}月${day}日 ${w}`
 }

@@ -1,5 +1,6 @@
-import { fetchAuctionDetail } from './api.js'
-import { resolveAuctionDetailPollMs, resolveVolumeSurgePollMs } from './config.js?v=20260531a'
+import { fetchAuctionDetail } from './api.js?v=20260609c'
+import { resolveAuctionDetailPollMs, resolveVolumeSurgePollMs } from './config.js?v=20260609c'
+import { beijingParts } from './time.js?v=20260609a'
 const $ = (sel) => document.querySelector(sel)
 const FAST_SECTIONS = 'oneWord,topSectors'
 const SLOW_SECTIONS = 'volumeSurge'
@@ -233,7 +234,7 @@ function updateMeta() {
     meta.textContent = '竞价数据等待 9:15 后更新'
     return
   }
-  const hm = new Date().getHours() * 60 + new Date().getMinutes()
+  const { hm } = beijingParts()
   if (hm >= 9 * 60 + 15 && hm < 9 * 60 + 20) {
     meta.textContent = `${pageData.tradeDate || ''} · 量能异动 9:20 后更新`
     return
@@ -241,7 +242,7 @@ function updateMeta() {
 }
 
 function inVolumeSurgeLiveWindow(now = new Date()) {
-  const hm = now.getHours() * 60 + now.getMinutes()
+  const { hm } = beijingParts(now)
   return hm >= 9 * 60 + 20 && hm < 9 * 60 + 26
 }
 

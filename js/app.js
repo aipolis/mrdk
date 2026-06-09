@@ -1,5 +1,5 @@
-import { resolveAutoRefreshMs } from './config.js?v=20260531a'
-import { getDisplayLevel, dailyQuote, formatHeaderDate, HOME_QUOTE } from './theme.js?v=20260531a'
+import { resolveAutoRefreshMs } from './config.js?v=20260609c'
+import { getDisplayLevel, dailyQuote, formatHeaderDate, HOME_QUOTE } from './theme.js?v=20260609c'
 import { normalizeSections } from './indicators.js?v=20260609b'
 import {
   buildLongkongHeroText,
@@ -10,11 +10,12 @@ import {
   normalizeRiskReason,
   buildRiskCopy,
 } from './longkongState.js?v=20260604c'
-import { fetchToday, fetchHistory, fetchDay, fetchIntradaySeries } from './api.js?v=20260529i'
+import { fetchToday, fetchHistory, fetchDay, fetchIntradaySeries } from './api.js?v=20260609c'
 import { drawIntradayChart } from './intradayChart.js?v=20260604c'
 import { createTrendController } from './trendDraw.js?v=20260529i'
 import { createGaugeController, IDLE_MIN_MS, SKIP_ANIM_MS } from './gaugeAnim.js?v=20260529m'
-import { getHomeCache, saveHomeCache, isSameHomeSnapshot } from './homeCache.js?v=20260529m'
+import { getHomeCache, saveHomeCache, isSameHomeSnapshot } from './homeCache.js?v=20260609c'
+import { beijingDateKey } from './time.js?v=20260609a'
 
 export { fetchToday, fetchHistory }
 
@@ -63,7 +64,7 @@ function buildStatusText(data) {
 function _dateKey(raw) {
   if (!raw) return ''
   if (raw instanceof Date) {
-    return raw.toISOString().slice(0, 10).replace(/-/g, '')
+    return beijingDateKey(raw)
   }
   return String(raw).replace(/\D/g, '').slice(0, 8)
 }

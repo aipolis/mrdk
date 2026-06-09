@@ -1,4 +1,4 @@
-import { FETCH_TIMEOUT_MS, resolveApiBase } from './config.js'
+import { FETCH_TIMEOUT_MS, resolveApiBase } from './config.js?v=20260609c'
 
 async function fetchJson(path) {
   const ctrl = new AbortController()
@@ -9,7 +9,13 @@ async function fetchJson(path) {
       signal: ctrl.signal,
       headers: { Accept: 'application/json' },
     })
-    const json = await res.json()
+    let json
+    try {
+      json = await res.json()
+    } catch {
+      throw new Error(`服务响应异常 ${res.status}`)
+    }
+    if (!res.ok) throw new Error(json?.message || `请求失败 ${res.status}`)
     if (json.code === 2) {
       const err = new Error(json.message || '缓存更新中')
       err.warming = true

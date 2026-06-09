@@ -1,3 +1,5 @@
+import { beijingDateKey } from './time.js?v=20260609a'
+
 /** 首页 localStorage 缓存：二次打开秒开，后台再刷新 */
 
 const STORAGE_KEY = 'mrdk_home_sentiment_v1'
@@ -5,11 +7,7 @@ export const FRESH_TTL_MS = 30 * 60 * 1000
 const STALE_MAX_MS = 48 * 60 * 60 * 1000
 
 function todayKey() {
-  const d = new Date()
-  const y = d.getFullYear()
-  const m = String(d.getMonth() + 1).padStart(2, '0')
-  const day = String(d.getDate()).padStart(2, '0')
-  return `${y}${m}${day}`
+  return beijingDateKey()
 }
 
 function readPayload() {
