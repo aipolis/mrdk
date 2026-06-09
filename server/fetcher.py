@@ -330,6 +330,46 @@ def _fetch_sina_big_drop_count(threshold: float = -7.0) -> Optional[int]:
     return int((pct < threshold).sum())
 
 
+def _fetch_sina_quotes_df(codes: list[str]) -> Optional[pd.DataFrame]:
+    """Fetch current/open/previous-close quotes for an arbitrary A-share code list."""
+    normalized = _normalize_code_list(codes)
+    if not normalized:
+        return None
+    records: list[dict] = []
+    headers = {"User-Agent": "Mozilla/5.0", "Referer": "https://finance.sina.com.cn/"}
+    for start in range(0, len(normalized), 100):
+        chunk = normalized[start : start + 100]
+        symbols = [f"{'sh' if code.startswith(('5', '6', '9')) else 'sz'}{code}" for code in chunk]
+        try:
+            response = requests.get(
+                "https://hq.sinajs.cn/list=" + ",".join(symbols),
+                headers=headers,
+                timeout=10,
+            )
+            for line in response.text.splitlines():
+                match = re.search(r'hq_str_(?:sh|sz)(\d{6})="([^"]*)"', line)
+                if not match:
+                    continue
+                parts = match.group(2).split(",")
+                if len(parts) < 4:
+                    continue
+                prev_close = pd.to_numeric(parts[2], errors="coerce")
+                open_price = pd.to_numeric(parts[1], errors="coerce")
+                current = pd.to_numeric(parts[3], errors="coerce")
+                if pd.isna(prev_close) or float(prev_close) <= 0:
+                    continue
+                records.append({
+                    "代码": match.group(1),
+                    "昨收": prev_close,
+                    "今开": open_price,
+                    "最新价": current,
+                    "涨跌幅": round((float(current) - float(prev_close)) / float(prev_close) * 100, 3),
+                })
+        except Exception:
+            continue
+    return pd.DataFrame(records) if records else None
+
+
 def _fetch_em_top_amount_spot_df() -> Optional[pd.DataFrame]:
     """东财成交额榜实时明细，作为前10指标的快速兜底。"""
     key = f"em_top_amount_spot_df_{date_str(bj_now())}"
@@ -2566,11 +2606,18 @@ def build_auction_sentiment(
     top10_avg: Optional[float] = None
     spot_df = None
     spot_ok = False
-    try:
-        spot_df = ak.stock_zh_a_spot_em()
-        spot_ok = spot_df is not None and not spot_df.empty
-    except Exception:
-        spot_df = None
+    quote_codes = list(dict.fromkeys(first_codes + multi_codes + max_board_codes))
+    if advice_d == today and _after_auction_frozen():
+        sina_spot = _fetch_sina_quotes_df(quote_codes)
+        if sina_spot is not None and not sina_spot.empty:
+            spot_df = sina_spot
+            spot_ok = True
+    if not spot_ok:
+        try:
+            spot_df = ak.stock_zh_a_spot_em()
+            spot_ok = spot_df is not None and not spot_df.empty
+        except Exception:
+            spot_df = None
     if not spot_ok:
         spot_df = _fetch_em_top_amount_spot_df()
         spot_ok = spot_df is not None and not spot_df.empty
@@ -2596,9 +2643,10 @@ def build_auction_sentiment(
                     break
                 except (TypeError, ValueError):
                     pass
-    first_board_chg = _avg_auction_chg_from_spot(first_codes, spot_df) if live_ready else None
-    multi_board_chg = _avg_auction_chg_from_spot(multi_codes, spot_df) if live_ready else None
-    recent_multi_chg = _avg_auction_chg_from_spot(max_board_codes, spot_df) if live_ready else None
+    exact_spot_ready = spot_ok and advice_d == today
+    first_board_chg = _avg_auction_chg_from_spot(first_codes, spot_df) if exact_spot_ready else None
+    multi_board_chg = _avg_auction_chg_from_spot(multi_codes, spot_df) if exact_spot_ready else None
+    recent_multi_chg = _avg_auction_chg_from_spot(max_board_codes, spot_df) if exact_spot_ready else None
     if advice_d <= today:
         if first_board_chg is None:
             first_board_chg = _avg_board_auction_chg_historical(pool_d, False, advice_d)
@@ -2670,8 +2718,6 @@ def build_auction_sentiment(
             prev_first_chg = float(str(prev_first_s).replace("%", "").replace("+", ""))
         except Exception:
             prev_first_chg = None
-    elif prev_d:
-        prev_first_chg = _avg_board_auction_chg_historical(prev_d, False, ref_d)
 
     prev_multi_s = _auction_ref_prev_display(ref_d, "yesterdayMulti", prev_d=prev_d, prefer_prev=prefer_prev_auction)
     prev_multi_chg = None
@@ -2680,8 +2726,6 @@ def build_auction_sentiment(
             prev_multi_chg = float(str(prev_multi_s).replace("%", "").replace("+", ""))
         except Exception:
             prev_multi_chg = None
-    elif prev_d:
-        prev_multi_chg = _avg_board_auction_chg_historical(prev_d, True, ref_d)
 
     prev_recent_s = _auction_ref_prev_display(ref_d, "recentMulti", prev_d=prev_d, prefer_prev=prefer_prev_auction)
     prev_recent_chg = None
@@ -2690,8 +2734,6 @@ def build_auction_sentiment(
             prev_recent_chg = float(str(prev_recent_s).replace("%", "").replace("+", ""))
         except Exception:
             prev_recent_chg = None
-    elif prev_d:
-        prev_recent_chg = _avg_max_board_auction_chg_historical(prev_d, ref_d)
 
     def _item(key, label, value, yesterday, trend=None, up=None):
         val_s = _display_text(value)
@@ -3094,11 +3136,16 @@ def build_longkong_risk_items(
     df_ref_up = fetch_limit_up(ref_d)
     df_ref_broken = fetch_broken_board(ref_d)
     df_ref_down = fetch_limit_down(ref_d)
-    ref_codes = _pool_codes_all(df_ref_up)
-    try:
-        spot_df = ak.stock_zh_a_spot_em()
-    except Exception:
-        spot_df = None
+    premium_pool_d = prev_d if advice_d and advice_d[:8] == ref_d and prev_d else ref_d
+    ref_codes = _pool_codes_all(fetch_limit_up(premium_pool_d))
+    spot_df = None
+    if ref_codes and advice_d and advice_d[:8] == date_str(bj_now()):
+        spot_df = _fetch_sina_quotes_df(ref_codes)
+    if spot_df is None or spot_df.empty:
+        try:
+            spot_df = ak.stock_zh_a_spot_em()
+        except Exception:
+            spot_df = None
 
     ref_max_board = int(metrics.get("max_board") or _max_board(df_ref_up) or 0)
     prev_max_board = int(prev_metrics.get("max_board") or 0)
@@ -3125,7 +3172,7 @@ def build_longkong_risk_items(
     # \u5927\u9762\u5bb6\u6570\uff1a\u8fd13\u65e5\u66fe\u6da8\u505c\u3001\u4eca\u65e5\u8dcc\u505c\u7684\u80a1\u7968\u6570\u91cf
     # \u6bd4\u300c\u5168\u5e02\u8dcc\u5e45\u2264-7%\u300d\u66f4\u7cbe\u51c6 \u2014\u2014 \u4e13\u6307\u70ed\u94b1\u9ad8\u4f4d\u5d29\u76d8
     big_loss = _recent_zt_big_drop_count(
-        ref_d, prev_d, advice_d or ref_d, spot_df,
+        ref_d, prev_d, advice_d or ref_d, None,
         _fallback_pool_dfs=[df_ref_up, df_ref_broken],
     )
     if big_loss is None:
@@ -3151,7 +3198,13 @@ def build_longkong_risk_items(
         }
 
     # \u8fde\u677f\u6700\u9ad8\u6807\u4eca\u65e5\u6da8\u5e45\uff08\u66ff\u4ee3\u539f\u9ad8\u6807\u65ad\u677f\u516c\u5f0f\uff09
-    top_chg = _top_board_stock_chg(prev_d, ref_d) if prev_d else None
+    top_chg = None
+    if prev_d and advice_d and advice_d[:8] == date_str(bj_now()):
+        top_codes = _pool_codes_by_max_board(fetch_limit_up(prev_d))
+        top_spot = _fetch_sina_quotes_df(top_codes)
+        top_chg = _avg_pct_chg(top_spot, top_codes)
+    if top_chg is None and prev_d:
+        top_chg = _top_board_stock_chg(prev_d, ref_d)
     top_chg_str = f"{top_chg:+.1f}%" if top_chg is not None else "--"
     top_chg_trend = ("up" if top_chg is not None and top_chg >= 9.5
                      else "down" if top_chg is not None and top_chg < 0
