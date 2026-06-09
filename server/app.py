@@ -871,7 +871,7 @@ def _strip_removed_indicators(data: dict) -> dict:
             "highBoardPromote", "promote", "break",
             "height", "seal", "limitUp",
             "limitDown", "advance", "volume",
-            "continuationDepth", "top10AvgChg", "oneWord",
+            "oneWord", "continuationDepth", "top10AvgChg",
             "sectorConcentration",
         ))
     }

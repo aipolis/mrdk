@@ -57,7 +57,7 @@ const OVERVIEW_ORDER = [
   'highBoardPromote', 'promote', 'break',
   'height', 'seal', 'limitUp',
   'limitDown', 'advance', 'volume',
-  'continuationDepth', 'top10AvgChg', 'oneWord',
+  'oneWord', 'continuationDepth', 'top10AvgChg',
   'sectorConcentration'
 ]
 const OVERVIEW_RANK = new Map(OVERVIEW_ORDER.map((key, index) => [key, index]))
@@ -86,7 +86,7 @@ function mapItem(item) {
 
     key: item.key || item.name,
 
-    label: item.label || item.name || item.title || '',
+    label: key === 'top10AvgChg' ? '成交额前10平均涨幅' : (item.label || item.name || item.title || ''),
 
     value: displayText(item.value),
 

@@ -2008,7 +2008,7 @@ def build_yesterday_sentiment(metrics: dict, prev_metrics: Optional[dict] = None
             "highBoardPromote", "promote", "break",
             "height", "seal", "limitUp",
             "limitDown", "advance", "volume",
-            "continuationDepth", "top10AvgChg", "oneWord",
+            "oneWord", "continuationDepth", "top10AvgChg",
             "sectorConcentration",
         ))
     }
