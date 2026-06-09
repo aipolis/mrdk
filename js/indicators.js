@@ -64,8 +64,6 @@ const INTRADAY_DEFS = [
 
   { key: 'marketVolumeLive', label: '全市量能' },
 
-  { key: 'high10Live', label: '10日新高' },
-
   { key: 'top10AvgChgLive', label: 'T-1成交额前10平均涨幅' },
 
   { key: 'promoteLive', label: '昨日涨停股今日晋级率' },
@@ -399,19 +397,6 @@ function resolveVolPrev(data) {
   return '--'
 }
 
-function resolveHigh10Prev(data) {
-  const m = getIntradayCompareMetrics(data)
-  if (m.high10_count != null && !Number.isNaN(Number(m.high10_count))) {
-    return String(m.high10_count)
-  }
-  const fromIntraday = (data?.intraday || []).find((i) => i.key === 'high10Live')
-  if (fromIntraday) {
-    const p = fromIntraday.prev ?? fromIntraday.yesterday
-    if (p != null && String(p).trim() && String(p).trim() !== '--') return String(p).split(/\s+/)[0]
-  }
-  return '--'
-}
-
 function buildIntradayPrevMap(data) {
   const grid = data?.grid9 || []
   const byKey = {}
@@ -434,7 +419,6 @@ function buildIntradayPrevMap(data) {
     limitUpLive: prevLu != null ? String(prevLu).replace(/[^\d]/g, '') || String(prevLu) : '--',
     limitDownLive: prevLd != null ? String(prevLd).replace(/[^\d]/g, '') || String(prevLd) : '--',
     marketVolumeLive: resolveVolPrev(data),
-    high10Live: resolveHigh10Prev(data),
     top10AvgChgLive: resolveTop10Prev(data),
     promoteLive: m.promote_rate != null ? formatRate(m.promote_rate) : '--',
     breakLive: m.break_rate != null ? formatRate(m.break_rate) : '--',
@@ -672,7 +656,7 @@ function inferValueGood(item) {
   if (key === 'resealRate') return n >= 70
   if (key === 'limitDownRisk') return n <= 10
   if (key === 'bigLossCount') return n <= 50
-  if (key === 'oneWord' || key === 'auctionOneWord' || key === 'high10Live') return n > 0
+  if (key === 'oneWord' || key === 'auctionOneWord') return n > 0
   if (key === 'volume' || key === 'marketVolumeLive' || key === 'auctionVolume') return n > 0
   return null
 }
@@ -791,9 +775,15 @@ export function normalizeSections(sections, data = null) {
   return list.map((sec) => {
     const cols = sec.cols || 3
     const sid = sec.id || ''
-    const items = (sec.items || []).map((it) => normalizeCell(it, sid)).filter(Boolean)
+    const items = (sec.items || [])
+      .filter((it) => !['high10', 'high10Live'].includes(it?.key))
+      .map((it) => normalizeCell(it, sid))
+      .filter(Boolean)
     const rows = sec.rows?.length
-      ? sec.rows.map((row) => row.map((it) => normalizeCell(it, sid)).filter(Boolean))
+      ? sec.rows.map((row) => row
+        .filter((it) => !['high10', 'high10Live'].includes(it?.key))
+        .map((it) => normalizeCell(it, sid))
+        .filter(Boolean))
       : (sec.layout === 'row3' ? [items] : chunkToRows(items, cols))
     return { ...sec, items, rows }
   })
