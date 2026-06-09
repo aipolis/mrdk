@@ -248,6 +248,102 @@ _EM_A_SHARE_CLIST_URLS = (
 )
 
 
+def _fetch_em_top_amount_spot_df() -> Optional[pd.DataFrame]:
+    """东财成交额榜实时明细，作为前10指标的快速兜底。"""
+    key = f"em_top_amount_spot_df_{date_str(bj_now())}"
+    cached = _cache_get(key, 60)
+    if isinstance(cached, list) and cached:
+        return pd.DataFrame(cached)
+
+    headers = {"User-Agent": "Mozilla/5.0", "Referer": "https://quote.eastmoney.com/"}
+    base_params = {
+        "pn": "1",
+        "pz": "50",
+        "po": "1",
+        "np": "1",
+        "ut": "bd1d9ddb04089700cf9c27f6f7426281",
+        "fltt": "2",
+        "invt": "2",
+        "fid": "f6",
+        "fs": _EM_A_SHARE_FS,
+        "fields": "f12,f2,f3,f6,f17,f18",
+    }
+    for url in _EM_A_SHARE_CLIST_URLS:
+        try:
+            rows: list[dict] = []
+            params = dict(base_params)
+            response = requests.get(url, params=params, headers=headers, timeout=5)
+            data = response.json().get("data") or {}
+            total = int(data.get("total") or 0)
+            diff = data.get("diff") or []
+            rows.extend(list(diff.values()) if isinstance(diff, dict) else list(diff))
+            if total <= 0 or not rows:
+                continue
+
+            records = [
+                {
+                    "代码": str(row.get("f12") or "").zfill(6),
+                    "最新价": row.get("f2"),
+                    "涨跌幅": row.get("f3"),
+                    "成交额": row.get("f6"),
+                    "今开": row.get("f17"),
+                    "昨收": row.get("f18"),
+                }
+                for row in rows
+                if row.get("f12")
+            ]
+            if len(records) >= 10:
+                _cache_set(key, records)
+                return pd.DataFrame(records)
+        except Exception:
+            continue
+    return None
+
+
+def _fetch_em_big_drop_count(threshold: float = -7.0) -> Optional[int]:
+    """东财跌幅榜统计低于阈值的股票数，通常一页即可完成。"""
+    key = f"em_big_drop_count_{date_str(bj_now())}_{threshold}"
+    cached = _cache_get(key, 60)
+    if cached is not None:
+        return int(cached)
+
+    headers = {"User-Agent": "Mozilla/5.0", "Referer": "https://quote.eastmoney.com/"}
+    base_params = {
+        "pn": "1",
+        "pz": "500",
+        "po": "0",
+        "np": "1",
+        "ut": "bd1d9ddb04089700cf9c27f6f7426281",
+        "fltt": "2",
+        "invt": "2",
+        "fid": "f3",
+        "fs": _EM_A_SHARE_FS,
+        "fields": "f3",
+    }
+    for url in _EM_A_SHARE_CLIST_URLS:
+        try:
+            count = 0
+            for page in range(1, 20):
+                params = dict(base_params)
+                params["pn"] = str(page)
+                response = requests.get(url, params=params, headers=headers, timeout=5)
+                diff = (response.json().get("data") or {}).get("diff") or []
+                rows = list(diff.values()) if isinstance(diff, dict) else list(diff)
+                if not rows:
+                    break
+                pct = pd.to_numeric(pd.Series([row.get("f3") for row in rows]), errors="coerce").dropna()
+                page_count = int((pct < threshold).sum())
+                count += page_count
+                if page_count < len(pct):
+                    _cache_set(key, count)
+                    return count
+            _cache_set(key, count)
+            return count
+        except Exception:
+            continue
+    return None
+
+
 def _fetch_em_a_share_snapshot() -> dict:
     """东财全 A 实时列表聚合：成交额、上涨/下跌家数。"""
     key = f"em_a_share_snapshot_{date_str(bj_now())}"
@@ -292,6 +388,7 @@ def _fetch_em_a_share_snapshot() -> dict:
             result = {
                 "advance": int((pct > 0).sum()),
                 "decline": int((pct < 0).sum()),
+                "big_drop_count": int((pct < -7.0).sum()),
                 "amount_raw": round(float(amount) / 1e8, 1) if amount > 0 else 0.0,
                 "rows": len(rows),
             }
@@ -301,7 +398,7 @@ def _fetch_em_a_share_snapshot() -> dict:
         except Exception:
             continue
 
-    result = {"advance": 0, "decline": 0, "amount_raw": 0.0, "rows": 0}
+    result = {"advance": 0, "decline": 0, "big_drop_count": None, "amount_raw": 0.0, "rows": 0}
     _cache_set(key, result)
     return result
 
@@ -403,7 +500,8 @@ def _zt_df_one_word_subset(df_up: pd.DataFrame) -> Optional[pd.DataFrame]:
     if "首次封板时间" in df_up.columns and "最后封板时间" in df_up.columns:
         first = df_up["首次封板时间"].astype(str).str.replace(":", "", regex=False).str.zfill(6)
         last = df_up["最后封板时间"].astype(str).str.replace(":", "", regex=False).str.zfill(6)
-        mask = (first == last) & (first <= "092500")
+        # 东财涨停池的竞价撮合时间常记录为 09:25:01~09:25:xx。
+        mask = (first == last) & (first <= "092559")
         return df_up.loc[mask]
     if "开板次数" in df_up.columns:
         try:
@@ -560,6 +658,118 @@ def _one_word_items_from_clist() -> list[dict]:
     return items
 
 
+def _stock_limit_ratio(code: str, name: str = "") -> float:
+    """按板块/ST 名称返回涨停比例。"""
+    code = str(code or "").zfill(6)
+    name = str(name or "").upper()
+    if "ST" in name:
+        return 0.05
+    if code.startswith(("300", "301", "688")):
+        return 0.20
+    if code.startswith(("4", "8", "92")):
+        return 0.30
+    return 0.10
+
+
+def _is_limit_open(code: str, name: str, open_price, prev_close) -> bool:
+    """竞价开盘价是否达到按分币四舍五入后的涨停价。"""
+    try:
+        from decimal import Decimal, ROUND_HALF_UP
+
+        open_d = Decimal(str(open_price))
+        prev_d = Decimal(str(prev_close))
+        if open_d <= 0 or prev_d <= 0:
+            return False
+        ratio = Decimal(str(_stock_limit_ratio(code, name)))
+        limit_price = (prev_d * (Decimal("1") + ratio)).quantize(
+            Decimal("0.01"), rounding=ROUND_HALF_UP
+        )
+        return open_d >= limit_price
+    except Exception:
+        return False
+
+
+def _one_word_items_from_open_snapshot() -> list[dict]:
+    """全 A 开盘快照：竞价以涨停价开盘即计入，不要求盘中继续封板。"""
+    headers = {"User-Agent": "Mozilla/5.0", "Referer": "https://quote.eastmoney.com/"}
+    base_params = {
+        "pn": "1",
+        "pz": "500",
+        "po": "1",
+        "np": "1",
+        "ut": "bd1d9ddb04089700cf9c27f6f7426281",
+        "fltt": "2",
+        "invt": "2",
+        "fid": "f17",
+        "fs": _EM_A_SHARE_FS,
+        "fields": "f12,f14,f17,f18,f100,f3",
+    }
+
+    def _fetch_page(page: int) -> tuple[int, list[dict]]:
+        for url in _EM_A_SHARE_CLIST_URLS:
+            try:
+                params = {**base_params, "pn": str(page)}
+                response = requests.get(url, params=params, headers=headers, timeout=6)
+                data = response.json().get("data") or {}
+                diff = data.get("diff") or []
+                rows = list(diff.values()) if isinstance(diff, dict) else list(diff)
+                if rows:
+                    return int(data.get("total") or 0), rows
+            except Exception:
+                continue
+        return 0, []
+
+    total, first_rows = _fetch_page(1)
+    if not first_rows:
+        return []
+    pages = max(1, math.ceil(total / int(base_params["pz"])))
+    rows = list(first_rows)
+    if pages > 1:
+        with ThreadPoolExecutor(max_workers=min(6, pages - 1)) as pool:
+            futures = [pool.submit(_fetch_page, page) for page in range(2, pages + 1)]
+            for future in as_completed(futures):
+                _, chunk = future.result()
+                rows.extend(chunk)
+
+    items = []
+    for row in rows:
+        code = str(row.get("f12") or "").zfill(6)
+        name = str(row.get("f14") or code).strip()
+        open_price = pd.to_numeric(row.get("f17"), errors="coerce")
+        prev_close = pd.to_numeric(row.get("f18"), errors="coerce")
+        if not _is_limit_open(code, name, open_price, prev_close):
+            continue
+        open_pct = (float(open_price) - float(prev_close)) / float(prev_close) * 100
+        sector = str(row.get("f100") or "").strip()
+        items.append({
+            "code": code,
+            "name": name,
+            "openPct": round(open_pct, 2),
+            "sector": sector if sector not in ("", "--", "nan") else "--",
+            "sealAmount": None,
+        })
+    return items
+
+
+def _merge_one_word_items(*groups: list[dict]) -> list[dict]:
+    merged: dict[str, dict] = {}
+    for group in groups:
+        for item in group or []:
+            code = str(item.get("code") or "").zfill(6)
+            if not code:
+                continue
+            if code in merged:
+                current = merged[code]
+                for key in ("name", "sector", "sealAmount", "openPct"):
+                    if current.get(key) in (None, "", "--") and item.get(key) not in (None, "", "--"):
+                        current[key] = item[key]
+            else:
+                merged[code] = dict(item)
+    items = list(merged.values())
+    items.sort(key=lambda x: (-(x.get("sealAmount") or 0), -(x.get("openPct") or 0)))
+    return items
+
+
 def fetch_auction_one_word_stocks(trade_d: str = "") -> list[dict]:
     """
     竞价一字板列表。9:25 后数据定格，按交易日缓存、日内不再刷新。
@@ -580,10 +790,21 @@ def fetch_auction_one_word_stocks(trade_d: str = "") -> list[dict]:
     if cached is not None:
         return list(cached)
 
-    items = _one_word_items_from_zt_df(fetch_limit_up(trade_d))
-    if trade_d == today and not items:
-        items = _one_word_items_from_clist()
-        log.info("auction one-word zt pool empty, clist fallback n=%s", len(items))
+    pool_items = _one_word_items_from_zt_df(fetch_limit_up(trade_d))
+    if trade_d == today:
+        in_open_capture_window = _auction_hm() <= 9 * 60 + 30
+        open_items = _one_word_items_from_open_snapshot() if in_open_capture_window else []
+        high_chg_items = _one_word_items_from_clist() if in_open_capture_window or not pool_items else []
+        items = _merge_one_word_items(pool_items, open_items, high_chg_items)
+        log.info(
+            "auction one-word merged pool=%s open=%s high_chg=%s total=%s",
+            len(pool_items),
+            len(open_items),
+            len(high_chg_items),
+            len(items),
+        )
+    else:
+        items = pool_items
 
     _cache_set(cache_key, items)
     log.info("auction one-word frozen %s n=%s", trade_d, len(items))
@@ -1030,13 +1251,21 @@ def record_intraday_volume_snapshot(
 
 def _lookup_volume_snapshot(ref_d: str, hhmm: str) -> Optional[float]:
     snap_map = _cache_get(f"vol_intraday_map_{ref_d}", 86400 * 10) or {}
-    if not snap_map:
-        return None
-    if hhmm in snap_map:
-        return float(snap_map[hhmm])
-    prior = sorted(k for k in snap_map.keys() if k <= hhmm)
-    if prior:
-        return float(snap_map[prior[-1]])
+    if snap_map:
+        if hhmm in snap_map:
+            return float(snap_map[hhmm])
+        prior = sorted(k for k in snap_map.keys() if k <= hhmm)
+        if prior:
+            return float(snap_map[prior[-1]])
+    try:
+        from history_store import fetch_intraday_volume_at_or_before
+
+        snap_time = f"{hhmm[:2]}:{hhmm[2:4]}"
+        persisted = fetch_intraday_volume_at_or_before(ref_d, snap_time)
+        if persisted and persisted > 0:
+            return float(persisted)
+    except Exception:
+        pass
     return None
 
 
@@ -1153,6 +1382,7 @@ def fetch_ref_volume_prev_label(
         same = fetch_ref_volume_at_same_time(ref_d, now)
         if same and same > 0:
             return f"{round(float(same))}亿", float(same)
+        return "--", None
     raw = ref_metrics.get("volume_raw")
     if raw is not None:
         try:
@@ -2146,7 +2376,7 @@ def _compute_market_auction_volume_yi() -> Optional[float]:
     headers = {"User-Agent": "Mozilla/5.0", "Referer": "https://quote.eastmoney.com/"}
     base = {
         "pn": "1",
-        "pz": "100",
+        "pz": "5000",
         "po": "1",
         "np": "1",
         "ut": "bd1d9ddb04089700cf9c27f6f7426281",
@@ -2155,36 +2385,32 @@ def _compute_market_auction_volume_yi() -> Optional[float]:
         "fid": "f12",
         "fs": "m:0 t:6,m:0 t:80,m:1 t:2,m:1 t:23,m:0 t:81 s:2048",
     }
-    for field in fields_try:
-        for url in urls:
-            try:
-                params = {**base, "fields": f"f12,{field}", "pn": "1"}
-                r = requests.get(url, params=params, headers=headers, timeout=25)
-                j = r.json()
-                data = j.get("data") or {}
-                diff = data.get("diff") or []
-                if not diff:
-                    continue
-                per = len(diff)
-                pages = math.ceil(int(data.get("total") or per) / max(per, 1))
-                subtotal = 0.0
-                hits = 0
-                for pn in range(1, min(pages + 1, 80)):
-                    params = {**base, "fields": f"f12,{field}", "pn": str(pn)}
-                    r = requests.get(url, params=params, headers=headers, timeout=25)
-                    chunk = (r.json().get("data") or {}).get("diff") or []
-                    for row in chunk:
-                        v = pd.to_numeric(row.get(field), errors="coerce")
-                        if v is not None and float(v) > 0:
-                            subtotal += float(v)
-                            hits += 1
-                    if pn < pages:
-                        time.sleep(0.12)
-                yi = _yuan_total_to_yi(subtotal)
-                if yi and hits >= 200 and 50 <= yi <= 2000:
-                    return float(yi)
-            except Exception:
-                continue
+    def _probe(field: str, url: str) -> Optional[float]:
+        try:
+            params = {**base, "fields": f"f12,{field}", "pn": "1"}
+            response = requests.get(url, params=params, headers=headers, timeout=6)
+            diff = (response.json().get("data") or {}).get("diff") or []
+            rows = list(diff.values()) if isinstance(diff, dict) else list(diff)
+            subtotal = 0.0
+            hits = 0
+            for row in rows:
+                value = pd.to_numeric(row.get(field), errors="coerce")
+                if value is not None and not pd.isna(value) and float(value) > 0:
+                    subtotal += float(value)
+                    hits += 1
+            yi = _yuan_total_to_yi(subtotal)
+            if yi and hits >= 200 and 50 <= yi <= 2000:
+                return float(yi)
+        except Exception:
+            pass
+        return None
+
+    with ThreadPoolExecutor(max_workers=len(fields_try) * len(urls)) as pool:
+        futures = [pool.submit(_probe, field, url) for field in fields_try for url in urls]
+        for future in as_completed(futures):
+            yi = future.result()
+            if yi is not None:
+                return yi
     return None
 
 
@@ -2249,6 +2475,9 @@ def build_auction_sentiment(
         spot_ok = spot_df is not None and not spot_df.empty
     except Exception:
         spot_df = None
+    if not spot_ok:
+        spot_df = _fetch_em_top_amount_spot_df()
+        spot_ok = spot_df is not None and not spot_df.empty
 
     now = bj_now()
     live_auction = advice_d == today and _auction_data_ready()
@@ -2284,9 +2513,6 @@ def build_auction_sentiment(
             pass
 
     auction_one_word = _auction_one_word_count(advice_d, spot_df)
-    if live_auction and not live_ready and now.hour < 15:
-        auction_one_word = None
-        top10_avg = None
     if auction_one_word is None:
         for k in ("auction_one_word_count", "one_word_count", "auction_up"):
             v = metrics.get(k)
@@ -2766,6 +2992,27 @@ def _prev_limit_up_premium(prev_d: Optional[str]) -> Optional[str]:
     return None
 
 
+def _prev_longkong_risk_value(trade_d: Optional[str], key: str) -> Optional[str]:
+    """从指定交易日归档读取龙空风控指标值。"""
+    if not trade_d or not key:
+        return None
+    try:
+        from history_store import fetch_daily_detail
+    except Exception:
+        return None
+    detail = fetch_daily_detail(trade_d)
+    if not detail:
+        return None
+    for sec in (detail.get("indicatorSections") or []):
+        if sec.get("id") != "longkongRisk":
+            continue
+        for item in (sec.get("items") or []):
+            if item.get("key") == key:
+                value = str(item.get("value") or "").strip()
+                return value if value and value != "--" else None
+    return None
+
+
 def build_longkong_risk_items(
     ref_d: str,
     prev_d: Optional[str],
@@ -2823,6 +3070,13 @@ def build_longkong_risk_items(
         ref_d, prev_d, advice_d or ref_d, spot_df,
         _fallback_pool_dfs=[df_ref_up, df_ref_broken],
     )
+    if big_loss is None:
+        market_snapshot = _fetch_em_a_share_snapshot()
+        if int(market_snapshot.get("rows") or 0) >= 1000:
+            big_loss = market_snapshot.get("big_drop_count")
+    if big_loss is None:
+        big_loss = _fetch_em_big_drop_count()
+    prev_big_loss = _prev_longkong_risk_value(ref_d, "bigLossCount")
 
     prev_limit_down = prev_metrics.get("limit_down_count")
     prev_break_rate = prev_metrics.get("break_rate")
@@ -2856,8 +3110,8 @@ def build_longkong_risk_items(
         item("limitDownRisk", "\u8dcc\u505c\u5bb6\u6570", str(limit_down_n), str(prev_limit_down) if prev_limit_down is not None else "--", _trend(limit_down_n, prev_limit_down, inverse=True), "\u6781\u7aef\u4e8f\u94b1\u6548\u5e94\u6e29\u5ea6"),
         item("bigLossCount", "\u8dcc\u5e45>7%",
              str(big_loss) if big_loss is not None else "--",
-             "--",
-             "down" if big_loss is not None and big_loss > 50 else "flat",
+             prev_big_loss or "--",
+             _trend(big_loss, prev_big_loss, inverse=True),
              "\u5168\u5e02\u573a\u4eca\u65e5\u6da8\u8dcc\u5e45\u4f4e\u4e8e-7%\u7684\u80a1\u7968\u6570\u91cf"),
     ]
 
@@ -3528,9 +3782,10 @@ def _avg_pct_chg(spot_df: Optional[pd.DataFrame], codes: Optional[list[str]] = N
         code_col = _df_col(df, "\u4ee3\u7801")
         if not code_col:
             return None
+        normalized_codes = _normalize_code_list(codes)
         norm = df[code_col].astype(str).str.replace(r"\D", "", regex=True).str.zfill(6)
-        sub = df[norm.isin(_normalize_code_list(codes))]
-        if sub.empty:
+        sub = df[norm.isin(normalized_codes)]
+        if sub.empty or len(sub) < len(normalized_codes):
             return None
         df = sub
     else:
@@ -3658,7 +3913,9 @@ def fetch_intraday_board_stats(
     try:
         spot_df = ak.stock_zh_a_spot_em()
     except Exception:
-        pass
+        spot_df = None
+    if spot_df is None or spot_df.empty:
+        spot_df = _fetch_em_top_amount_spot_df()
 
     ref_codes = _normalize_code_list(ref_metrics.get("top10_codes") or [])
     if not ref_codes:
@@ -3754,6 +4011,8 @@ def build_ref_day_metrics(trade_d: str, prev_d: Optional[str] = None) -> dict:
     if trade_d == date_str(bj_now()):
         try:
             spot_df = ak.stock_zh_a_spot_em()
+            if spot_df is None or spot_df.empty:
+                spot_df = _fetch_em_top_amount_spot_df()
             top10_codes = _snapshot_top10_codes(spot_df)
             top10_avg_chg = _avg_pct_chg(spot_df, top10_codes)
             if top10_codes:
