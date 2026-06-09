@@ -14,42 +14,43 @@ LIVE_AUC_W_AT_1500 = 0.15
 
 # 盘中 9 项权重（展示分融合用，总和 1.0）
 W_INTRADAY = {
-    "sseIndex": 0.14,
-    "upRatio": 0.14,
-    "limitUpLive": 0.11,
-    "limitDownLive": 0.09,
-    "marketVolumeLive": 0.10,
+    "sseIndex": 0.06,
+    "upRatio": 0.07,
+    "limitUpLive": 0.10,
+    "limitDownLive": 0.15,
+    "marketVolumeLive": 0.06,
     "top10AvgChgLive": 0.16,
-    "promoteLive": 0.13,
-    "breakLive": 0.13,
+    "promoteLive": 0.22,
+    "breakLive": 0.18,
 }
 
 # 竞价 6 项权重：接力信号（近期溢价/首板涨幅）权重更高
 W_AUCTION = {
-    "recentMulti":      0.22,
-    "yesterdayFirst":   0.22,
-    "yesterdayMulti":   0.20,
-    "top10AuctionChg":  0.18,
-    "auctionOneWord":   0.10,
+    "recentMulti":      0.28,
+    "yesterdayMulti":   0.23,
+    "yesterdayFirst":   0.20,
+    "top10AuctionChg":  0.15,
     "auctionVolume":    0.08,
+    "auctionOneWord":   0.06,
 }
 
-# 昨日 9 项权重：leading indicators（晋级/炸板/封板/高度）权重更高
+# 龙空龙评分 V2：核心接力与亏钱效应优先，市场热度仅作为承载力。
+# sealQuality 合并封板率与炸板率，避免同一信息重复计分。
 W_YESTERDAY = {
-    "promote":   0.15,
-    "break":     0.14,
-    "seal":      0.13,
-    "height":    0.12,
-    "limitUp":   0.11,
-    "oneWord":   0.09,
-    "advance":   0.09,
-    "volume":    0.09,
-    "limitDown": 0.08,
+    "promote":          0.16,
+    "sealQuality":      0.16,
+    "highBoardPromote": 0.14,
+    "height":           0.10,
+    "limitUp":          0.10,
+    "limitDown":        0.10,
+    "advance":          0.08,
+    "volume":           0.06,
+    "oneWord":          0.03,
 }
 # 可选项：有数据时纳入权重并归一化
 W_YESTERDAY_OPT = {
-    "continuationDepth":    0.08,  # 连板占比，leading indicator
-    "sectorConcentration":  0.06,  # 板块集中度，结构性信号
+    "continuationDepth":    0.08,  # 连板占比，接力深度
+    "sectorConcentration":  0.05,  # 板块集中度，结构性信号
     "top10AvgChg":          0.04,
 }
 
@@ -60,6 +61,7 @@ SCORE_STRONG = 90
 SCORE_MID = 55
 SCORE_WEAK = 20
 SCORE_NEUTRAL = 55
+SCORE_VERSION = "longkong-v2"
 
 # 连续评分中判定"信号偏弱"的阈值
 _SIGNAL_WEAK = 40          # 一般指标
@@ -233,6 +235,16 @@ def score_one_word(count: int) -> int:
     return _linear_high(float(count or 0), lo=0, hi=12)
 
 
+def score_high_board_promote(continued: int, total: int) -> int:
+    """高位板晋级率，小样本向中性分收缩，避免 0/1 或 1/1 过度扰动。"""
+    continued, total = int(continued or 0), int(total or 0)
+    if total <= 0:
+        return SCORE_NEUTRAL
+    raw = _linear_high(continued / total * 100, lo=0.0, hi=70.0)
+    confidence = min(1.0, total / 5.0)
+    return round(SCORE_NEUTRAL * (1 - confidence) + raw * confidence)
+
+
 def score_volume_yi(yi: float, avg_20d: Optional[float] = None) -> int:
     """
     有 avg_20d（20日均量）时：相对均量百分比评分，-25%→20，+25%→90，0%→55。
@@ -306,20 +318,29 @@ def _score_yesterday_block(metrics: dict, grid9: Optional[list] = None) -> dict[
     except (TypeError, ValueError):
         top10_f = None
 
+    seal_score = score_seal(float(seal or 0))
+    break_score = score_break_rate(float(break_r or 0))
     out: dict[str, int] = {
         "height": score_height(int(max_board or 0)),
         "limitUp": score_limit_up(int(limit_up or 0)),
-        "seal": score_seal(float(seal or 0)),
+        "seal": seal_score,
         "promote": score_promote(float(promote or 0)),
         "limitDown": score_limit_down(int(limit_down or 0)),
-        "break": score_break_rate(float(break_r or 0)),
+        "break": break_score,
+        "sealQuality": round((seal_score + break_score) / 2),
         "oneWord": score_one_word(int(one_word or 0)),
         "volume": score_volume_yi(float(vol_yi or 0), avg_20d=m.get("volume_20d_avg")),
-        "advance": score_advance_breadth(int(adv or 0), int(dec or 0)),
-        "top10AvgChg": score_top10_avg_chg(top10_f) if top10_f is not None else SCORE_NEUTRAL,
     }
+    if int(adv or 0) > 0 and int(dec or 0) > 0 and int(adv or 0) + int(dec or 0) >= 500:
+        out["advance"] = score_advance_breadth(int(adv), int(dec))
+    if top10_f is not None:
+        out["top10AvgChg"] = score_top10_avg_chg(top10_f)
     if multi_board is not None:
         out["continuationDepth"] = score_continuation_depth(int(multi_board), int(limit_up or 0))
+    high_cont = m.get("high_board_promote_continued")
+    high_total = m.get("high_board_promote_total")
+    if high_cont is not None and high_total is not None and int(high_total or 0) > 0:
+        out["highBoardPromote"] = score_high_board_promote(int(high_cont), int(high_total))
     sc = m.get("sector_concentration")
     if sc:
         out["sectorConcentration"] = score_sector_concentration(
@@ -353,6 +374,30 @@ def _weighted_yesterday_avg(scores: dict[str, int]) -> float:
     if total_w <= 0:
         return float(SCORE_NEUTRAL)
     return weighted / total_w
+
+
+def _score_contributions(scores: dict[str, int]) -> dict[str, float]:
+    all_weights = {**W_YESTERDAY, **W_YESTERDAY_OPT}
+    total_w = sum(w for key, w in all_weights.items() if key in scores)
+    if total_w <= 0:
+        return {}
+    return {
+        key: round(scores[key] * weight / total_w, 2)
+        for key, weight in all_weights.items()
+        if key in scores
+    }
+
+
+def _score_data_quality(scores: dict[str, int]) -> dict:
+    all_weights = {**W_YESTERDAY, **W_YESTERDAY_OPT}
+    available = sum(weight for key, weight in all_weights.items() if key in scores)
+    total = sum(all_weights.values())
+    return {
+        "availableWeight": round(available, 2),
+        "totalWeight": round(total, 2),
+        "completeness": round(available / total, 3) if total else 0,
+        "missing": [key for key in all_weights if key not in scores],
+    }
 
 
 # ── 盘中实时 9 项 ─────────────────────────────────────────────
@@ -394,18 +439,25 @@ def score_intraday_block(snap: dict) -> dict[str, int]:
     except (TypeError, ValueError):
         top10_f = None
 
-    return {
-        "sseIndex": score_sse_index(float(sse)) if sse is not None else SCORE_NEUTRAL,
-        "upRatio": breadth_s,
+    out = {
         # lo=0 → 20  hi=70 → 90  mid=35 → 55
         "limitUpLive": _linear_high(float(lu), lo=0, hi=70),
         # lo=8（少）→ 90  hi=42（多）→ 20  mid=25 → 55
         "limitDownLive": _linear_low(float(ld), lo=8.0, hi=42.0),
-        "marketVolumeLive": score_volume_intraday(amt, vol_pct),
-        "top10AvgChgLive": score_top10_avg_chg(top10_f) if top10_f is not None else SCORE_NEUTRAL,
-        "promoteLive": score_promote(float(promote)) if promote is not None else SCORE_NEUTRAL,
-        "breakLive": score_break_rate(float(break_r)) if break_r is not None else SCORE_NEUTRAL,
     }
+    if sse is not None:
+        out["sseIndex"] = score_sse_index(float(sse))
+    if ratio is not None or (adv > 0 and dec > 0 and adv + dec >= 500):
+        out["upRatio"] = breadth_s
+    if vol_pct is not None:
+        out["marketVolumeLive"] = score_volume_intraday(amt, vol_pct)
+    if top10_f is not None:
+        out["top10AvgChgLive"] = score_top10_avg_chg(top10_f)
+    if promote is not None:
+        out["promoteLive"] = score_promote(float(promote))
+    if break_r is not None:
+        out["breakLive"] = score_break_rate(float(break_r))
+    return out
 
 
 def _weighted_intraday_avg(scores: dict[str, int]) -> float:
@@ -509,32 +561,20 @@ def _score_auction_block(auction: Optional[list], metrics: Optional[dict] = None
     recent_chg = _parse_pct((a.get("recentMulti") or {}).get("value"))
     top10_chg = _parse_pct((a.get("top10AuctionChg") or {}).get("value"))
 
-    return {
-        # lo=0 → 20  hi=8 → 90  mid=3 → 46
-        "auctionOneWord": _linear_high(float(one_word or 0), lo=0, hi=8)
-        if one_word is not None
-        else SCORE_NEUTRAL,
-        # lo=190亿 → 20  hi=450亿 → 90  mid=320亿 → 55
-        "auctionVolume": _linear_high(float(vol_yi or 0), lo=190.0, hi=450.0)
-        if vol_yi is not None
-        else SCORE_NEUTRAL,
-        # lo=-2% → 20  hi=+2% → 90  mid=0% → 55
-        "yesterdayFirst": _linear_high(first_chg if first_chg is not None else 0, lo=-2.0, hi=2.0)
-        if first_chg is not None
-        else SCORE_NEUTRAL,
-        # lo=-3% → 20  hi=+1% → 90  mid=-1% → 55
-        "yesterdayMulti": _linear_high(multi_chg if multi_chg is not None else 0, lo=-3.0, hi=1.0)
-        if multi_chg is not None
-        else SCORE_NEUTRAL,
-        # lo=-2.5% → 20  hi=+2.5% → 90  mid=0% → 55
-        "recentMulti": _linear_high(recent_chg if recent_chg is not None else 0, lo=-2.5, hi=2.5)
-        if recent_chg is not None
-        else SCORE_NEUTRAL,
-        # lo=-1.2% → 20  hi=+1.2% → 90  mid=0% → 55
-        "top10AuctionChg": _linear_high(top10_chg if top10_chg is not None else 0, lo=-1.2, hi=1.2)
-        if top10_chg is not None
-        else SCORE_NEUTRAL,
-    }
+    out: dict[str, int] = {}
+    if one_word is not None:
+        out["auctionOneWord"] = _linear_high(float(one_word), lo=0, hi=8)
+    if vol_yi is not None:
+        out["auctionVolume"] = _linear_high(float(vol_yi), lo=190.0, hi=450.0)
+    if first_chg is not None:
+        out["yesterdayFirst"] = _linear_high(first_chg, lo=-2.0, hi=2.0)
+    if multi_chg is not None:
+        out["yesterdayMulti"] = _linear_high(multi_chg, lo=-3.0, hi=1.0)
+    if recent_chg is not None:
+        out["recentMulti"] = _linear_high(recent_chg, lo=-2.5, hi=2.5)
+    if top10_chg is not None:
+        out["top10AuctionChg"] = _linear_high(top10_chg, lo=-1.2, hi=1.2)
+    return out
 
 
 def _block_avg(scores: dict[str, int]) -> float:
@@ -561,6 +601,15 @@ def _collect_weak_reasons(
 ) -> list[str]:
     """收集偏弱信号原因。Leading indicators 使用更高阈值 _SIGNAL_WEAK_PRIMARY=45。"""
     reasons = []
+    high_cont = metrics.get("high_board_promote_continued")
+    high_total = metrics.get("high_board_promote_total")
+    if (
+        high_cont is not None
+        and high_total is not None
+        and int(high_total or 0) >= 3
+        and y.get("highBoardPromote", 99) < _SIGNAL_WEAK_PRIMARY
+    ):
+        reasons.append(f"高位板晋级仅{int(high_cont)}/{int(high_total)}")
     # ── leading indicators（阈值 45）──────────────────────────
     if y.get("promote", 99) < _SIGNAL_WEAK_PRIMARY:
         reasons.append(f"昨日涨停股今日晋级率仅{metrics.get('promote_rate', 0):.0f}%")
@@ -591,6 +640,20 @@ def _collect_weak_reasons(
     return reasons
 
 
+def _baseline_risk_gate(metrics: dict) -> str:
+    """龙空龙硬风控：高位核心集体失败时，不允许总分掩盖风险。"""
+    continued = metrics.get("high_board_promote_continued")
+    total = metrics.get("high_board_promote_total")
+    if continued is None or total is None:
+        return "none"
+    continued, total = int(continued or 0), int(total or 0)
+    if total >= 5 and continued == 0:
+        return "critical"
+    if total >= 3 and continued == 0:
+        return "warning"
+    return "none"
+
+
 def _collect_live_weak_reasons(
     live_scores: dict[str, int],
     auc_scores: dict[str, int],
@@ -615,10 +678,10 @@ def _calc_risk_level(reasons: list[str], score: int) -> str:
     分级风险：none / caution / warning / critical。
     - caution（提示）：1 条弱信号，仓位轻微收窄
     - warning（警示）：3 条弱信号或分数偏低，仓位减半
-    - critical（高风险）：4+ 条弱信号或极低分，仓位归零
+    - critical（高风险）：5+ 条弱信号或极低分，仓位归零
     """
     n = len(reasons)
-    if score <= 30 or n >= 4:
+    if score <= 30 or n >= 5:
         return "critical"
     if score <= 40 or n >= 3:
         return "warning"
@@ -685,11 +748,15 @@ def calc_sentiment(
 
     empty_reasons = _collect_weak_reasons(y_scores, metrics)
     risk_level = _calc_risk_level(empty_reasons, score)
+    gate_level = _baseline_risk_gate(metrics)
+    levels = ("none", "caution", "warning", "critical")
+    risk_level = levels[max(levels.index(risk_level), levels.index(gate_level))]
     position = _apply_risk_to_position(position, risk_level)
     empty_warning = risk_level == "critical"
 
     return {
         "score": score,
+        "scoreVersion": SCORE_VERSION,
         "level": level,
         "levelColor": color,
         "longkongSignal": signal,
@@ -704,6 +771,8 @@ def calc_sentiment(
             "auction": a_scores,
             "yesterdayAvg": round(y_avg, 1),
             "auctionAvg": round(_weighted_auction_avg(a_scores), 1) if a_scores else None,
+            "contributions": _score_contributions(y_scores),
+            "dataQuality": _score_data_quality(y_scores),
         },
     }
 
