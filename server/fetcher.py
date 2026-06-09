@@ -27,10 +27,10 @@ EM_POOL_MAX_AGE_DAYS = 30
 INTRADAY_CACHE_TTL = 100
 
 _EM_CLIST_URLS = (
+    "https://91.push2.eastmoney.com/api/qt/clist/get",
     "https://79.push2.eastmoney.com/api/qt/clist/get",
     "https://29.push2.eastmoney.com/api/qt/clist/get",
     "https://82.push2.eastmoney.com/api/qt/clist/get",
-    "https://91.push2.eastmoney.com/api/qt/clist/get",
     "https://48.push2.eastmoney.com/api/qt/clist/get",
     "https://push2.eastmoney.com/api/qt/clist/get",
 )
@@ -242,10 +242,35 @@ def _parse_market_activity_df(df: pd.DataFrame) -> dict:
 
 _EM_A_SHARE_FS = "m:0+t:6,m:0+t:80,m:1+t:2,m:1+t:23,m:0+t:81+s:2048"
 _EM_A_SHARE_CLIST_URLS = (
+    "https://91.push2.eastmoney.com/api/qt/clist/get",
     "https://push2.eastmoney.com/api/qt/clist/get",
     "https://82.push2.eastmoney.com/api/qt/clist/get",
     "https://79.push2.eastmoney.com/api/qt/clist/get",
+    "https://29.push2.eastmoney.com/api/qt/clist/get",
+    "https://48.push2.eastmoney.com/api/qt/clist/get",
 )
+
+
+def _race_em_clist(params: dict, headers: dict, *, timeout: float = 5) -> tuple[dict, Optional[str]]:
+    """Race Eastmoney mirrors so one unavailable host cannot stall a refresh."""
+    pool = ThreadPoolExecutor(max_workers=len(_EM_A_SHARE_CLIST_URLS))
+    futures = {
+        pool.submit(requests.get, url, params=params, headers=headers, timeout=timeout): url
+        for url in _EM_A_SHARE_CLIST_URLS
+    }
+    try:
+        for future in as_completed(futures, timeout=timeout + 1):
+            try:
+                data = (future.result().json().get("data") or {})
+                if data.get("diff"):
+                    return data, futures[future]
+            except Exception:
+                continue
+    except Exception:
+        pass
+    finally:
+        pool.shutdown(wait=False, cancel_futures=True)
+    return {}, None
 
 
 def _fetch_em_top_amount_spot_df() -> Optional[pd.DataFrame]:
@@ -268,7 +293,10 @@ def _fetch_em_top_amount_spot_df() -> Optional[pd.DataFrame]:
         "fs": _EM_A_SHARE_FS,
         "fields": "f12,f2,f3,f6,f17,f18",
     }
-    for url in _EM_A_SHARE_CLIST_URLS:
+    _, winner = _race_em_clist(base_params, headers)
+    if not winner:
+        return None
+    for url in (winner,):
         try:
             rows: list[dict] = []
             params = dict(base_params)
@@ -320,7 +348,10 @@ def _fetch_em_big_drop_count(threshold: float = -7.0) -> Optional[int]:
         "fs": _EM_A_SHARE_FS,
         "fields": "f3",
     }
-    for url in _EM_A_SHARE_CLIST_URLS:
+    _, winner = _race_em_clist(base_params, headers)
+    if not winner:
+        return None
+    for url in (winner,):
         try:
             count = 0
             for page in range(1, 20):
@@ -364,7 +395,8 @@ def _fetch_em_a_share_snapshot() -> dict:
         "fs": _EM_A_SHARE_FS,
         "fields": "f3,f6",
     }
-    for url in _EM_A_SHARE_CLIST_URLS:
+    _, winner = _race_em_clist(base_params, headers, timeout=12)
+    for url in ((winner,) if winner else ()):
         try:
             params = dict(base_params)
             r = requests.get(url, params=params, headers=headers, timeout=12)
@@ -2369,6 +2401,7 @@ def _yuan_total_to_yi(total: float) -> Optional[float]:
 def _compute_market_auction_volume_yi() -> Optional[float]:
     """汇总全 A 股 9:25 竞价成交额（亿），取东财 clist 竞价额字段求和"""
     urls = (
+        "https://91.push2.eastmoney.com/api/qt/clist/get",
         "https://82.push2.eastmoney.com/api/qt/clist/get",
         "https://push2.eastmoney.com/api/qt/clist/get",
     )
@@ -4009,10 +4042,14 @@ def build_ref_day_metrics(trade_d: str, prev_d: Optional[str] = None) -> dict:
     top10_codes: list[str] = []
     top10_avg_chg = None
     if trade_d == date_str(bj_now()):
+        spot_df = None
         try:
             spot_df = ak.stock_zh_a_spot_em()
-            if spot_df is None or spot_df.empty:
-                spot_df = _fetch_em_top_amount_spot_df()
+        except Exception:
+            pass
+        if spot_df is None or spot_df.empty:
+            spot_df = _fetch_em_top_amount_spot_df()
+        try:
             top10_codes = _snapshot_top10_codes(spot_df)
             top10_avg_chg = _avg_pct_chg(spot_df, top10_codes)
             if top10_codes:
