@@ -273,6 +273,64 @@ def _race_em_clist(params: dict, headers: dict, *, timeout: float = 5) -> tuple[
     return {}, None
 
 
+_SINA_MARKET_CENTER_URL = (
+    "https://money.finance.sina.com.cn/quotes_service/api/json_v2.php/"
+    "Market_Center.getHQNodeData"
+)
+
+
+def _fetch_sina_market_rank(sort: str, *, asc: bool = False) -> list[dict]:
+    """Fetch one Sina Shanghai/Shenzhen A-share ranking page."""
+    try:
+        response = requests.get(
+            _SINA_MARKET_CENTER_URL,
+            params={
+                "page": "1",
+                "num": "100",
+                "sort": sort,
+                "asc": "1" if asc else "0",
+                "node": "hs_a",
+                "symbol": "",
+                "_s_r_a": "page",
+            },
+            headers={"User-Agent": "Mozilla/5.0", "Referer": "https://finance.sina.com.cn/"},
+            timeout=8,
+        )
+        rows = response.json()
+        return rows if isinstance(rows, list) else []
+    except Exception:
+        return []
+
+
+def _fetch_sina_top_amount_spot_df() -> Optional[pd.DataFrame]:
+    rows = _fetch_sina_market_rank("amount")
+    records = [
+        {
+            "代码": str(row.get("code") or "").zfill(6),
+            "最新价": row.get("trade"),
+            "涨跌幅": row.get("changepercent"),
+            "成交额": row.get("amount"),
+            "今开": row.get("open"),
+            "昨收": row.get("settlement"),
+        }
+        for row in rows[:10]
+        if row.get("code")
+    ]
+    return pd.DataFrame(records) if len(records) >= 10 else None
+
+
+def _fetch_sina_big_drop_count(threshold: float = -7.0) -> Optional[int]:
+    rows = _fetch_sina_market_rank("changepercent", asc=True)
+    if not rows:
+        return None
+    pct = pd.to_numeric(
+        pd.Series([row.get("changepercent") for row in rows]), errors="coerce"
+    ).dropna()
+    if pct.empty or float(pct.iloc[-1]) <= threshold:
+        return None
+    return int((pct < threshold).sum())
+
+
 def _fetch_em_top_amount_spot_df() -> Optional[pd.DataFrame]:
     """东财成交额榜实时明细，作为前10指标的快速兜底。"""
     key = f"em_top_amount_spot_df_{date_str(bj_now())}"
@@ -295,7 +353,7 @@ def _fetch_em_top_amount_spot_df() -> Optional[pd.DataFrame]:
     }
     _, winner = _race_em_clist(base_params, headers)
     if not winner:
-        return None
+        return _fetch_sina_top_amount_spot_df()
     for url in (winner,):
         try:
             rows: list[dict] = []
@@ -325,7 +383,7 @@ def _fetch_em_top_amount_spot_df() -> Optional[pd.DataFrame]:
                 return pd.DataFrame(records)
         except Exception:
             continue
-    return None
+    return _fetch_sina_top_amount_spot_df()
 
 
 def _fetch_em_big_drop_count(threshold: float = -7.0) -> Optional[int]:
@@ -350,7 +408,7 @@ def _fetch_em_big_drop_count(threshold: float = -7.0) -> Optional[int]:
     }
     _, winner = _race_em_clist(base_params, headers)
     if not winner:
-        return None
+        return _fetch_sina_big_drop_count(threshold)
     for url in (winner,):
         try:
             count = 0
@@ -372,7 +430,7 @@ def _fetch_em_big_drop_count(threshold: float = -7.0) -> Optional[int]:
             return count
         except Exception:
             continue
-    return None
+    return _fetch_sina_big_drop_count(threshold)
 
 
 def _fetch_em_a_share_snapshot() -> dict:
