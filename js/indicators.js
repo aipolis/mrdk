@@ -32,6 +32,23 @@ const LABEL_OVERRIDES = {
   promoteLive: '晋级率',
 }
 
+const OVERVIEW_ORDER = [
+  'highBoardPromote', 'promote', 'break',
+  'height', 'seal', 'limitUp',
+  'limitDown', 'advance', 'volume',
+  'continuationDepth', 'top10AvgChg', 'oneWord',
+  'sectorConcentration',
+]
+const OVERVIEW_RANK = new Map(OVERVIEW_ORDER.map((key, index) => [key, index]))
+
+function sortOverviewItems(items) {
+  return [...(items || [])].sort((a, b) => {
+    const ar = OVERVIEW_RANK.get(a?.key) ?? OVERVIEW_ORDER.length
+    const br = OVERVIEW_RANK.get(b?.key) ?? OVERVIEW_ORDER.length
+    return ar - br
+  })
+}
+
 
 
 const AUCTION_DEFS = [
@@ -775,10 +792,11 @@ export function normalizeSections(sections, data = null) {
   return list.map((sec) => {
     const cols = sec.cols || 3
     const sid = sec.id || ''
-    const items = (sec.items || [])
+    let items = (sec.items || [])
       .filter((it) => !['high10', 'high10Live'].includes(it?.key))
       .map((it) => normalizeCell(it, sid))
       .filter(Boolean)
+    if (sid === 'yesterday') items = sortOverviewItems(items)
     const rows = sec.rows?.length
       ? sec.rows.map((row) => row
         .filter((it) => !['high10', 'high10Live'].includes(it?.key))
