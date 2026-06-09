@@ -160,7 +160,8 @@ API_BASE: 'https://mingri-api-xxxxxxxx.sh.run.tcloudbase.com',  // OCR 上传仍
 
 `GET https://你的域名/api/subscribe/preview`
 
-**每日 09:15 定时**：云托管「定时触发」POST  
+**每日 09:10 定时**：云托管「定时触发」POST
+
 `/api/subscribe/cron-daily`，Header：`X-Cron-Secret: 你的CRON_SECRET`
 
 ---
@@ -223,7 +224,7 @@ GET https://你的域名/api/cache/home-status
 | **09:30–15:00** | **盘中实时情绪每 2 分钟刷新**（展示分 + 盘中板块） |
 | **09:26** | **今日竞价情绪初更** → MySQL |
 | **09:35** | **今日竞价情绪固化** → MySQL |
-| 09:15 | 订阅消息推送 |
+| 09:10 | 订阅消息推送 |
 | **15:05** | **昨日情绪初更**（东财收盘快照 → MySQL） |
 | **18:00** | **昨日情绪固化** → MySQL |
 | 18:05 | 同步 60 天历史到 MySQL |
@@ -243,6 +244,9 @@ GET https://你的域名/api/cache/home-status
 
 若关闭了内置定时，或想用控制台统一管理，按下面配置。
 
+> 不要同时启用内置定时和云端定时。部分云平台按 UTC 解释 Cron；
+> 若平台使用 UTC，北京时间 09:10 对应 `10 1 * * 1-5`，不是 `10 9 * * 1-5`。
+
 1. 打开 [微信云托管控制台](https://cloud.weixin.qq.com/cloudrun)
 2. 进入你的环境 → 左侧 **拓展功能** → **定时触发**（或 **服务管理 → mingri-api → 定时触发**）
 3. 点击 **新建**，依次创建 9 条（Cron 时区均为 **UTC+8**）：
@@ -254,7 +258,7 @@ GET https://你的域名/api/cache/home-status
 | peripheral-0900 | `0 9 * * 1-5` | POST | `/api/cache/snapshot-daily?phase=0900` | 同上 |
 | auction-0926 | `26 9 * * 1-5` | POST | `/api/cache/snapshot-daily?phase=0926` | 同上 |
 | auction-0935 | `35 9 * * 1-5` | POST | `/api/cache/snapshot-daily?phase=0935` | 同上 |
-| subscribe-daily | `15 9 * * 1-5` | POST | `/api/subscribe/cron-daily` | 同上 |
+| subscribe-daily | `10 9 * * 1-5` | POST | `/api/subscribe/cron-daily` | 同上 |
 | snapshot-1505 | `5 15 * * 1-5` | POST | `/api/cache/snapshot-daily?phase=1505` | 同上 |
 | snapshot-1800 | `0 18 * * 1-5` | POST | `/api/cache/snapshot-daily?phase=1800` | 同上 |
 | sync-history | `5 18 * * 1-5` | POST | `/api/cache/sync-history?days=60` | 同上 |
@@ -264,7 +268,7 @@ GET https://你的域名/api/cache/home-status
 4. **目标服务** 选 `mingri-api`，**公网/内网** 选内网（同环境优先内网）
 5. 保存后可在触发器详情 **手动执行一次** 测试
 
-> 若控制台 Cron 为 **6 段**（无秒），则用：`0 6 * * 1-5`、`50 8 * * 1-5`、`0 9 * * 1-5`、`26 9 * * 1-5`、`35 9 * * 1-5`、`15 9 * * 1-5`、`5 15 * * 1-5`、`0 18 * * 1-5`、`5 18 * * 1-5`
+> 若控制台 Cron 为 **6 段**（无秒），则用：`0 6 * * 1-5`、`50 8 * * 1-5`、`0 9 * * 1-5`、`26 9 * * 1-5`、`35 9 * * 1-5`、`10 9 * * 1-5`、`5 15 * * 1-5`、`0 18 * * 1-5`、`5 18 * * 1-5`
 
 手动测试（PowerShell）：
 

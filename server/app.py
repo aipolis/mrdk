@@ -97,7 +97,7 @@ from subscribe_msg import (
     register_subscriber,
     send_subscribe_message,
 )
-from user_store import upsert_user_login, users_status
+from user_store import claim_daily_push, upsert_user_login, users_status
 
 logging.basicConfig(level=logging.INFO)
 log = logging.getLogger("mingri.app")
@@ -1109,6 +1109,33 @@ async def lifespan(app: FastAPI):
 
 
 async def _run_daily_subscribe_push() -> dict:
+    now = bj_now()
+    push_date = date_str(now)
+    minute_of_day = now.hour * 60 + now.minute
+    if now.weekday() >= 5 or not (9 * 60 + 5 <= minute_of_day <= 9 * 60 + 25):
+        log.warning("daily subscribe push skipped outside window local_time=%s", now.isoformat())
+        return {
+            "skipped": True,
+            "reason": "outside_push_window",
+            "localTime": now.isoformat(),
+        }
+
+    claimed = claim_daily_push(push_date)
+    if claimed is None:
+        log.error("daily subscribe push skipped because dedupe store is unavailable")
+        return {
+            "skipped": True,
+            "reason": "dedupe_unavailable",
+            "localTime": now.isoformat(),
+        }
+    if not claimed:
+        log.warning("daily subscribe push skipped because date was already claimed date=%s", push_date)
+        return {
+            "skipped": True,
+            "reason": "already_sent",
+            "localTime": now.isoformat(),
+        }
+
     ref_d, prev_d, advice_d, is_ready = resolve_advice_dates()
     metrics = build_day_metrics(ref_d, prev_d)
     sentiment = calc_sentiment(metrics)
@@ -1789,7 +1816,7 @@ async def subscribe_send_test(
 
 @app.post("/api/subscribe/cron-daily")
 async def subscribe_cron_daily(x_cron_secret: str = Header(default="")):
-    """每日 09:15 定时触发：向已订阅用户推送（内容随情绪变化）"""
+    """每日 09:10 定时触发：向已订阅用户推送（内容随情绪变化）"""
     if err := _cron_auth_error(x_cron_secret):
         return err
     data = await _run_daily_subscribe_push()

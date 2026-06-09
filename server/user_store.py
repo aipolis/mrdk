@@ -12,7 +12,9 @@ from db_store import MYSQL_CHARSET, MYSQL_COLLATE, ensure_schema, mysql_enabled,
 log = logging.getLogger("mingri.user")
 
 TABLE_USERS = "mini_users"
+TABLE_PUSH_RUNS = "mini_push_runs"
 _users_ready = False
+_push_runs_ready = False
 
 
 def mask_openid(openid: str) -> str:
@@ -69,6 +71,66 @@ def ensure_users_table() -> bool:
     except Exception:
         log.exception("users table init failed")
         return False
+
+
+def ensure_push_runs_table() -> bool:
+    global _push_runs_ready
+    if _push_runs_ready:
+        return True
+    if not mysql_enabled() or not ensure_schema():
+        return False
+
+    def _run(conn):
+        with conn.cursor() as cur:
+            cur.execute(
+                f"""
+                CREATE TABLE IF NOT EXISTS `{TABLE_PUSH_RUNS}` (
+                    push_date CHAR(8) NOT NULL,
+                    push_kind VARCHAR(32) NOT NULL,
+                    claimed_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+                    PRIMARY KEY (push_date, push_kind)
+                ) ENGINE=InnoDB DEFAULT CHARSET={MYSQL_CHARSET} COLLATE={MYSQL_COLLATE}
+                """
+            )
+        conn.commit()
+
+    try:
+        with_retry(_run)
+        _push_runs_ready = True
+        log.info("push runs table ready table=%s", TABLE_PUSH_RUNS)
+        return True
+    except Exception:
+        log.exception("push runs table init failed")
+        return False
+
+
+def claim_daily_push(push_date: str, push_kind: str = "sentiment_daily") -> Optional[bool]:
+    """Claim the one allowed production push for a date.
+
+    Returns True when claimed, False when already claimed, and None when the
+    dedupe store is unavailable.
+    """
+    if not push_date or not push_kind or not ensure_push_runs_table():
+        return None
+
+    def _run(conn):
+        with conn.cursor() as cur:
+            cur.execute(
+                f"""
+                INSERT IGNORE INTO `{TABLE_PUSH_RUNS}` (push_date, push_kind)
+                VALUES (%s, %s)
+                """,
+                (push_date[:8], push_kind[:32]),
+            )
+            claimed = cur.rowcount == 1
+        conn.commit()
+        return claimed
+
+    try:
+        return bool(with_retry(_run))
+    except Exception:
+        log.exception("claim daily push failed date=%s kind=%s", push_date, push_kind)
+        return None
 
 
 def _row_to_public(row: dict, *, is_new: bool = False) -> dict[str, Any]:
