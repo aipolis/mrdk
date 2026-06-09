@@ -1962,7 +1962,7 @@ def build_yesterday_sentiment(metrics: dict, prev_metrics: Optional[dict] = None
         top10_prev_f = _safe_float(top10_prev)
         rows.append({
             "key": "top10AvgChg",
-            "label": "活跃股均涨幅",
+            "label": "成交额前10平均涨幅",
             "value": f"{top10_chg_f:+.2f}%" if top10_chg_f is not None else "--",
             "yesterday": f"{top10_prev_f:+.2f}%" if top10_prev_f is not None else "--",
             "trend": _trend(top10_chg_f, top10_prev_f),
