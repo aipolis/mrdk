@@ -2577,31 +2577,9 @@ def build_auction_sentiment(
     live_ready = live_auction and not auction_frozen and spot_ok and now.hour < 15
 
     if spot_ok and spot_df is not None:
-        top10_codes = _normalize_code_list(metrics.get("top10_codes"))
-        if not top10_codes:
-            top10_codes = _load_top10_codes_for_date(pool_d)
-        top10_avg = _avg_open_pct_for_top_amount(spot_df, top10_codes)
-        if top10_avg is None:
-            top10_avg = _avg_open_pct_for_top_amount(spot_df)
-
-    if spot_ok and spot_df is not None and top10_avg is None:
-        try:
-            if "成交额" in spot_df.columns:
-                top10 = spot_df.nlargest(10, "成交额")
-                if "今开" in top10.columns and "昨收" in top10.columns:
-                    o = pd.to_numeric(top10["今开"], errors="coerce")
-                    p = pd.to_numeric(top10["昨收"], errors="coerce").replace(0, pd.NA)
-                    avg = ((o - p) / p * 100).mean(skipna=True)
-                    if not pd.isna(avg):
-                        v = round(float(avg), 2)
-                        if abs(v) > 1e-9:
-                            top10_avg = v
-                elif "涨跌幅" in top10.columns:
-                    avg = pd.to_numeric(top10["涨跌幅"], errors="coerce").mean(skipna=True)
-                    if not pd.isna(avg) and float(avg) != 0.0:
-                        top10_avg = round(float(avg), 2)
-        except Exception:
-            pass
+        top10_codes = _load_top10_codes_for_date(pool_d)
+        if top10_codes:
+            top10_avg = _avg_open_pct_for_top_amount(spot_df, top10_codes)
 
     auction_one_word = _auction_one_word_count(advice_d, spot_df)
     if auction_one_word is None:
@@ -2613,14 +2591,6 @@ def build_auction_sentiment(
                     break
                 except (TypeError, ValueError):
                     pass
-    if top10_avg is None and metrics.get("auction_median") is not None:
-        try:
-            top10_avg = float(metrics.get("auction_median"))
-        except (TypeError, ValueError):
-            top10_avg = None
-    if top10_avg is None and metrics.get("top10_avg_chg") is not None:
-        top10_avg = _safe_float(metrics.get("top10_avg_chg"))
-
     first_board_chg = _avg_auction_chg_from_spot(first_codes, spot_df) if live_ready else None
     multi_board_chg = _avg_auction_chg_from_spot(multi_codes, spot_df) if live_ready else None
     recent_multi_chg = _avg_auction_chg_from_spot(max_board_codes, spot_df) if live_ready else None
@@ -2637,14 +2607,6 @@ def build_auction_sentiment(
         multi_board_chg = _safe_float(metrics.get("multi_board_auction_chg"))
     if recent_multi_chg is None:
         recent_multi_chg = _safe_float(metrics.get("max_board_auction_chg"))
-    if top10_avg is None:
-        try:
-            board = fetch_intraday_board_stats(pool_d, metrics, live=True)
-            live_top10 = board.get("top10_avg_live")
-            if live_top10 is not None:
-                top10_avg = float(live_top10)
-        except Exception:
-            pass
     prefer_prev_auction = bool(advice_d and ref_d and advice_d <= ref_d)
     auction_yi = get_market_auction_volume_yi(advice_d)
     if auction_yi is None:
