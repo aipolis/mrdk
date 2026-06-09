@@ -57,7 +57,7 @@ function inferValueGood(item) {
   if (key === 'seal') return n >= 60
   if (key === 'promote' || key === 'promoteLive') return n >= 25
   if (key === 'break' || key === 'breakLive') return n <= 30
-  if (key === 'oneWord' || key === 'auctionOneWord' || key === 'high10Live') return n > 0
+  if (key === 'oneWord' || key === 'auctionOneWord') return n > 0
   if (key === 'volume' || key === 'marketVolumeLive' || key === 'auctionVolume') return n > 0
   return null
 }

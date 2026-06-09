@@ -56,7 +56,6 @@ const intradayMock = [
   { key: 'limitUpLive', label: '实时涨停', value: '52', yesterday: '58', trend: 'down' },
   { key: 'limitDownLive', label: '实时跌停', value: '8', yesterday: '12', trend: 'down' },
   { key: 'marketVolumeLive', label: '全市量能', value: '8232亿 +5.2%', yesterday: '7821亿', trend: 'up', up: true },
-  { key: 'high10Live', label: '10日新高', value: '452 +111.2%', yesterday: '214', trend: 'up', up: true },
   { key: 'top10AvgChgLive', label: 'T-1成交额前10平均涨幅', value: '+1.85%', yesterday: '+0.62%', trend: 'up', up: true },
   { key: 'promoteLive', label: 'T-1日涨停晋级率', value: '28%', yesterday: '23%', trend: 'up' },
   { key: 'breakLive', label: '实时炸板率', value: '32%', yesterday: '37%', trend: 'down' }

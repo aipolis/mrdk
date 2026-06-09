@@ -48,7 +48,6 @@ const INTRADAY_DEFS = [
   { key: 'limitUpLive', label: '实时涨停' },
   { key: 'limitDownLive', label: '实时跌停' },
   { key: 'marketVolumeLive', label: '全市量能' },
-  { key: 'high10Live', label: '10日新高' },
   { key: 'top10AvgChgLive', label: 'T-1成交额前10平均涨幅' },
   { key: 'promoteLive', label: '晋级率' },
   { key: 'breakLive', label: '实时炸板率' }
@@ -430,19 +429,6 @@ function resolveVolPrev(data) {
   return '--'
 }
 
-function resolveHigh10Prev(data) {
-  const m = (data && data.metrics) || {}
-  if (m.high10_count != null && !Number.isNaN(Number(m.high10_count))) {
-    return String(m.high10_count)
-  }
-  const fromIntraday = (data && data.intraday || []).find(i => i.key === 'high10Live')
-  if (fromIntraday) {
-    const p = fromIntraday.prev != null ? fromIntraday.prev : fromIntraday.yesterday
-    if (p != null && String(p).trim() && String(p).trim() !== '--') return String(p).split(/\s+/)[0]
-  }
-  return '--'
-}
-
 function dateKey(raw) {
   return String(raw || '').replace(/\D/g, '').slice(0, 8)
 }
@@ -477,7 +463,6 @@ function buildIntradayPrevMap(data) {
     limitUpLive: prevLu != null ? String(prevLu).replace(/[^\d]/g, '') || String(prevLu) : '--',
     limitDownLive: prevLd != null ? String(prevLd).replace(/[^\d]/g, '') || String(prevLd) : '--',
     marketVolumeLive: resolveVolPrev(data),
-    high10Live: resolveHigh10Prev(data),
     top10AvgChgLive: resolveTop10Prev(data),
     promoteLive: m.promote_rate != null ? formatRate(m.promote_rate) : '--',
     breakLive: m.break_rate != null ? formatRate(m.break_rate) : '--'
@@ -644,7 +629,10 @@ function normalizeIndicatorSections(data) {
 
       const def = SECTION_DEFS.find(d => d.id === sec.id) || {}
 
-      let items = (sec.items || []).map(mapItem).filter(Boolean)
+      let items = (sec.items || [])
+        .filter(item => !['high10', 'high10Live'].includes(item && item.key))
+        .map(mapItem)
+        .filter(Boolean)
       if (sec.id === 'auction') {
         items = sanitizeAuctionList(mergeAuctionItems(sec.items || [], data))
       }
@@ -671,13 +659,15 @@ function normalizeIndicatorSections(data) {
 
   } else {
 
-    const yesterday = normalizeGrid9(data).map(item => ({
+    const yesterday = normalizeGrid9(data)
+      .filter(item => item && item.key !== 'high10')
+      .map(item => ({
 
       ...mapItem(item),
 
       label: item.label === 'X板' ? '连板高度' : (item.label === '成交量能' ? '市场量能' : item.label)
 
-    }))
+      }))
 
     sections = SECTION_DEFS.map(def => {
 

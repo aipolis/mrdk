@@ -19,10 +19,9 @@ W_INTRADAY = {
     "limitUpLive": 0.11,
     "limitDownLive": 0.09,
     "marketVolumeLive": 0.10,
-    "high10Live": 0.10,
-    "top10AvgChgLive": 0.12,
-    "promoteLive": 0.10,
-    "breakLive": 0.10,
+    "top10AvgChgLive": 0.16,
+    "promoteLive": 0.13,
+    "breakLive": 0.13,
 }
 
 # 竞价 6 项权重：接力信号（近期溢价/首板涨幅）权重更高
@@ -51,7 +50,6 @@ W_YESTERDAY = {
 W_YESTERDAY_OPT = {
     "continuationDepth":    0.08,  # 连板占比，leading indicator
     "sectorConcentration":  0.06,  # 板块集中度，结构性信号
-    "high10":               0.04,
     "top10AvgChg":          0.04,
 }
 
@@ -267,11 +265,6 @@ def score_advance_breadth(adv: int, dec: int) -> int:
     return _linear_high(ratio, lo=26.0, hi=75.0)
 
 
-def score_high10(count: int) -> int:
-    # lo=0 → 20  hi=400 → 90  mid=150 → 46（略低于55，可接受）
-    return _linear_high(float(count or 0), lo=0, hi=400)
-
-
 def score_top10_avg_chg(chg: float) -> int:
     # lo=-1.2% → 20  hi=1.2% → 90  mid=0% → 55
     return _linear_high(float(chg or 0), lo=-1.2, hi=1.2)
@@ -306,7 +299,6 @@ def _score_yesterday_block(metrics: dict, grid9: Optional[list] = None) -> dict[
     if dec is None:
         dec = m.get("decline_count", 0)
 
-    high10 = m.get("high10_count")
     top10_chg = m.get("top10_avg_chg")
     multi_board = m.get("multi_board_count")
     try:
@@ -324,7 +316,6 @@ def _score_yesterday_block(metrics: dict, grid9: Optional[list] = None) -> dict[
         "oneWord": score_one_word(int(one_word or 0)),
         "volume": score_volume_yi(float(vol_yi or 0), avg_20d=m.get("volume_20d_avg")),
         "advance": score_advance_breadth(int(adv or 0), int(dec or 0)),
-        "high10": score_high10(int(high10 or 0)) if high10 is not None else SCORE_NEUTRAL,
         "top10AvgChg": score_top10_avg_chg(top10_f) if top10_f is not None else SCORE_NEUTRAL,
     }
     if multi_board is not None:
@@ -386,7 +377,6 @@ def score_intraday_block(snap: dict) -> dict[str, int]:
                 vol_pct = (amt - pv) / pv * 100
         except (TypeError, ValueError):
             pass
-    high10 = int(snap.get("high10") or 0)
     top10 = snap.get("top10_avg_live")
     promote = snap.get("promote_live")
     break_r = snap.get("break_live")
@@ -412,7 +402,6 @@ def score_intraday_block(snap: dict) -> dict[str, int]:
         # lo=8（少）→ 90  hi=42（多）→ 20  mid=25 → 55
         "limitDownLive": _linear_low(float(ld), lo=8.0, hi=42.0),
         "marketVolumeLive": score_volume_intraday(amt, vol_pct),
-        "high10Live": score_high10(high10) if high10 else SCORE_NEUTRAL,
         "top10AvgChgLive": score_top10_avg_chg(top10_f) if top10_f is not None else SCORE_NEUTRAL,
         "promoteLive": score_promote(float(promote)) if promote is not None else SCORE_NEUTRAL,
         "breakLive": score_break_rate(float(break_r)) if break_r is not None else SCORE_NEUTRAL,
@@ -599,9 +588,6 @@ def _collect_weak_reasons(
     top10 = metrics.get("top10_avg_chg")
     if top10 is not None and y.get("top10AvgChg", 99) < _SIGNAL_WEAK:
         reasons.append(f"成交额前10平均涨幅仅{float(top10):.2f}%")
-    high10 = metrics.get("high10_count")
-    if high10 is not None and y.get("high10", 99) < _SIGNAL_WEAK:
-        reasons.append(f"10日新高仅{int(high10)}只")
     return reasons
 
 

@@ -13,7 +13,6 @@ from fetcher import (
     _spot_market_amount_yi,
     _trend,
     date_str,
-    fetch_high10_stats,
     fetch_intraday_board_stats,
     fetch_market_activity,
     fetch_prev_zt_avg_chg,
@@ -212,9 +211,6 @@ def fetch_intraday_snapshot(ref_metrics: Optional[dict] = None, ref_d: str = "")
     prev_limit_down = int(ref_metrics.get("limit_down_count") or 0)
     vol_prev_s, prev_vol = fetch_ref_volume_prev_label(ref_metrics, ref_d)
     prev_sse = _resolve_prev_sse(ref_metrics, ref_d)
-    high10_info = fetch_high10_stats(ref_metrics, live=True)
-    # 副指标「昨」列：优先用 ref 日归档的 high10，避免误取前日
-    prev_high10 = int(ref_metrics.get("high10_count") or high10_info.get("prev_high10") or 0)
     board = fetch_intraday_board_stats(ref_d, ref_metrics, live=True)
 
     if amount_raw > 0:
@@ -229,13 +225,6 @@ def fetch_intraday_snapshot(ref_metrics: Optional[dict] = None, ref_d: str = "")
         "amount": amount_str if amount_str not in ("", "--") else "--",
         "amount_raw": amount_raw,
         "up_ratio": up_ratio,
-        "high10": int(high10_info.get("high10") or 0),
-        "prev_high10": prev_high10,
-        "high10_chg_pct": (
-            round((int(high10_info.get("high10") or 0) - prev_high10) / prev_high10 * 100, 1)
-            if int(high10_info.get("high10") or 0) and prev_high10
-            else high10_info.get("high10_chg_pct")
-        ),
         "prev_advance": prev_adv,
         "prev_decline": prev_dec,
         "prev_limit_up": prev_limit_up,
@@ -279,14 +268,6 @@ def _fmt_vol_value(amount_raw: float, prev_vol: float) -> str:
     return f"{yi}亿"
 
 
-def _fmt_high10_value(count: int, chg_pct: Optional[float]) -> str:
-    if not count:
-        return "--"
-    if chg_pct is not None:
-        return f"{count} {chg_pct:+.1f}%"
-    return str(count)
-
-
 def _fmt_pct_val(val: Optional[float]) -> str:
     if val is None:
         return "--"
@@ -327,12 +308,6 @@ def build_intraday_items(snap: dict) -> list:
         f"{round(prev_vol_f)}亿" if prev_vol_f > 0 else "--"
     )
     vol_pct = _vol_pct(amount_raw, prev_vol_f)
-
-    high10 = int(snap.get("high10") or 0)
-    prev_high10 = snap.get("prev_high10")
-    high10_chg = snap.get("high10_chg_pct")
-    high10_val = _fmt_high10_value(high10, high10_chg)
-    high10_prev = str(int(prev_high10)) if prev_high10 is not None else "--"
 
     top10 = snap.get("top10_avg_live")
     prev_top10 = snap.get("prev_top10_avg")
@@ -403,15 +378,6 @@ def build_intraday_items(snap: dict) -> list:
             chg_pct=vol_pct,
         ),
         _item(
-            "high10Live",
-            "10日新高",
-            high10_val,
-            high10_prev,
-            _trend(high10, prev_high10 if prev_high10 else None),
-            up=(high10_chg or 0) >= 0 if high10_chg is not None else None,
-            chg_pct=high10_chg,
-        ),
-        _item(
             "top10AvgChgLive",
             "T-1成交额前10平均涨幅",
             top10_val,
@@ -446,7 +412,6 @@ def build_intraday_placeholder_items(ref_metrics: Optional[dict] = None) -> list
     prev_sse = _resolve_prev_sse(ref, (ref.get("date") or "").replace("-", "")[:8])
     ref_d_s = (ref.get("date") or "").replace("-", "")[:8]
     vol_prev_s, prev_vol = fetch_ref_volume_prev_label(ref, ref_d_s)
-    prev_high10 = ref.get("high10_count")
     prev_top10 = ref.get("top10_avg_chg")
     prev_promote = ref.get("promote_rate")
     prev_break = ref.get("break_rate")
@@ -472,7 +437,6 @@ def build_intraday_placeholder_items(ref_metrics: Optional[dict] = None) -> list
         _item("limitUpLive", "实时涨停", str(prev_lu) if prev_lu is not None else "--"),
         _item("limitDownLive", "实时跌停", str(prev_ld) if prev_ld is not None else "--"),
         _item("marketVolumeLive", "全市量能", vol_prev),
-        _item("high10Live", "10日新高", str(prev_high10) if prev_high10 is not None else "--"),
         _item(
             "top10AvgChgLive",
             "T-1成交额前10平均涨幅",
@@ -564,7 +528,6 @@ def build_intraday_closed_items(
             vol_label if vol_label not in ("", "--") else ref.get("volume_amount"),
             prev_vol_label if prev_vol_label not in ("", "--") else prev.get("volume_amount"),
         ),
-        _item("high10Live", "10日新高", ref.get("high10_count"), prev.get("high10_count")),
         _item(
             "top10AvgChgLive",
             "T-1成交额前10平均涨幅",

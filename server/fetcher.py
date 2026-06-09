@@ -57,10 +57,9 @@ def invalidate_sector_concentration_cache(trade_d: Optional[str] = None) -> None
 
 
 def invalidate_intraday_caches(today: Optional[str] = None) -> None:
-    """盘中定时刷新前清缓存，保证 high10 / top10 / 晋级率 等与 2 分钟任务同步。"""
+    """盘中定时刷新前清缓存，保证 top10 / 晋级率 等与 2 分钟任务同步。"""
     today = (today or date_str(bj_now()))[:8]
     for key in (
-        "high10_stats_v1",
         "intraday_board_stats_v1",
         f"zt_{today}",
         f"zb_{today}",
@@ -1955,18 +1954,6 @@ def build_yesterday_sentiment(metrics: dict, prev_metrics: Optional[dict] = None
             "trend": _trend(mb / lu if lu else 0, mb_prev / lu_prev if mb_prev is not None and lu_prev else None),
         })
 
-    # 10日新高数（可选）
-    high10 = metrics.get("high10_count")
-    if high10 is not None:
-        high10_prev = prev.get("high10_count")
-        rows.append({
-            "key": "high10",
-            "label": "10日新高",
-            "value": str(int(high10)),
-            "yesterday": str(int(high10_prev)) if high10_prev is not None else "--",
-            "trend": _trend(high10, high10_prev),
-        })
-
     # 成交额前10均涨幅（可选）
     top10_chg = metrics.get("top10_avg_chg")
     if top10_chg is not None:
@@ -3471,141 +3458,6 @@ def fetch_market_volume() -> dict:
     return {"amount": "--", "change": "", "label": ""}
 
 
-_HIGH10_FS_CANDIDATES = (
-    "b:MK0105",
-    "b:MK0110",
-    "b:MK0104",
-    "b:MK0103",
-    "b:MK0106",
-    "b:MK0107",
-)
-
-
-def _fetch_em_board_total(fs: str) -> int:
-    """东财特色板块列表 total（如创10日新高）"""
-    headers = {"User-Agent": "Mozilla/5.0", "Referer": "https://quote.eastmoney.com/"}
-    params = {
-        "pn": "1",
-        "pz": "1",
-        "po": "1",
-        "np": "1",
-        "ut": "bd1d9ddb04089700cf9c27f6f7426281",
-        "fltt": "2",
-        "invt": "2",
-        "fid": "f3",
-        "fs": fs,
-        "fields": "f12",
-    }
-    for url in _EM_CLIST_URLS:
-        try:
-            r = requests.get(url, params=params, headers=headers, timeout=12)
-            j = r.json()
-            total = int((j.get("data") or {}).get("total") or 0)
-            if total > 0:
-                return total
-        except Exception:
-            continue
-    return 0
-
-
-def _legu_high_low_row(trade_d: str) -> Optional[dict]:
-    """乐股创新高统计：指定交易日一行"""
-    trade_d = (trade_d or "")[:8]
-    if not trade_d:
-        return None
-    key = "legu_high_low_all"
-    df = _cache_get(key, 3600)
-    if df is None:
-        try:
-            df = ak.stock_a_high_low_statistics(symbol="all")
-            _cache_set(key, df)
-        except Exception:
-            return None
-    if df is None or df.empty:
-        return None
-    target = datetime.strptime(trade_d, "%Y%m%d").date()
-    for _, row in df.iterrows():
-        d = row.get("date")
-        if d == target:
-            return row.to_dict()
-    return None
-
-
-def fetch_high10_stats(ref_metrics: Optional[dict] = None, *, live: bool = False) -> dict:
-    """
-    10日新高个股数及相对昨日增减。
-    live=True：盘中实时，仅东财板块 total，不走乐股日终 fallback。
-    """
-    ref_metrics = ref_metrics or {}
-    cache_ttl = INTRADAY_CACHE_TTL if live else 120
-    cached = _cache_get("high10_stats_v1", cache_ttl)
-    if cached:
-        return cached
-
-    today_d = date_str(bj_now())
-    prev_d = None
-    dates = get_recent_trade_dates(5)
-    if today_d in dates:
-        idx = dates.index(today_d)
-        if idx > 0:
-            prev_d = dates[idx - 1]
-    elif len(dates) >= 2:
-        prev_d = dates[-2]
-
-    today_count = 0
-    # ref_metrics = 昨日收盘归档，作为 10日新高对比基准
-    prev_count = int(ref_metrics.get("high10_count") or 0)
-
-    fs_hit = _cache_get("high10_fs", 86400 * 7)
-    candidates = ([fs_hit] if fs_hit else []) + list(_HIGH10_FS_CANDIDATES)
-    for fs in candidates:
-        if not fs:
-            continue
-        n = _fetch_em_board_total(fs)
-        if n >= 15:
-            today_count = n
-            _cache_set("high10_fs", fs)
-            break
-
-    if not today_count and not live:
-        row = _legu_high_low_row(today_d)
-        if row:
-            today_count = int(row.get("high20") or 0)
-
-    if prev_d:
-        prev_row = _legu_high_low_row(prev_d)
-        if prev_row:
-            prev_count = int(prev_row.get("high20") or prev_count)
-    elif not prev_count:
-        try:
-            df = ak.stock_a_high_low_statistics(symbol="all")
-            if df is not None and len(df) >= 2:
-                prev_count = int(df.iloc[-2].get("high20") or 0)
-        except Exception:
-            pass
-
-    chg_pct = None
-    if today_count and prev_count:
-        chg_pct = round((today_count - prev_count) / prev_count * 100, 1)
-
-    out = {
-        "high10": today_count,
-        "prev_high10": prev_count,
-        "high10_chg_pct": chg_pct,
-    }
-    _cache_set("high10_stats_v1", out)
-    return out
-
-
-def fetch_high10_count_for_date(trade_d: str) -> int:
-    """归档用：某日 10日新高家数"""
-    trade_d = (trade_d or "")[:8]
-    row = _legu_high_low_row(trade_d)
-    if row:
-        return int(row.get("high20") or 0)
-    return 0
-
-
 def _max_board(df: pd.DataFrame) -> int:
     if df is None or df.empty:
         return 0
@@ -4065,7 +3917,6 @@ def build_ref_day_metrics(trade_d: str, prev_d: Optional[str] = None) -> dict:
     index_chg = fetch_sse_index_change(trade_d)
     volume_amount, volume_raw = _fetch_daily_market_amount_with_raw(trade_d)
     advance_count, decline_count = get_market_breadth(trade_d)
-    high10_count = fetch_high10_count_for_date(trade_d)
 
     top10_codes: list[str] = []
     top10_avg_chg = None
@@ -4101,7 +3952,6 @@ def build_ref_day_metrics(trade_d: str, prev_d: Optional[str] = None) -> dict:
         "volume_raw": volume_raw,
         "advance_count": advance_count,
         "decline_count": decline_count,
-        "high10_count": high10_count,
         "top10_codes": top10_codes,
         "top10_avg_chg": top10_avg_chg,
         "first_board_count": first_board_count,
