@@ -1,6 +1,6 @@
 import { resolveAutoRefreshMs } from './config.js?v=20260531a'
 import { getDisplayLevel, dailyQuote, formatHeaderDate, HOME_QUOTE } from './theme.js?v=20260531a'
-import { normalizeSections } from './indicators.js?v=20260609a'
+import { normalizeSections } from './indicators.js?v=20260609b'
 import {
   buildLongkongHeroText,
   resolveLongkongState,
