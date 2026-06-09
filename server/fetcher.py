@@ -2413,6 +2413,12 @@ def _after_auction_frozen(now: Optional[datetime] = None) -> bool:
     return _auction_hm(now) >= 9 * 60 + 26
 
 
+def _in_auction_amount_window(now: Optional[datetime] = None) -> bool:
+    """9:25撮合后短窗口，可从两市实时成交额读取集合竞价金额。"""
+    hm = _auction_hm(now)
+    return 9 * 60 + 25 <= hm < 9 * 60 + 31
+
+
 def _auction_cache_ttl(now: Optional[datetime] = None) -> int:
     """当日竞价缓存 TTL：live 20s / 固化后按日"""
     if _after_auction_frozen(now):
@@ -2531,6 +2537,8 @@ def get_market_auction_volume_yi(trade_d: str) -> Optional[float]:
         return None
 
     yi = _compute_market_auction_volume_yi()
+    if not yi and trade_d == today and _in_auction_amount_window():
+        _, yi = _fetch_market_amount_tencent(today)
     if yi and yi > 0:
         _cache_set(key, yi)
         return yi
