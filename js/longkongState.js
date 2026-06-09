@@ -72,19 +72,36 @@ export function buildLongkongHeroText(data, lk) {
 
 export function normalizeRiskReason(reason) {
   const raw = String(reason || '').trim()
-  if (!raw) return '接力环境偏谨慎'
+  if (!raw) return ''
   const promote = raw.match(/晋级率(?:仅|只有)?\s*(\d+(?:\.\d+)?)%/)
-  if (promote) return `昨日涨停股今日晋级率仅 ${promote[1]}%，也就是昨日涨停股中今天继续涨停的比例偏低`
+  if (promote) return `晋级率仅 ${promote[1]}%`
   const breakRate = raw.match(/炸板率(?:高达|达到|为)?\s*(\d+(?:\.\d+)?)%/)
-  if (breakRate) return `炸板率 ${breakRate[1]}%，封板稳定性不足`
+  if (breakRate) return `炸板率 ${breakRate[1]}%`
+  const score = raw.match(/(?:盘中|综合)?情绪分\s*(\d+).*低于\s*(\d+)分/)
+  if (score) return `情绪分 ${score[1]}，低于 ${score[2]}`
   return raw
+    .replace(/[（(]作者复盘[）)]/g, '')
+    .replace(/[。；;]+$/g, '')
+    .trim()
+}
+
+function selectRiskReasons(data) {
+  const reasons = (data?.emptyReasons || [])
+    .map(normalizeRiskReason)
+    .filter(Boolean)
+  const concrete = reasons.filter((reason) => /晋级率|炸板率|跌停|连板|溢价/.test(reason))
+  return [...new Set([...concrete, ...reasons])].slice(0, 2)
 }
 
 export function buildRiskCopy(data) {
   if (!data?.emptyWarning) return null
-  const reason = normalizeRiskReason((data.emptyReasons && data.emptyReasons[0]) || '')
+  const reasons = selectRiskReasons(data)
+  const focus = reasons.length ? reasons.join('、') : '接力结构偏弱'
+  const action = data?.riskLevel === 'critical'
+    ? '减少接力，等待修复'
+    : '控制节奏，等待确认'
   return {
-    desc: '分数中性，但接力晋级偏弱',
-    tip: `复盘提示：${reason}。打板少做、精选，等更强确认。`,
+    desc: '接力结构偏弱，风险优先',
+    tip: `复盘｜重点：${focus}；应对：${action}。`,
   }
 }

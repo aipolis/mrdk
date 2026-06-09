@@ -335,7 +335,7 @@ function drawGaugeCard(ctx, x, y, w, data) {
     footY += sc(28)
   }
   if (data.emptyWarning) {
-    const tip = riskCopy?.tip || '复盘提示：综合情绪偏弱，打板少做、精选，等更强确认。'
+    const tip = riskCopy?.tip || '复盘｜重点：接力结构偏弱；应对：控制节奏，等待确认。'
     ctx.fillStyle = COLORS.green
     ctx.font = `400 ${sc(20)}px ${FONT}`
     const tipLines = wrapText(ctx, tip, w - sc(56)).slice(0, 2)

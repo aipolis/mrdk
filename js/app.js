@@ -442,7 +442,7 @@ function applyData(data, options = {}) {
   const emptyTip = $('#emptyTip')
   if (data.emptyWarning) {
     emptyTip.hidden = false
-    emptyTip.textContent = buildRiskCopy(data)?.tip || '复盘提示：综合情绪偏弱，打板少做、精选，等更强确认。'
+    emptyTip.textContent = buildRiskCopy(data)?.tip || '复盘｜重点：接力结构偏弱；应对：控制节奏，等待确认。'
   } else {
     emptyTip.hidden = true
   }
