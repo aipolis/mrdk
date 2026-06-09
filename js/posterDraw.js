@@ -56,8 +56,6 @@ const LEVEL_LIGHT = {
   cold:      { bg: 'rgba(96,165,250,0.10)',  border: 'rgba(96,165,250,0.45)',  dot: '#60a5fa' },
 }
 
-const INVERSE_VALUE_KEYS = new Set(['limitDown', 'break', 'limitDownLive', 'breakLive'])
-
 function roundRect(ctx, x, y, w, h, r) {
   const radius = Math.min(r, w / 2, h / 2)
   ctx.beginPath()
@@ -100,11 +98,10 @@ function formatQuote() {
   return /[。！？；…]$/.test(HOME_QUOTE) ? HOME_QUOTE : `${HOME_QUOTE}。`
 }
 
-function cellValueColor(key) {
-  if (key === 'volume') return COLORS.textSoft
-  if (key === 'advance') return COLORS.red
-  if (INVERSE_VALUE_KEYS.has(key)) return COLORS.green
-  return COLORS.red
+function cellValueColor(cell) {
+  if (cell?.valueClass === 'value-hot' || cell?.trendGood === true) return COLORS.red
+  if (cell?.valueClass === 'value-cold' || cell?.trendGood === false) return COLORS.green
+  return COLORS.textSoft
 }
 
 function cellPrevText(cell, sectionId) {
@@ -367,10 +364,11 @@ function drawGridCell(ctx, cx, cy, cellW, cellH, cell, sectionId) {
   const startX = cx + cellW / 2 - valW / 2 - (arrow ? sc(12) : 0)
   ctx.textAlign = 'left'
   ctx.textBaseline = 'middle'
-  ctx.fillStyle = cellValueColor(cell.key)
+  const valueColor = cellValueColor(cell)
+  ctx.fillStyle = valueColor
   ctx.fillText(val, startX, rowY)
   if (arrow) {
-    ctx.fillStyle = cell.trendGood === true ? COLORS.red : (cell.trendGood === false ? COLORS.green : COLORS.muted)
+    ctx.fillStyle = valueColor
     ctx.font = `600 ${sc(24)}px ${FONT}`
     ctx.fillText(arrow, startX + valW + sc(4), rowY)
   }
