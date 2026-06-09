@@ -116,7 +116,10 @@ def assemble_home_from_archive(
         grid9=grid9,
     )
     stored = _detail_sentiment(advice_detail) or _detail_sentiment(ref_detail)
-    if stored.get("score") is not None:
+    if (
+        stored.get("score") is not None
+        and stored.get("scoreVersion") == sentiment.get("scoreVersion")
+    ):
         sentiment["score"] = int(stored["score"])
 
     baseline_score = int(sentiment["score"])
@@ -203,6 +206,7 @@ def assemble_home_from_archive(
             "tips": subscribe_preview["tips"],
         },
         "score": baseline_score,
+        "scoreVersion": sentiment.get("scoreVersion"),
         "baselineScore": baseline_score,
         "liveScore": intraday_score,
         "displayScore": display_score,
@@ -216,20 +220,27 @@ def assemble_home_from_archive(
         "longkongState": longkong_state(
             display_score,
             empty_warning=longkong["emptyWarning"],
+            risk_level=longkong.get("riskLevel", "none"),
             sub_scores=sentiment.get("subScores") or {},
             intraday_sub_scores={},
         ),
         "positionPercent": longkong["positionPercent"],
         "positionLabel": longkong["positionLabel"],
-        "positionDesc": position_desc(display_score, longkong["emptyWarning"]),
+        "positionDesc": position_desc(
+            display_score, longkong["emptyWarning"], longkong.get("riskLevel", "none")
+        ),
         "emptyWarning": longkong["emptyWarning"],
+        "riskLevel": longkong.get("riskLevel", "none"),
         "emptyReasons": longkong["emptyReasons"],
         "strategyNote": strategy_note_for_home(
             sentiment, display_score, score_mode=score_mode, longkong=longkong
         ),
         "subScores": sentiment.get("subScores") or {},
+        "scoreContributions": (sentiment.get("subScores") or {}).get("contributions") or {},
+        "scoreDataQuality": (sentiment.get("subScores") or {}).get("dataQuality") or {},
         "intradaySubScores": {},
         "baselineEmptyWarning": sentiment.get("emptyWarning"),
+        "baselineRiskLevel": sentiment.get("riskLevel", "none"),
         "baselineEmptyReasons": sentiment.get("emptyReasons") or [],
         "baselinePositionPercent": sentiment.get("positionPercent"),
         "baselinePositionLabel": sentiment.get("positionLabel"),
