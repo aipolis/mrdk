@@ -100,11 +100,9 @@ def assemble_home_from_archive(
         or ref_detail.get("indicatorSections")
         or []
     )
-    longkong_risk = _section_items(indicator_sections, "longkongRisk")
-    if not longkong_risk:
-        longkong_risk = load_longkong_risk_cached(
-            ref_d, prev_d, metrics, prev_metrics, advice_d=advice_d
-        )
+    longkong_risk = load_longkong_risk_cached(
+        ref_d, prev_d, metrics, prev_metrics, advice_d=advice_d
+    )
 
     intraday = (
         advice_detail.get("intraday")
