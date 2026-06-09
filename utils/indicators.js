@@ -53,6 +53,23 @@ const INTRADAY_DEFS = [
   { key: 'breakLive', label: '实时炸板率' }
 ]
 
+const OVERVIEW_ORDER = [
+  'highBoardPromote', 'promote', 'break',
+  'height', 'seal', 'limitUp',
+  'limitDown', 'advance', 'volume',
+  'continuationDepth', 'top10AvgChg', 'oneWord',
+  'sectorConcentration'
+]
+const OVERVIEW_RANK = new Map(OVERVIEW_ORDER.map((key, index) => [key, index]))
+
+function sortOverviewItems(items) {
+  return [...(items || [])].sort((a, b) => {
+    const ar = OVERVIEW_RANK.has(a && a.key) ? OVERVIEW_RANK.get(a.key) : OVERVIEW_ORDER.length
+    const br = OVERVIEW_RANK.has(b && b.key) ? OVERVIEW_RANK.get(b.key) : OVERVIEW_ORDER.length
+    return ar - br
+  })
+}
+
 
 
 function mapItem(item) {
@@ -636,6 +653,7 @@ function normalizeIndicatorSections(data) {
       if (sec.id === 'auction') {
         items = sanitizeAuctionList(mergeAuctionItems(sec.items || [], data))
       }
+      if (sec.id === 'yesterday') items = sortOverviewItems(items)
 
       return {
 
@@ -673,7 +691,7 @@ function normalizeIndicatorSections(data) {
 
       let items = []
 
-      if (def.id === 'yesterday') items = yesterday
+      if (def.id === 'yesterday') items = sortOverviewItems(yesterday)
 
       else if (def.id === 'peripheral') items = normalizePeripheral(data)
 

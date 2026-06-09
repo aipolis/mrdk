@@ -2002,7 +2002,17 @@ def build_yesterday_sentiment(metrics: dict, prev_metrics: Optional[dict] = None
             "yesterday": f"{sc_prev_top3r:.0f}%" if sc_prev_top3r is not None else "--",
             "trend": _trend(top3r, sc_prev_top3r),
         })
-    return rows
+    display_order = {
+        key: index
+        for index, key in enumerate((
+            "highBoardPromote", "promote", "break",
+            "height", "seal", "limitUp",
+            "limitDown", "advance", "volume",
+            "continuationDepth", "top10AvgChg", "oneWord",
+            "sectorConcentration",
+        ))
+    }
+    return sorted(rows, key=lambda row: display_order.get(row.get("key"), len(display_order)))
 
 
 def patch_grid9_live_breadth(
