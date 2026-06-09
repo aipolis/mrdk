@@ -865,12 +865,30 @@ def _cached_home_payload_usable(data: Optional[dict]) -> bool:
 def _strip_removed_indicators(data: dict) -> dict:
     """Remove retired indicators from current and archived API payloads."""
     removed = {"high10", "high10Live"}
+    overview_order = {
+        key: index
+        for index, key in enumerate((
+            "highBoardPromote", "promote", "break",
+            "height", "seal", "limitUp",
+            "limitDown", "advance", "volume",
+            "continuationDepth", "top10AvgChg", "oneWord",
+            "sectorConcentration",
+        ))
+    }
+
+    def sort_overview(items: list) -> list:
+        return sorted(items, key=lambda item: overview_order.get(item.get("key"), len(overview_order)))
+
     for key in ("grid9", "intraday"):
         if isinstance(data.get(key), list):
             data[key] = [item for item in data[key] if item.get("key") not in removed]
+    if isinstance(data.get("grid9"), list):
+        data["grid9"] = sort_overview(data["grid9"])
     for sec in data.get("indicatorSections") or []:
         if isinstance(sec.get("items"), list):
             sec["items"] = [item for item in sec["items"] if item.get("key") not in removed]
+            if sec.get("id") == "yesterday":
+                sec["items"] = sort_overview(sec["items"])
         if isinstance(sec.get("rows"), list):
             sec["rows"] = [
                 [item for item in row if item.get("key") not in removed]
