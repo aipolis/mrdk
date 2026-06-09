@@ -468,7 +468,7 @@ def _build_home_payload(ref_d: str, prev_d: Optional[str], advice_d: str, is_rea
 
 def _build_home_for_cache() -> tuple[dict, dict]:
     ref_d, prev_d, advice_d, is_ready = resolve_advice_dates()
-    data = _build_home_payload(ref_d, prev_d, advice_d, is_ready)
+    data = _strip_removed_indicators(_build_home_payload(ref_d, prev_d, advice_d, is_ready))
     data["isReportReady"] = is_ready
     data["quality"] = _payload_quality(data)
     context = {
@@ -862,6 +862,26 @@ def _cached_home_payload_usable(data: Optional[dict]) -> bool:
     return len(sections) >= 2
 
 
+def _strip_removed_indicators(data: dict) -> dict:
+    """Remove retired indicators from current and archived API payloads."""
+    removed = {"high10", "high10Live"}
+    for key in ("grid9", "intraday"):
+        if isinstance(data.get(key), list):
+            data[key] = [item for item in data[key] if item.get("key") not in removed]
+    for sec in data.get("indicatorSections") or []:
+        if isinstance(sec.get("items"), list):
+            sec["items"] = [item for item in sec["items"] if item.get("key") not in removed]
+        if isinstance(sec.get("rows"), list):
+            sec["rows"] = [
+                [item for item in row if item.get("key") not in removed]
+                for row in sec["rows"]
+            ]
+    for key in ("metrics", "prevMetrics"):
+        if isinstance(data.get(key), dict):
+            data[key].pop("high10_count", None)
+    return data
+
+
 def _apply_live_light_fields(
     out: dict,
     *,
@@ -883,7 +903,7 @@ def _apply_live_light_fields(
         out["generatedAtTime"] = gauge_hm
     out = _attach_longkong_state(out)
     out["quality"] = _payload_quality(out)
-    return out
+    return _strip_removed_indicators(out)
 
 
 def _apply_live_fields(
@@ -943,7 +963,7 @@ def _apply_live_fields(
                 archived["generatedAtLabel"] = gauge_label
                 archived["generatedAtTime"] = gauge_hm
             archived["quality"] = _payload_quality(archived)
-            return archived
+            return _strip_removed_indicators(archived)
 
     out = copy.deepcopy(data)
     today = date_str(bj_now())
@@ -1039,7 +1059,7 @@ def _apply_live_fields(
         force_intraday=False,
     )
     out["quality"] = _payload_quality(out)
-    return out
+    return _strip_removed_indicators(out)
 
 
 @asynccontextmanager
@@ -1527,7 +1547,7 @@ def sentiment_day(date: str = ""):
     detail = fetch_daily_detail(trade_d)
     if not detail:
         return {"code": 1, "message": "未找到该交易日归档", "data": {"tradeDate": trade_d}}
-    return {"code": 0, "data": detail}
+    return {"code": 0, "data": _strip_removed_indicators(detail)}
 
 
 @app.get("/api/sentiment/intraday-series")
