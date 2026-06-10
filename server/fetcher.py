@@ -2469,18 +2469,19 @@ def _auction_cache_ttl(now: Optional[datetime] = None) -> int:
     return 0
 
 
-def invalidate_auction_day_cache(trade_d: str = "") -> None:
-    """9:26 固化前清 live 缓存，确保最终快照重新拉取"""
+def invalidate_auction_day_cache(trade_d: str = "", *, preserve_volume: bool = False) -> None:
+    """9:26 固化前清 live 缓存；可保留 9:25 短窗口内已成功抓到的竞价总额。"""
     trade_d = (trade_d or date_str(bj_now()))[:8]
-    exact_keys = (
+    exact_keys = [
         f"auction_one_word_{trade_d}",
-        f"auction_vol_yi_{trade_d}",
         f"auction_stock_vol_{trade_d}",
         f"auction_stock_vol_all_{trade_d}",
         f"auction_vol_meta_{trade_d}",
         f"auction_top_sectors_{trade_d}",
         f"auction_volume_surge_{trade_d}",
-    )
+    ]
+    if not preserve_volume:
+        exact_keys.append(f"auction_vol_yi_{trade_d}")
     for key in list(_cache.keys()):
         if key.startswith(f"auction_detail_{trade_d}_") or key in exact_keys:
             _cache.pop(key, None)
@@ -2582,7 +2583,11 @@ def get_market_auction_volume_yi(trade_d: str) -> Optional[float]:
         _, yi = _fetch_market_amount_tencent(today)
     if yi and yi > 0:
         _cache_set(key, yi)
+        _cache_set(f"auction_vol_yi_last_valid_{trade_d}", yi)
         return yi
+    last_valid = _cache_get(f"auction_vol_yi_last_valid_{trade_d}", 86400 * 2)
+    if last_valid is not None and float(last_valid) > 0:
+        return float(last_valid)
     return None
 
 
@@ -3175,8 +3180,9 @@ def build_longkong_risk_items(
 
     # \u5927\u9762\u5bb6\u6570\uff1a\u8fd13\u65e5\u66fe\u6da8\u505c\u3001\u4eca\u65e5\u8dcc\u505c\u7684\u80a1\u7968\u6570\u91cf
     # \u6bd4\u300c\u5168\u5e02\u8dcc\u5e45\u2264-7%\u300d\u66f4\u7cbe\u51c6 \u2014\u2014 \u4e13\u6307\u70ed\u94b1\u9ad8\u4f4d\u5d29\u76d8
+    full_spot = spot_df if spot_df is not None and len(spot_df) >= 1000 else None
     big_loss = _recent_zt_big_drop_count(
-        ref_d, prev_d, advice_d or ref_d, None,
+        ref_d, prev_d, advice_d or ref_d, full_spot,
         _fallback_pool_dfs=[df_ref_up, df_ref_broken],
     )
     if big_loss is None:
@@ -3185,6 +3191,13 @@ def build_longkong_risk_items(
             big_loss = market_snapshot.get("big_drop_count")
     if big_loss is None:
         big_loss = _fetch_em_big_drop_count()
+    big_loss_cache_key = f"big_drop_count_last_valid_{(advice_d or date_str(bj_now()))[:8]}"
+    if big_loss is not None:
+        _cache_set(big_loss_cache_key, int(big_loss))
+    else:
+        cached_big_loss = _cache_get(big_loss_cache_key, 86400 * 2)
+        if cached_big_loss is not None:
+            big_loss = int(cached_big_loss)
     prev_big_loss = _prev_longkong_risk_value(ref_d, "bigLossCount")
 
     prev_limit_down = prev_metrics.get("limit_down_count")

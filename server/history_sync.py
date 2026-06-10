@@ -254,7 +254,8 @@ def persist_auction_snapshot(*, freeze: bool = False) -> dict:
             return {"ok": True, "skipped": True, "reason": "already_frozen", "trade_d": today}
 
     if freeze:
-        invalidate_auction_day_cache(today)
+        # 竞价总额仅在 9:25 后短窗口可准确获取，固化时必须保留已抓到的值。
+        invalidate_auction_day_cache(today, preserve_volume=True)
 
     dates = get_recent_trade_dates(5)
     idx = dates.index(today)

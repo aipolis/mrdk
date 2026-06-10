@@ -2,7 +2,16 @@ import unittest
 from datetime import datetime
 from unittest.mock import patch
 
-from fetcher import build_yesterday_sentiment, fetch_ref_volume_at_same_time, fetch_ref_volume_prev_label
+from fetcher import (
+    _cache,
+    _cache_set,
+    build_longkong_risk_items,
+    build_yesterday_sentiment,
+    fetch_ref_volume_at_same_time,
+    fetch_ref_volume_prev_label,
+    get_market_auction_volume_yi,
+    invalidate_auction_day_cache,
+)
 from intraday import build_intraday_items
 from app import _strip_removed_indicators
 from sentiment import (
@@ -154,6 +163,51 @@ class SentimentV2Test(unittest.TestCase):
         self.assertEqual(patched["grid9"][-1]["key"], "top10AvgChg")
         self.assertEqual(patched["grid9"][-1]["value"], "--")
         self.assertEqual(patched["indicatorSections"][0]["items"][-1]["key"], "top10AvgChg")
+
+    @patch("fetcher._compute_market_auction_volume_yi", return_value=None)
+    @patch("fetcher.date_str", return_value="20260610")
+    def test_auction_volume_reuses_last_valid_same_day_value(self, date_str_mock, compute):
+        _cache.pop("auction_vol_yi_20260610", None)
+        _cache_set("auction_vol_yi_last_valid_20260610", 412.0)
+
+        self.assertEqual(get_market_auction_volume_yi("20260610"), 412.0)
+
+    def test_auction_freeze_invalidation_preserves_captured_total_volume(self):
+        _cache_set("auction_vol_yi_20260610", 412.0)
+        _cache_set("auction_one_word_20260610", 4)
+
+        invalidate_auction_day_cache("20260610", preserve_volume=True)
+
+        self.assertEqual(_cache.get("auction_vol_yi_20260610", {}).get("data"), 412.0)
+        self.assertNotIn("auction_one_word_20260610", _cache)
+
+    @patch("fetcher._prev_longkong_risk_value", return_value="48")
+    @patch("fetcher._fetch_em_big_drop_count", return_value=None)
+    @patch("fetcher._fetch_em_a_share_snapshot", return_value={"rows": 0, "big_drop_count": None})
+    @patch("fetcher.ak.stock_zh_a_spot_em", side_effect=RuntimeError("upstream unavailable"))
+    @patch("fetcher.fetch_limit_down")
+    @patch("fetcher.fetch_broken_board")
+    @patch("fetcher.fetch_limit_up")
+    def test_big_loss_reuses_last_valid_same_day_value(
+        self, fetch_up, fetch_broken, fetch_down, spot, snapshot, big_drop, prev_value
+    ):
+        import pandas as pd
+
+        fetch_up.return_value = pd.DataFrame()
+        fetch_broken.return_value = pd.DataFrame()
+        fetch_down.return_value = pd.DataFrame()
+        _cache_set("big_drop_count_last_valid_20260610", 23)
+
+        items = build_longkong_risk_items(
+            "20260609",
+            "20260608",
+            complete_metrics(),
+            complete_metrics(),
+            advice_d="20260610",
+        )
+
+        big_loss = next(item for item in items if item["key"] == "bigLossCount")
+        self.assertEqual(big_loss["value"], "23")
 
 
 if __name__ == "__main__":
