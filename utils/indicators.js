@@ -427,6 +427,12 @@ function resolveTop10Prev(data) {
 }
 
 function resolveVolPrev(data) {
+  // 盘中回退值必须为空，只信任当前九宫格单项中后端返回的同时刻昨值。
+  const now = new Date()
+  const hm = now.getHours() * 60 + now.getMinutes()
+  const live = now.getDay() >= 1 && now.getDay() <= 5
+    && hm >= 9 * 60 + 30 && hm <= 15 * 60
+  if (live) return '--'
   const fromIntraday = (data && data.intraday || []).find(i => i.key === 'marketVolumeLive')
   if (fromIntraday) {
     const p = fromIntraday.prev != null ? fromIntraday.prev : fromIntraday.yesterday

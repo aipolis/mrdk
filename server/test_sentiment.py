@@ -1,5 +1,8 @@
 import unittest
+from datetime import datetime
+from unittest.mock import patch
 
+from fetcher import fetch_ref_volume_at_same_time, fetch_ref_volume_prev_label
 from intraday import build_intraday_items
 from sentiment import (
     _score_auction_block,
@@ -99,6 +102,33 @@ class SentimentV2Test(unittest.TestCase):
         )
         self.assertEqual(items[0]["value"], "+6.80%")
         self.assertEqual(items[0]["yesterday"], "5板")
+
+    @patch("fetcher._fetch_market_amount_through_time_baostock")
+    @patch("fetcher._lookup_volume_snapshot")
+    def test_lunch_volume_comparison_freezes_at_1130(self, lookup, baostock):
+        lookup.return_value = 5234.0
+        now = datetime(2026, 6, 10, 12, 15)
+
+        same = fetch_ref_volume_at_same_time("20260609", now)
+        label, raw = fetch_ref_volume_prev_label({"volume_raw": 12345}, "20260609", now)
+
+        self.assertEqual(same, 5234.0)
+        self.assertEqual((label, raw), ("5234亿", 5234.0))
+        lookup.assert_called_with("20260609", "1130")
+        baostock.assert_not_called()
+
+    @patch("fetcher._fetch_market_amount_through_time_baostock", return_value=None)
+    @patch("fetcher._lookup_volume_snapshot", return_value=None)
+    def test_lunch_volume_never_falls_back_to_full_day(self, lookup, baostock):
+        label, raw = fetch_ref_volume_prev_label(
+            {"volume_raw": 12345},
+            "20260609",
+            datetime(2026, 6, 10, 12, 15),
+        )
+
+        self.assertEqual((label, raw), ("--", None))
+        lookup.assert_called_with("20260609", "1130")
+        baostock.assert_called_with("20260609", 11, 30)
 
 
 if __name__ == "__main__":

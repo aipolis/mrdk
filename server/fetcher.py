@@ -1487,7 +1487,11 @@ def fetch_ref_volume_at_same_time(
     if not ref_d:
         return None
     now = now or bj_now()
-    if not _in_trading_minute_window(now):
+    hm = now.hour * 60 + now.minute
+    if 11 * 60 + 30 < hm < 13 * 60:
+        # 午休冻结在上午收盘时点：今日累计量能也保持 11:30。
+        now = now.replace(hour=11, minute=30)
+    elif not _in_trading_minute_window(now):
         return None
     hhmm = _intraday_snap_hhmm(now)
     snap = _lookup_volume_snapshot(ref_d, hhmm)
@@ -1507,7 +1511,8 @@ def fetch_ref_volume_prev_label(
     ref_metrics = ref_metrics or {}
     ref_d = (ref_d or ref_metrics.get("date") or "").replace("-", "")[:8]
     now = now or bj_now()
-    if _in_trading_minute_window(now):
+    hm = now.hour * 60 + now.minute
+    if _in_trading_minute_window(now) or (11 * 60 + 30 < hm < 13 * 60):
         same = fetch_ref_volume_at_same_time(ref_d, now)
         if same and same > 0:
             return f"{round(float(same))}亿", float(same)
