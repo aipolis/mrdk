@@ -262,6 +262,27 @@ class SentimentV2Test(unittest.TestCase):
         self.assertEqual(payload["items"][0]["value"], "54.0%")
         fetch_frozen.assert_called_once_with("20260610", "11:30")
 
+    @patch("history_store.fetch_intraday_snapshot_at_or_before")
+    @patch("intraday.intraday_session_phase", return_value="closed")
+    @patch("intraday.bj_now", return_value=datetime(2026, 6, 10, 15, 5))
+    def test_closed_intraday_payload_uses_last_1500_snapshot(
+        self, now, phase, fetch_frozen
+    ):
+        fetch_frozen.return_value = {
+            "items": [{"key": "upRatio", "value": "29.7%"}],
+            "intradayScore": 42,
+            "snap": {"up_ratio": 29.7},
+            "updatedAt": "15:00",
+        }
+
+        payload = build_intraday_payload({}, ref_d="20260609")
+
+        self.assertEqual(payload["phase"], "closed")
+        self.assertEqual(payload["updatedAt"], "15:00")
+        self.assertEqual(payload["items"][0]["value"], "29.7%")
+        self.assertIsNone(payload["intradayScore"])
+        fetch_frozen.assert_called_once_with("20260610", "15:00")
+
     @patch("intraday.is_lunch_break", return_value=True)
     def test_lunch_display_score_weight_freezes_at_1130(self, lunch):
         lunch_weight = _live_blend_weight(datetime(2026, 6, 10, 12, 15))

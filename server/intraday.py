@@ -686,6 +686,21 @@ def build_intraday_payload(
     now = bj_now()
     prep = is_data_prep_window(now)
 
+    if phase in ("closed", "night"):
+        try:
+            from history_store import fetch_intraday_snapshot_at_or_before
+
+            frozen = fetch_intraday_snapshot_at_or_before(date_str(now), "15:00")
+        except Exception:
+            frozen = None
+        if frozen and frozen.get("items"):
+            return {
+                **frozen,
+                "intradayScore": None,
+                "active": False,
+                "phase": phase,
+            }
+
     # 非盘中时段：按「数据准备期」规则决定显示占位还是 DB 数据
     if phase in ("off", "night", "closed") or (phase == "waiting" and not prep):
         # off/night/closed：显示最近交易日收盘数据；waiting且已过9:15：同样
