@@ -739,7 +739,7 @@ function normalizeCell(item, sectionId) {
 function isIntradayPinnedWindow() {
   const { wd, hm } = bjNowParts()
   if (wd === 0 || wd === 6) return false
-  return hm >= 9 * 60 && hm <= 15 * 60 + 30
+  return hm >= 9 * 60 && hm <= 15 * 60 + 5
 }
 
 /** 盘后/休市且无 intraday 数据时跳过该 section，避免渲染全 -- 占位 */
@@ -753,8 +753,8 @@ function shouldSkipIntradaySection(data) {
   if (data?.scoreMode === 'live') return false
   const { wd, hm } = bjNowParts()
   if (wd === 0 || wd === 6) return true
-  // 收盘后（15:30 之后）无盘中数据 → 跳过
-  return hm > 15 * 60 + 30
+  // 收盘后（15:05 之后）无盘中数据 → 跳过
+  return hm > 15 * 60 + 5
 }
 
 const TRADING_SECTION_ORDER = [
