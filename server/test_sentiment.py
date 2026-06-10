@@ -165,6 +165,28 @@ class SentimentV2Test(unittest.TestCase):
         self.assertEqual(patched["grid9"][-1]["value"], "--")
         self.assertEqual(patched["indicatorSections"][0]["items"][-1]["key"], "top10AvgChg")
 
+    @patch("app.historical_top10_avg_chg", return_value=-2.59)
+    def test_old_archived_overview_backfills_top10_average(self, historical_avg):
+        data = {
+            "tradeDate": "20260609",
+            "metrics": {
+                "date": "2026-06-09",
+                "top10_codes": ["000001", "000002", "000003", "000004", "000005", "000006"],
+                "top10_avg_chg": None,
+            },
+            "grid9": [{"key": "top10AvgChg", "value": "--"}],
+            "indicatorSections": [
+                {"id": "yesterday", "items": [{"key": "top10AvgChg", "value": "--"}]},
+            ],
+        }
+
+        patched = _strip_removed_indicators(data)
+
+        self.assertEqual(patched["grid9"][0]["value"], "-2.59%")
+        self.assertEqual(patched["indicatorSections"][0]["items"][0]["value"], "-2.59%")
+        self.assertEqual(patched["metrics"]["top10_avg_chg"], -2.59)
+        historical_avg.assert_called_once()
+
     @patch("fetcher._compute_market_auction_volume_yi", return_value=None)
     @patch("fetcher.date_str", return_value="20260610")
     def test_auction_volume_reuses_last_valid_same_day_value(self, date_str_mock, compute):

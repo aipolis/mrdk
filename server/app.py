@@ -49,6 +49,7 @@ from fetcher import (
     load_auction_snapshot,
     load_ref_day_snapshot,
     patch_grid9_live_breadth,
+    historical_top10_avg_chg,
     _fill_metrics_breadth,
 )
 from home_cache import (
@@ -901,16 +902,36 @@ def _strip_removed_indicators(data: dict) -> dict:
             })
         return sort_overview(out)
 
+    metrics = data.get("metrics") if isinstance(data.get("metrics"), dict) else {}
+    trade_d = str(metrics.get("date") or data.get("tradeDate") or "").replace("-", "")[:8]
+    top10_avg = metrics.get("top10_avg_chg")
+    if top10_avg is None and trade_d and metrics.get("top10_codes"):
+        top10_avg = historical_top10_avg_chg(trade_d, metrics.get("top10_codes"))
+        if top10_avg is not None:
+            metrics["top10_avg_chg"] = top10_avg
+
+    def fill_top10_value(items: list) -> list:
+        if top10_avg is None:
+            return items
+        out = []
+        for item in items:
+            row = dict(item)
+            if row.get("key") == "top10AvgChg" and str(row.get("value") or "--") == "--":
+                row["value"] = f"{float(top10_avg):+.2f}%"
+                row["trend"] = "flat"
+            out.append(row)
+        return out
+
     for key in ("grid9", "intraday"):
         if isinstance(data.get(key), list):
             data[key] = [item for item in data[key] if item.get("key") not in removed]
     if isinstance(data.get("grid9"), list):
-        data["grid9"] = ensure_overview_items(data["grid9"])
+        data["grid9"] = fill_top10_value(ensure_overview_items(data["grid9"]))
     for sec in data.get("indicatorSections") or []:
         if isinstance(sec.get("items"), list):
             sec["items"] = [item for item in sec["items"] if item.get("key") not in removed]
             if sec.get("id") == "yesterday":
-                sec["items"] = ensure_overview_items(sec["items"])
+                sec["items"] = fill_top10_value(ensure_overview_items(sec["items"]))
         if isinstance(sec.get("rows"), list):
             sec["rows"] = [
                 [item for item in row if item.get("key") not in removed]

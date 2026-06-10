@@ -2261,6 +2261,104 @@ def _code_open_pct_on_date(code: str, trade_d: str) -> Optional[float]:
         return None
 
 
+def _code_pct_chg_on_date(code: str, trade_d: str) -> Optional[float]:
+    """指定股票在指定交易日的收盘涨跌幅。"""
+    code = str(code or "").zfill(6)
+    trade_d = (trade_d or "")[:8]
+    if not code or len(trade_d) != 8:
+        return None
+    key = f"code_pct_chg_{trade_d}_{code}"
+    cached = _cache_get(key, 86400 * 30)
+    if cached is not None:
+        return float(cached)
+    secid = f"{'1' if code.startswith(('5', '6', '9')) else '0'}.{code}"
+    try:
+        response = requests.get(
+            "https://push2his.eastmoney.com/api/qt/stock/kline/get",
+            params={
+                "secid": secid,
+                "klt": "101",
+                "fqt": "0",
+                "beg": trade_d,
+                "end": trade_d,
+                "lmt": "1",
+                "fields1": "f1,f2,f3,f4,f5,f6",
+                "fields2": "f51,f52,f53,f54,f55,f56,f57,f58,f59,f60,f61",
+            },
+            headers={"User-Agent": "Mozilla/5.0", "Referer": "https://quote.eastmoney.com/"},
+            timeout=5,
+        )
+        klines = ((response.json().get("data") or {}).get("klines") or [])
+        if klines:
+            parts = str(klines[0]).split(",")
+            if len(parts) > 8:
+                value = pd.to_numeric(parts[8], errors="coerce")
+                if value is not None and not pd.isna(value):
+                    result = round(float(value), 3)
+                    _cache_set(key, result)
+                    return result
+    except Exception:
+        pass
+    return None
+
+
+def historical_top10_avg_chg(trade_d: str, codes) -> Optional[float]:
+    """用归档的成交额前10代码回补指定交易日平均涨跌幅。"""
+    trade_d = (trade_d or "").replace("-", "")[:8]
+    normalized = _normalize_code_list(codes)
+    if len(trade_d) != 8 or not normalized:
+        return None
+    key = f"historical_top10_avg_chg_{trade_d}"
+    cached = _cache_get(key, 86400 * 30)
+    if cached is not None:
+        return float(cached)
+    values_by_code = {code: None for code in normalized[:10]}
+    try:
+        import baostock as bs
+
+        login = bs.login()
+        if login.error_code == "0":
+            d = f"{trade_d[:4]}-{trade_d[4:6]}-{trade_d[6:8]}"
+            for code in values_by_code:
+                symbol = f"{'sh' if code.startswith(('5', '6', '9')) else 'sz'}.{code}"
+                result = bs.query_history_k_data_plus(
+                    symbol,
+                    "date,pctChg",
+                    start_date=d,
+                    end_date=d,
+                    frequency="d",
+                    adjustflag="3",
+                )
+                if result.error_code != "0" or not result.next():
+                    continue
+                row = result.get_row_data()
+                value = pd.to_numeric(row[1] if len(row) > 1 else None, errors="coerce")
+                if value is not None and not pd.isna(value):
+                    values_by_code[code] = round(float(value), 3)
+    except Exception:
+        pass
+    finally:
+        try:
+            import baostock as bs
+
+            bs.logout()
+        except Exception:
+            pass
+    missing = [code for code, value in values_by_code.items() if value is None]
+    if missing:
+        with ThreadPoolExecutor(max_workers=min(10, len(missing))) as pool:
+            for code, value in zip(missing, pool.map(lambda c: _code_pct_chg_on_date(c, trade_d), missing)):
+                if value is not None:
+                    values_by_code[code] = value
+    values = [value for value in values_by_code.values() if value is not None]
+    # 至少覆盖大多数成分，避免少数成功样本造成误导。
+    if len(values) < min(6, len(normalized[:10])):
+        return None
+    result = round(sum(values) / len(values), 2)
+    _cache_set(key, result)
+    return result
+
+
 def _avg_board_auction_chg_historical(pool_d: str, multi: bool, auction_d: str) -> Optional[float]:
     """历史：pool_d 涨停池在 auction_d 日开盘竞价涨幅均值"""
     key = f"board_auction_{pool_d}_{multi}_{auction_d}"
