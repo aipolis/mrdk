@@ -131,8 +131,9 @@ class SentimentV2Test(unittest.TestCase):
         self.assertEqual(strong["highBoardChgLive"], 90)
 
     def test_intraday_items_follow_longkong_priority_order(self):
-        items = build_intraday_items({"high_board_chg_live": 6.8, "prev_max_board": 5})
+        items = build_intraday_items({"high_board_chg_live": 6.8, "prev_high_board_chg": -2.5})
         self.assertEqual(len(items), 9)
+        self.assertEqual(items[0]["yesterday"], "-2.50%")
         self.assertEqual(
             [item["key"] for item in items],
             [
@@ -148,7 +149,6 @@ class SentimentV2Test(unittest.TestCase):
             ],
         )
         self.assertEqual(items[0]["value"], "+6.80%")
-        self.assertEqual(items[0]["yesterday"], "5板")
 
     @patch("fetcher._fetch_market_amount_through_time_baostock")
     @patch("fetcher._lookup_volume_snapshot")
@@ -291,6 +291,8 @@ class SentimentV2Test(unittest.TestCase):
 
     @patch("fetcher._break_rate", return_value=20.0)
     @patch("fetcher._promote_rate", return_value=25.0)
+    @patch("fetcher._top_board_stock_chg", return_value=-2.5)
+    @patch("fetcher.get_recent_trade_dates", return_value=["20260610", "20260609", "20260608"])
     @patch("fetcher._resolve_prev_top10_avg", return_value=None)
     @patch("fetcher._load_top10_codes_for_date", return_value=[])
     @patch("fetcher._fetch_sina_quotes_df")
@@ -298,7 +300,8 @@ class SentimentV2Test(unittest.TestCase):
     @patch("fetcher._fetch_em_top_amount_spot_df")
     @patch("fetcher.ak.stock_zh_a_spot_em", side_effect=RuntimeError("full market unavailable"))
     def test_high_board_live_feedback_uses_targeted_sina_quotes(
-        self, em_spot, top_amount, fetch_up, sina_quotes, load_top10, prev_top10, promote, break_rate
+        self, em_spot, top_amount, fetch_up, sina_quotes, load_top10, prev_top10,
+        trade_dates, previous_high_board, promote, break_rate
     ):
         import pandas as pd
 
@@ -318,6 +321,35 @@ class SentimentV2Test(unittest.TestCase):
 
         self.assertEqual(stats["high_board_chg_live"], 0.5)
         sina_quotes.assert_called_once_with(["002354", "002254"])
+
+    @patch("history_store.fetch_daily_detail", return_value={"metrics": {"promote_rate": 18}})
+    @patch("fetcher._break_rate", return_value=21.0)
+    @patch("fetcher._promote_rate", return_value=12.0)
+    @patch("fetcher._top_board_stock_chg", return_value=1.25)
+    @patch("fetcher._resolve_prev_top10_avg", return_value=None)
+    @patch("fetcher._load_top10_codes_for_date", return_value=[])
+    @patch("fetcher._avg_pct_chg", return_value=-5.0)
+    @patch("fetcher._fetch_sina_quotes_df")
+    @patch("fetcher._max_board", return_value=6)
+    @patch("fetcher._pool_codes_by_max_board", return_value=["002354"])
+    @patch("fetcher.fetch_limit_up")
+    @patch("fetcher.get_recent_trade_dates", return_value=["20260610", "20260609", "20260608"])
+    @patch("fetcher.bj_now", return_value=datetime(2026, 6, 10, 15, 5))
+    def test_closed_board_stats_keep_previous_day_high_board_and_promote_rate(
+        self, now, trade_dates, fetch_up, pool_codes, max_board, sina_quotes, avg_pct,
+        load_top10, prev_top10, previous_high_board, promote, break_rate, daily_detail
+    ):
+        fetch_up.return_value = pd.DataFrame()
+        sina_quotes.return_value = pd.DataFrame({"code": ["002354"]})
+
+        stats = fetch_intraday_board_stats("20260610", {"max_board": 4, "promote_rate": 12}, live=True)
+
+        self.assertEqual(stats["high_board_chg_live"], -5.0)
+        self.assertEqual(stats["prev_max_board"], 6)
+        self.assertEqual(stats["prev_high_board_chg"], 1.25)
+        self.assertEqual(stats["promote_live"], 12.0)
+        self.assertEqual(stats["prev_promote"], 18.0)
+        promote.assert_called_once_with("20260609", "20260610")
 
     @patch("fetcher._prev_longkong_risk_value", return_value="48")
     @patch("fetcher._fetch_em_big_drop_count", return_value=None)

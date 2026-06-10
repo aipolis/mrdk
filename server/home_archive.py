@@ -12,6 +12,7 @@ from fetcher import (
     build_yesterday_sentiment,
     display_level_class,
     display_level_label,
+    fetch_intraday_board_stats,
     load_auction_snapshot,
     load_longkong_risk_cached,
 )
@@ -112,6 +113,35 @@ def assemble_home_from_archive(
     intraday_snapshot = fetch_intraday_snapshot_at_or_before(advice_d, "15:00")
     if intraday_snapshot and intraday_snapshot.get("items"):
         intraday = intraday_snapshot["items"]
+    if intraday and advice_d == ref_d:
+        board = fetch_intraday_board_stats(ref_d, metrics, live=False)
+        board_values = {
+            "highBoardChgLive": (
+                board.get("high_board_chg_live"),
+                board.get("prev_high_board_chg"),
+                "pct",
+            ),
+            "promoteLive": (
+                board.get("promote_live"),
+                board.get("prev_promote"),
+                "rate",
+            ),
+        }
+        corrected = []
+        for item in intraday:
+            cell = dict(item)
+            current, previous, value_type = board_values.get(cell.get("key"), (None, None, ""))
+            if current is not None:
+                digits = 2 if value_type == "pct" else 0
+                cell["value"] = f"{float(current):+.{digits}f}%" if value_type == "pct" else f"{float(current):.{digits}f}%"
+                cell["yesterday"] = (
+                    f"{float(previous):+.{digits}f}%" if value_type == "pct"
+                    else f"{float(previous):.{digits}f}%"
+                ) if previous is not None else "--"
+                cell["prev"] = cell["yesterday"]
+                cell["trend"] = "up" if previous is not None and current > previous else "down" if previous is not None and current < previous else "flat"
+            corrected.append(cell)
+        intraday = corrected
 
     sentiment = calc_sentiment(
         metrics,

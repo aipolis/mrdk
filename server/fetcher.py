@@ -4000,20 +4000,39 @@ def fetch_intraday_board_stats(
     ref_metrics = ref_metrics or {}
     ref_d = (ref_d or "")[:8]
     today = date_str(bj_now())
+    high_board_ref_d = ref_d
+    if high_board_ref_d == today:
+        high_board_ref_d = next(
+            (d for d in get_recent_trade_dates(5) if d and d != today),
+            "",
+        )
+    recent_dates = get_recent_trade_dates(7)
+    try:
+        high_board_ref_idx = recent_dates.index(high_board_ref_d)
+        previous_high_board_d = recent_dates[high_board_ref_idx + 1]
+    except (ValueError, IndexError):
+        previous_high_board_d = ""
 
     cache_ttl = INTRADAY_CACHE_TTL if live else 90
-    cached = _cache_get("intraday_board_stats_v2", cache_ttl)
+    stats_cache_key = f"intraday_board_stats_v3_{ref_d}_{high_board_ref_d}_{today}"
+    cached = _cache_get(stats_cache_key, cache_ttl)
     if cached:
         return cached
 
     ref_codes = _normalize_code_list(ref_metrics.get("top10_codes") or [])
     if not ref_codes:
         ref_codes = _load_top10_codes_for_date(ref_d)
-    high_board_codes = _pool_codes_by_max_board(fetch_limit_up(ref_d)) if ref_d else []
+    high_board_pool = fetch_limit_up(high_board_ref_d) if high_board_ref_d else pd.DataFrame()
+    high_board_codes = _pool_codes_by_max_board(high_board_pool)
     targeted_codes = list(dict.fromkeys(high_board_codes + ref_codes))
     targeted_spot = _fetch_sina_quotes_df(targeted_codes) if targeted_codes else None
 
     high_board_chg_live = _avg_pct_chg(targeted_spot, high_board_codes) if high_board_codes else None
+    prev_high_board_chg = (
+        _top_board_stock_chg(previous_high_board_d, high_board_ref_d)
+        if previous_high_board_d and high_board_ref_d
+        else None
+    )
     top10_live = _avg_pct_chg(targeted_spot, ref_codes) if ref_codes else None
 
     spot_df = None
@@ -4029,23 +4048,39 @@ def fetch_intraday_board_stats(
         top10_live = _avg_open_pct_for_top_amount(spot_df, ref_codes)
     prev_top10_f = _resolve_prev_top10_avg(ref_metrics, ref_d)
 
-    high_board_cache_key = f"high_board_chg_live_{today}"
+    high_board_cache_key = f"high_board_chg_live_{high_board_ref_d}_{today}"
     if high_board_chg_live is not None:
         _cache_set(high_board_cache_key, float(high_board_chg_live))
     else:
         cached_high_board = _cache_get(high_board_cache_key, 86400 * 2)
         if cached_high_board is not None:
             high_board_chg_live = float(cached_high_board)
-    prev_max_board = int(ref_metrics.get("max_board") or 0)
+    prev_max_board = _max_board(high_board_pool)
+    if high_board_ref_d == ref_d:
+        prev_max_board = int(ref_metrics.get("max_board") or prev_max_board or 0)
 
-    promote_live = _promote_rate(ref_d, today) if ref_d and ref_d != today else None
+    promote_live = (
+        _promote_rate(high_board_ref_d, today)
+        if high_board_ref_d and high_board_ref_d != today
+        else None
+    )
     prev_promote = float(ref_metrics.get("promote_rate") or 0)
+    if high_board_ref_d != ref_d:
+        try:
+            from history_store import fetch_daily_detail
+
+            previous_detail = fetch_daily_detail(high_board_ref_d) or {}
+            previous_metrics = previous_detail.get("metrics") or {}
+            prev_promote = float(previous_metrics.get("promote_rate") or prev_promote or 0)
+        except Exception:
+            pass
 
     break_live = _break_rate(today) if today else 0.0
     prev_break = float(ref_metrics.get("break_rate") or 0)
 
     out = {
         "high_board_chg_live": high_board_chg_live,
+        "prev_high_board_chg": prev_high_board_chg,
         "prev_max_board": prev_max_board,
         "top10_avg_live": top10_live,
         "prev_top10_avg": prev_top10_f,
@@ -4054,7 +4089,7 @@ def fetch_intraday_board_stats(
         "break_live": break_live,
         "prev_break": prev_break,
     }
-    _cache_set("intraday_board_stats_v2", out)
+    _cache_set(stats_cache_key, out)
     return out
 
 

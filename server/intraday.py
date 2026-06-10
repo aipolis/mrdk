@@ -265,6 +265,7 @@ def fetch_intraday_snapshot(ref_metrics: Optional[dict] = None, ref_d: str = "")
         "prev_volume_label": vol_prev_s,
         "prev_sse_chg": prev_sse,
         "high_board_chg_live": board.get("high_board_chg_live"),
+        "prev_high_board_chg": board.get("prev_high_board_chg"),
         "prev_max_board": board.get("prev_max_board"),
         "top10_avg_live": board.get("top10_avg_live"),
         "prev_top10_avg": board.get("prev_top10_avg"),
@@ -349,9 +350,9 @@ def build_intraday_items(snap: dict) -> list:
     top10_prev = _fmt_pct_val(prev_top10) if prev_top10 is not None else "--"
 
     high_board_chg = snap.get("high_board_chg_live")
-    prev_max_board = int(snap.get("prev_max_board") or 0)
+    prev_high_board_chg = snap.get("prev_high_board_chg")
     high_board_val = _fmt_pct_val(high_board_chg)
-    high_board_prev = f"{prev_max_board}板" if prev_max_board else "--"
+    high_board_prev = _fmt_pct_val(prev_high_board_chg)
 
     promote = snap.get("promote_live")
     prev_promote = snap.get("prev_promote")
@@ -383,7 +384,7 @@ def build_intraday_items(snap: dict) -> list:
             "高标实时反馈",
             high_board_val,
             high_board_prev,
-            _trend(high_board_chg, 0),
+            _trend(high_board_chg, prev_high_board_chg),
             up=(high_board_chg or 0) >= 0 if high_board_chg is not None else None,
         ),
         _item(
@@ -462,7 +463,13 @@ def build_intraday_placeholder_items(ref_metrics: Optional[dict] = None) -> list
     prev_top10 = ref.get("top10_avg_chg")
     prev_promote = ref.get("promote_rate")
     prev_break = ref.get("break_rate")
-    prev_max_board = int(ref.get("max_board") or 0)
+    recent_dates = get_recent_trade_dates(7)
+    try:
+        ref_idx = recent_dates.index(ref_d_s)
+        prev_ref_d = recent_dates[ref_idx + 1]
+    except (ValueError, IndexError):
+        prev_ref_d = ""
+    prev_high_board_chg = _top_board_stock_chg(prev_ref_d, ref_d_s) if prev_ref_d and ref_d_s else None
     prev_ratio = _prev_up_ratio(prev_adv, prev_dec)
 
     def _item(key, label, prev_val=None, **extra):
@@ -480,7 +487,11 @@ def build_intraday_placeholder_items(ref_metrics: Optional[dict] = None) -> list
     sse_prev = f"{float(prev_sse):+.2f}%" if prev_sse is not None else "--"
     vol_prev = vol_prev_s if vol_prev_s not in ("", "--") else "--"
     return [
-        _item("highBoardChgLive", "高标实时反馈", f"{prev_max_board}板" if prev_max_board else "--"),
+        _item(
+            "highBoardChgLive",
+            "高标实时反馈",
+            _fmt_pct_val(float(prev_high_board_chg)) if prev_high_board_chg is not None else "--",
+        ),
         _item(
             "promoteLive",
             "晋级率",
@@ -544,7 +555,13 @@ def build_intraday_closed_items(
     if top10_prev is None and prev.get("top10_avg_chg") is not None:
         top10_prev = float(prev.get("top10_avg_chg"))
     high_board_chg = _top_board_stock_chg(prev_d, ref_d) if prev_d and ref_d else None
-    prev_max_board = int(prev.get("max_board") or 0)
+    previous_dates = get_recent_trade_dates(7)
+    try:
+        prev_d_idx = previous_dates.index(prev_d)
+        prev_prev_d = previous_dates[prev_d_idx + 1]
+    except (ValueError, IndexError):
+        prev_prev_d = ""
+    prev_high_board_chg = _top_board_stock_chg(prev_prev_d, prev_d) if prev_prev_d and prev_d else None
 
     def _item(key, label, value=None, prev_val="--"):
         value_s = str(value) if value not in (None, "") else "--"
@@ -563,7 +580,7 @@ def build_intraday_closed_items(
             "highBoardChgLive",
             "高标实时反馈",
             _fmt_pct_val(float(high_board_chg)) if high_board_chg is not None else "--",
-            f"{prev_max_board}板" if prev_max_board else "--",
+            _fmt_pct_val(float(prev_high_board_chg)) if prev_high_board_chg is not None else "--",
         ),
         _item(
             "promoteLive",
