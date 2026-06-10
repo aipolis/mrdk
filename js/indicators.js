@@ -72,21 +72,23 @@ const AUCTION_DEFS = [
 
 const INTRADAY_DEFS = [
 
-  { key: 'sseIndex', label: '上证涨跌' },
-
-  { key: 'upRatio', label: '上涨占比' },
-
-  { key: 'limitUpLive', label: '实时涨停' },
-
-  { key: 'limitDownLive', label: '实时跌停' },
-
-  { key: 'marketVolumeLive', label: '全市量能' },
-
-  { key: 'top10AvgChgLive', label: 'T-1成交额前10平均涨幅' },
+  { key: 'highBoardChgLive', label: '高标实时反馈' },
 
   { key: 'promoteLive', label: '昨日涨停股今日晋级率' },
 
   { key: 'breakLive', label: '实时炸板率' },
+
+  { key: 'limitDownLive', label: '实时跌停' },
+
+  { key: 'sseIndex', label: '昨日涨停指数' },
+
+  { key: 'top10AvgChgLive', label: 'T-1成交额前10平均涨幅' },
+
+  { key: 'limitUpLive', label: '实时涨停' },
+
+  { key: 'upRatio', label: '上涨占比' },
+
+  { key: 'marketVolumeLive', label: '全市量能' },
 
 ]
 
@@ -440,6 +442,7 @@ function buildIntradayPrevMap(data) {
     top10AvgChgLive: resolveTop10Prev(data),
     promoteLive: m.promote_rate != null ? formatRate(m.promote_rate) : '--',
     breakLive: m.break_rate != null ? formatRate(m.break_rate) : '--',
+    highBoardChgLive: m.max_board != null ? `${m.max_board}板` : '--',
   }
 }
 
