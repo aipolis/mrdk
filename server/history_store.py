@@ -307,27 +307,30 @@ def fetch_intraday_snapshot_at_or_before(trade_d: str, snap_time: str) -> Option
                 FROM `{TABLE_INTRADAY}`
                 WHERE trade_date=%s AND snap_time<=%s
                 ORDER BY snap_time DESC
-                LIMIT 1
+                LIMIT 240
                 """,
                 (trade_d, snap_time),
             )
-            row = cur.fetchone()
-        if not row:
-            return None
-        try:
-            return {
-                "updatedAt": str(row.get("snap_time") or "")[:5],
-                "intradayScore": (
-                    int(row["intraday_score"])
-                    if row.get("intraday_score") is not None
-                    else None
-                ),
-                "items": json.loads(row.get("items_json") or "[]"),
-                "snap": json.loads(row.get("snap_json") or "{}"),
-                "intradaySubScores": json.loads(row.get("sub_scores_json") or "{}"),
-            }
-        except (TypeError, ValueError, json.JSONDecodeError):
-            return None
+            rows = cur.fetchall() or []
+        for row in rows:
+            try:
+                items = json.loads(row.get("items_json") or "[]")
+                if not items:
+                    continue
+                return {
+                    "updatedAt": str(row.get("snap_time") or "")[:5],
+                    "intradayScore": (
+                        int(row["intraday_score"])
+                        if row.get("intraday_score") is not None
+                        else None
+                    ),
+                    "items": items,
+                    "snap": json.loads(row.get("snap_json") or "{}"),
+                    "intradaySubScores": json.loads(row.get("sub_scores_json") or "{}"),
+                }
+            except (TypeError, ValueError, json.JSONDecodeError):
+                continue
+        return None
 
     try:
         return with_retry(_run)
