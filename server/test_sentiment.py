@@ -2,8 +2,9 @@ import unittest
 from datetime import datetime
 from unittest.mock import patch
 
-from fetcher import fetch_ref_volume_at_same_time, fetch_ref_volume_prev_label
+from fetcher import build_yesterday_sentiment, fetch_ref_volume_at_same_time, fetch_ref_volume_prev_label
 from intraday import build_intraday_items
+from app import _strip_removed_indicators
 from sentiment import (
     _score_auction_block,
     calc_sentiment,
@@ -129,6 +130,30 @@ class SentimentV2Test(unittest.TestCase):
         self.assertEqual((label, raw), ("--", None))
         lookup.assert_called_with("20260609", "1130")
         baostock.assert_called_with("20260609", 11, 30)
+
+    def test_overview_keeps_top10_cell_when_archive_value_is_missing(self):
+        items = build_yesterday_sentiment(complete_metrics(), complete_metrics())
+        top10 = next(item for item in items if item["key"] == "top10AvgChg")
+
+        self.assertEqual(top10["value"], "--")
+        self.assertEqual(top10["yesterday"], "--")
+
+    def test_old_archived_overview_gets_missing_top10_placeholder(self):
+        data = {
+            "grid9": [{"key": "continuationDepth", "value": "7.7%"}],
+            "indicatorSections": [
+                {
+                    "id": "yesterday",
+                    "items": [{"key": "continuationDepth", "value": "7.7%"}],
+                },
+            ],
+        }
+
+        patched = _strip_removed_indicators(data)
+
+        self.assertEqual(patched["grid9"][-1]["key"], "top10AvgChg")
+        self.assertEqual(patched["grid9"][-1]["value"], "--")
+        self.assertEqual(patched["indicatorSections"][0]["items"][-1]["key"], "top10AvgChg")
 
 
 if __name__ == "__main__":

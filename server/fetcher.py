@@ -1999,19 +1999,18 @@ def build_yesterday_sentiment(metrics: dict, prev_metrics: Optional[dict] = None
             "trend": _trend(mb / lu if lu else 0, mb_prev / lu_prev if mb_prev is not None and lu_prev else None),
         })
 
-    # 成交额前10均涨幅（可选）
+    # 成交额前10均涨幅固定展示；旧归档缺数据时保留 --，避免概览少一格。
     top10_chg = metrics.get("top10_avg_chg")
-    if top10_chg is not None:
-        top10_chg_f = _safe_float(top10_chg)
-        top10_prev = prev.get("top10_avg_chg")
-        top10_prev_f = _safe_float(top10_prev)
-        rows.append({
-            "key": "top10AvgChg",
-            "label": "成交额前10平均涨幅",
-            "value": f"{top10_chg_f:+.2f}%" if top10_chg_f is not None else "--",
-            "yesterday": f"{top10_prev_f:+.2f}%" if top10_prev_f is not None else "--",
-            "trend": _trend(top10_chg_f, top10_prev_f),
-        })
+    top10_chg_f = _safe_float(top10_chg)
+    top10_prev = prev.get("top10_avg_chg")
+    top10_prev_f = _safe_float(top10_prev)
+    rows.append({
+        "key": "top10AvgChg",
+        "label": "成交额前10平均涨幅",
+        "value": f"{top10_chg_f:+.2f}%" if top10_chg_f is not None else "--",
+        "yesterday": f"{top10_prev_f:+.2f}%" if top10_prev_f is not None else "--",
+        "trend": _trend(top10_chg_f, top10_prev_f),
+    })
     # 高位板晋级率（≥3连板）：高位股开始大面时情绪转弱的前瞻信号
     hb_cont = metrics.get("high_board_promote_continued")
     hb_total = metrics.get("high_board_promote_total")

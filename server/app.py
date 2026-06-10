@@ -884,16 +884,30 @@ def _strip_removed_indicators(data: dict) -> dict:
     def sort_overview(items: list) -> list:
         return sorted(items, key=lambda item: overview_order.get(item.get("key"), len(overview_order)))
 
+    def ensure_overview_items(items: list) -> list:
+        out = list(items or [])
+        keys = {item.get("key") for item in out}
+        if "top10AvgChg" not in keys:
+            out.append({
+                "key": "top10AvgChg",
+                "label": "成交额前10平均涨幅",
+                "value": "--",
+                "prev": "--",
+                "yesterday": "--",
+                "trend": "flat",
+            })
+        return sort_overview(out)
+
     for key in ("grid9", "intraday"):
         if isinstance(data.get(key), list):
             data[key] = [item for item in data[key] if item.get("key") not in removed]
     if isinstance(data.get("grid9"), list):
-        data["grid9"] = sort_overview(data["grid9"])
+        data["grid9"] = ensure_overview_items(data["grid9"])
     for sec in data.get("indicatorSections") or []:
         if isinstance(sec.get("items"), list):
             sec["items"] = [item for item in sec["items"] if item.get("key") not in removed]
             if sec.get("id") == "yesterday":
-                sec["items"] = sort_overview(sec["items"])
+                sec["items"] = ensure_overview_items(sec["items"])
         if isinstance(sec.get("rows"), list):
             sec["rows"] = [
                 [item for item in row if item.get("key") not in removed]
