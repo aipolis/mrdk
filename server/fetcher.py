@@ -61,6 +61,7 @@ def invalidate_intraday_caches(today: Optional[str] = None) -> None:
     today = (today or date_str(bj_now()))[:8]
     for key in (
         "intraday_board_stats_v1",
+        "intraday_board_stats_v2",
         f"zt_{today}",
         f"zb_{today}",
     ):
@@ -3907,24 +3908,36 @@ def fetch_intraday_board_stats(
     if cached:
         return cached
 
-    spot_df = None
-    try:
-        spot_df = ak.stock_zh_a_spot_em()
-    except Exception:
-        spot_df = None
-    if spot_df is None or spot_df.empty:
-        spot_df = _fetch_em_top_amount_spot_df()
-
     ref_codes = _normalize_code_list(ref_metrics.get("top10_codes") or [])
     if not ref_codes:
         ref_codes = _load_top10_codes_for_date(ref_d)
-    top10_live = _avg_pct_chg(spot_df, ref_codes if ref_codes else None)
+    high_board_codes = _pool_codes_by_max_board(fetch_limit_up(ref_d)) if ref_d else []
+    targeted_codes = list(dict.fromkeys(high_board_codes + ref_codes))
+    targeted_spot = _fetch_sina_quotes_df(targeted_codes) if targeted_codes else None
+
+    high_board_chg_live = _avg_pct_chg(targeted_spot, high_board_codes) if high_board_codes else None
+    top10_live = _avg_pct_chg(targeted_spot, ref_codes) if ref_codes else None
+
+    spot_df = None
+    if top10_live is None:
+        try:
+            spot_df = ak.stock_zh_a_spot_em()
+        except Exception:
+            spot_df = None
+        if spot_df is None or spot_df.empty:
+            spot_df = _fetch_em_top_amount_spot_df()
+        top10_live = _avg_pct_chg(spot_df, ref_codes if ref_codes else None)
     if top10_live is None and ref_codes:
         top10_live = _avg_open_pct_for_top_amount(spot_df, ref_codes)
     prev_top10_f = _resolve_prev_top10_avg(ref_metrics, ref_d)
 
-    high_board_codes = _pool_codes_by_max_board(fetch_limit_up(ref_d)) if ref_d else []
-    high_board_chg_live = _avg_pct_chg(spot_df, high_board_codes) if high_board_codes else None
+    high_board_cache_key = f"high_board_chg_live_{today}"
+    if high_board_chg_live is not None:
+        _cache_set(high_board_cache_key, float(high_board_chg_live))
+    else:
+        cached_high_board = _cache_get(high_board_cache_key, 86400 * 2)
+        if cached_high_board is not None:
+            high_board_chg_live = float(cached_high_board)
     prev_max_board = int(ref_metrics.get("max_board") or 0)
 
     promote_live = _promote_rate(ref_d, today) if ref_d and ref_d != today else None

@@ -10,6 +10,7 @@ from fetcher import (
     fetch_ref_volume_at_same_time,
     fetch_ref_volume_prev_label,
     get_market_auction_volume_yi,
+    fetch_intraday_board_stats,
     invalidate_auction_day_cache,
 )
 from intraday import _live_blend_weight, build_intraday_items, build_intraday_payload
@@ -208,6 +209,36 @@ class SentimentV2Test(unittest.TestCase):
         lunch_weight = _live_blend_weight(datetime(2026, 6, 10, 12, 15))
         close_weight = _live_blend_weight(datetime(2026, 6, 10, 11, 30))
         self.assertEqual(lunch_weight, close_weight)
+
+    @patch("fetcher._break_rate", return_value=20.0)
+    @patch("fetcher._promote_rate", return_value=25.0)
+    @patch("fetcher._resolve_prev_top10_avg", return_value=None)
+    @patch("fetcher._load_top10_codes_for_date", return_value=[])
+    @patch("fetcher._fetch_sina_quotes_df")
+    @patch("fetcher.fetch_limit_up")
+    @patch("fetcher._fetch_em_top_amount_spot_df")
+    @patch("fetcher.ak.stock_zh_a_spot_em", side_effect=RuntimeError("full market unavailable"))
+    def test_high_board_live_feedback_uses_targeted_sina_quotes(
+        self, em_spot, top_amount, fetch_up, sina_quotes, load_top10, prev_top10, promote, break_rate
+    ):
+        import pandas as pd
+
+        top_amount.return_value = pd.DataFrame([{"代码": "000001", "涨跌幅": 1.0}])
+        fetch_up.return_value = pd.DataFrame([
+            {"代码": "002354", "连板数": 6},
+            {"代码": "002254", "连板数": 6},
+            {"代码": "000001", "连板数": 1},
+        ])
+        sina_quotes.return_value = pd.DataFrame([
+            {"代码": "002354", "涨跌幅": 2.0},
+            {"代码": "002254", "涨跌幅": -1.0},
+        ])
+        _cache.pop("intraday_board_stats_v2", None)
+
+        stats = fetch_intraday_board_stats("20260609", {"max_board": 6}, live=True)
+
+        self.assertEqual(stats["high_board_chg_live"], 0.5)
+        sina_quotes.assert_called_once_with(["002354", "002254"])
 
     @patch("fetcher._prev_longkong_risk_value", return_value="48")
     @patch("fetcher._fetch_em_big_drop_count", return_value=None)
