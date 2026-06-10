@@ -2,6 +2,8 @@ import unittest
 from datetime import datetime
 from unittest.mock import patch
 
+import pandas as pd
+
 from fetcher import (
     _cache,
     _cache_set,
@@ -13,7 +15,7 @@ from fetcher import (
     fetch_intraday_board_stats,
     invalidate_auction_day_cache,
 )
-from intraday import _live_blend_weight, build_intraday_items, build_intraday_payload
+from intraday import _live_blend_weight, build_intraday_items, build_intraday_payload, fetch_intraday_snapshot
 from app import _strip_removed_indicators
 from sentiment import (
     _score_auction_block,
@@ -44,6 +46,40 @@ def complete_metrics(**overrides):
 
 
 class SentimentV2Test(unittest.TestCase):
+    def test_intraday_snapshot_backfills_live_counts_when_breadth_source_drops(self):
+        _cache.pop("intraday_breadth_last_valid_20260610", None)
+        valid = {"advance": 3000, "decline": 2000, "limit_up": 0, "limit_down": 0}
+        empty = {"advance": 0, "decline": 0, "limit_up": 0, "limit_down": 0}
+        board = {
+            "high_board_chg_live": None,
+            "prev_max_board": None,
+            "top10_avg_live": None,
+            "prev_top10_avg": None,
+            "promote_live": None,
+            "prev_promote": None,
+            "break_live": None,
+            "prev_break": None,
+        }
+        with (
+            patch("intraday.bj_now", return_value=datetime(2026, 6, 10, 10, 30)),
+            patch("intraday._legu_live_counts", side_effect=[valid, empty]),
+            patch("intraday._fetch_market_breadth_live", return_value=(0, 0, "")),
+            patch("intraday.fetch_limit_up", return_value=pd.DataFrame({"code": range(54)})),
+            patch("intraday.fetch_limit_down", return_value=pd.DataFrame({"code": range(9)})),
+            patch("intraday.fetch_prev_zt_avg_chg", return_value=None),
+            patch("intraday._spot_market_amount_yi", return_value=("--", 0)),
+            patch("intraday.fetch_market_activity", return_value={}),
+            patch("intraday.fetch_ref_volume_prev_label", return_value=("--", None)),
+            patch("intraday._resolve_prev_sse", return_value=None),
+            patch("intraday.fetch_intraday_board_stats", return_value=board),
+        ):
+            fresh = fetch_intraday_snapshot()
+            fallback = fetch_intraday_snapshot()
+
+        self.assertEqual((fresh["limit_up"], fresh["limit_down"]), (54, 9))
+        self.assertEqual(fallback["up_ratio"], 60.0)
+        self.assertEqual((fallback["advance"], fallback["decline"]), (3000, 2000))
+
     def test_high_board_small_sample_shrinks_toward_neutral(self):
         self.assertLess(score_high_board_promote(1, 1), 90)
         self.assertGreater(score_high_board_promote(0, 1), 20)

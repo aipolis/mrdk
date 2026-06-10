@@ -7,6 +7,8 @@ from typing import Optional
 
 from config import bj_now
 from fetcher import (
+    _cache_get,
+    _cache_set,
     _fetch_market_breadth_live,
     _parse_legu_stat_date,
     _parse_market_activity_df,
@@ -15,6 +17,8 @@ from fetcher import (
     _trend,
     date_str,
     fetch_intraday_board_stats,
+    fetch_limit_down,
+    fetch_limit_up,
     fetch_market_activity,
     fetch_prev_zt_avg_chg,
     fetch_ref_volume_at_same_time,
@@ -201,6 +205,24 @@ def fetch_intraday_snapshot(ref_metrics: Optional[dict] = None, ref_d: str = "")
         adv2, dec2, stat_d = _fetch_market_breadth_live()
         if stat_d == today or _breadth_live_valid(adv2, dec2):
             adv, dec = adv2, dec2
+    if _breadth_live_valid(adv, dec):
+        _cache_set(f"intraday_breadth_last_valid_{today}", {"advance": adv, "decline": dec})
+    else:
+        cached_breadth = _cache_get(f"intraday_breadth_last_valid_{today}", 600) or {}
+        cached_adv = int(cached_breadth.get("advance") or 0)
+        cached_dec = int(cached_breadth.get("decline") or 0)
+        if _breadth_live_valid(cached_adv, cached_dec):
+            adv, dec = cached_adv, cached_dec
+
+    # 涨跌停池比全市场广度源稳定，广度源空值时仍可独立补齐实时涨跌停数。
+    if limit_up <= 0:
+        limit_up_pool = fetch_limit_up(today)
+        if limit_up_pool is not None and not limit_up_pool.empty:
+            limit_up = len(limit_up_pool.index)
+    if limit_down <= 0:
+        limit_down_pool = fetch_limit_down(today)
+        if limit_down_pool is not None and not limit_down_pool.empty:
+            limit_down = len(limit_down_pool.index)
 
     # 昨日涨停指数：ref_d 涨停股今日均涨幅（替代上证涨跌，更贴近龙空龙策略）
     sse_chg = fetch_prev_zt_avg_chg(ref_d)
