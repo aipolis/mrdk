@@ -290,6 +290,56 @@ def fetch_intraday_series(trade_d: str) -> list[dict]:
         return []
 
 
+def fetch_intraday_snapshot_at_or_before(trade_d: str, snap_time: str) -> Optional[dict]:
+    """读取指定交易日不晚于 snap_time 的最近完整盘中快照。"""
+    if not mysql_enabled() or not ensure_schema():
+        return None
+    trade_d = (trade_d or "").replace("-", "")[:8]
+    snap_time = str(snap_time or "").strip()[:5]
+    if len(trade_d) != 8 or len(snap_time) < 4:
+        return None
+
+    def _run(conn):
+        with conn.cursor() as cur:
+            cur.execute(
+                f"""
+                SELECT snap_time, intraday_score, items_json, snap_json, sub_scores_json
+                FROM `{TABLE_INTRADAY}`
+                WHERE trade_date=%s AND snap_time<=%s
+                ORDER BY snap_time DESC
+                LIMIT 1
+                """,
+                (trade_d, snap_time),
+            )
+            row = cur.fetchone()
+        if not row:
+            return None
+        try:
+            return {
+                "updatedAt": str(row.get("snap_time") or "")[:5],
+                "intradayScore": (
+                    int(row["intraday_score"])
+                    if row.get("intraday_score") is not None
+                    else None
+                ),
+                "items": json.loads(row.get("items_json") or "[]"),
+                "snap": json.loads(row.get("snap_json") or "{}"),
+                "intradaySubScores": json.loads(row.get("sub_scores_json") or "{}"),
+            }
+        except (TypeError, ValueError, json.JSONDecodeError):
+            return None
+
+    try:
+        return with_retry(_run)
+    except Exception:
+        log.exception(
+            "fetch intraday snapshot failed trade_d=%s snap_time=%s",
+            trade_d,
+            snap_time,
+        )
+        return None
+
+
 def fetch_intraday_volume_at_or_before(trade_d: str, snap_time: str) -> Optional[float]:
     """读取指定交易日不晚于 snap_time 的最近盘中累计成交额（亿）。"""
     if not mysql_enabled() or not ensure_schema():

@@ -12,7 +12,7 @@ from fetcher import (
     get_market_auction_volume_yi,
     invalidate_auction_day_cache,
 )
-from intraday import build_intraday_items
+from intraday import _live_blend_weight, build_intraday_items, build_intraday_payload
 from app import _strip_removed_indicators
 from sentiment import (
     _score_auction_block,
@@ -180,6 +180,34 @@ class SentimentV2Test(unittest.TestCase):
 
         self.assertEqual(_cache.get("auction_vol_yi_20260610", {}).get("data"), 412.0)
         self.assertNotIn("auction_one_word_20260610", _cache)
+
+    @patch("history_store.fetch_intraday_snapshot_at_or_before")
+    @patch("intraday.intraday_session_phase", return_value="live")
+    @patch("intraday.is_lunch_break", return_value=True)
+    @patch("intraday.bj_now", return_value=datetime(2026, 6, 10, 12, 15))
+    def test_lunch_intraday_payload_uses_last_1130_snapshot(
+        self, now, lunch, phase, fetch_frozen
+    ):
+        fetch_frozen.return_value = {
+            "items": [{"key": "upRatio", "value": "54.0%"}],
+            "intradayScore": 61,
+            "intradaySubScores": {"live": {"upRatio": 63}},
+            "snap": {"up_ratio": 54.0},
+            "updatedAt": "11:30",
+        }
+
+        payload = build_intraday_payload({}, ref_d="20260609")
+
+        self.assertEqual(payload["phase"], "lunch")
+        self.assertEqual(payload["updatedAt"], "11:30")
+        self.assertEqual(payload["items"][0]["value"], "54.0%")
+        fetch_frozen.assert_called_once_with("20260610", "11:30")
+
+    @patch("intraday.is_lunch_break", return_value=True)
+    def test_lunch_display_score_weight_freezes_at_1130(self, lunch):
+        lunch_weight = _live_blend_weight(datetime(2026, 6, 10, 12, 15))
+        close_weight = _live_blend_weight(datetime(2026, 6, 10, 11, 30))
+        self.assertEqual(lunch_weight, close_weight)
 
     @patch("fetcher._prev_longkong_risk_value", return_value="48")
     @patch("fetcher._fetch_em_big_drop_count", return_value=None)

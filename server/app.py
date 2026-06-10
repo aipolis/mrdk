@@ -534,6 +534,9 @@ def _refresh_intraday_live() -> None:
     phase = intraday_session_phase()
     if phase not in ("waiting", "live"):
         return
+    from intraday import is_lunch_break
+    if is_lunch_break():
+        return
 
     invalidate_intraday_caches()
 

@@ -61,6 +61,15 @@ def is_intraday_session(now: Optional[datetime] = None) -> bool:
     return intraday_session_phase(now) == "live"
 
 
+def is_lunch_break(now: Optional[datetime] = None) -> bool:
+    """交易日午休：展示冻结的 11:30 盘中快照。"""
+    now = now or bj_now()
+    if not is_trading_day(now):
+        return False
+    hm = now.hour * 60 + now.minute
+    return 11 * 60 + 30 < hm < 13 * 60
+
+
 def is_data_prep_window(now: Optional[datetime] = None) -> bool:
     """
     交易日 8:00–9:15：数据准备期。
@@ -593,6 +602,8 @@ def _live_blend_weight(now: Optional[datetime] = None) -> float:
     9:00–9:29 固定 30%；9:30 起线性升至 15:00 的 85%。
     """
     now = now or bj_now()
+    if is_lunch_break(now):
+        now = now.replace(hour=11, minute=30)
     hm = now.hour * 60 + now.minute
     if hm < 9 * 60:
         return 0.0
@@ -675,6 +686,19 @@ def build_intraday_payload(
             "phase": phase,
         }
     auc_scores = _score_auction_block(auction, metrics) if _has_auction_data(auction) else {}
+    if is_lunch_break(now):
+        try:
+            from history_store import fetch_intraday_snapshot_at_or_before
+
+            frozen = fetch_intraday_snapshot_at_or_before(date_str(now), "11:30")
+        except Exception:
+            frozen = None
+        if frozen and frozen.get("items"):
+            return {
+                **frozen,
+                "active": True,
+                "phase": "lunch",
+            }
     if phase == "live":
         snap = fetch_intraday_snapshot(ref_metrics, ref_d=ref_d)
         items = build_intraday_items(snap)

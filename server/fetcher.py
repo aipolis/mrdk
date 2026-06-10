@@ -2925,7 +2925,12 @@ def build_section_metas(
 
             phase = intraday_session_phase(now)
             if phase == "live":
-                intraday_meta = f"{adv_label} {now_hm} 更新"
+                hm = now.hour * 60 + now.minute
+                intraday_meta = (
+                    f"{adv_label} 11:30 更新"
+                    if 11 * 60 + 30 < hm < 13 * 60
+                    else f"{adv_label} {now_hm} 更新"
+                )
             elif phase == "closed":
                 intraday_meta = f"{adv_label} 15:00 已收盘"
             elif phase == "night":

@@ -105,6 +105,12 @@ def start_internal_cron(
         replace_existing=True,
     )
     sched.add_job(
+        lambda: _safe("intraday-1130-freeze", intraday_2m_fn),
+        CronTrigger(day_of_week=weekday, hour=11, minute=30),
+        id="intraday-1130-freeze",
+        replace_existing=True,
+    )
+    sched.add_job(
         lambda: _safe("snapshot-1505", snapshot_1505_fn),
         CronTrigger(day_of_week=weekday, hour=15, minute=5),
         id="snapshot-1505",
