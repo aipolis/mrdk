@@ -11,6 +11,7 @@ from fetcher import (
     _parse_legu_stat_date,
     _parse_market_activity_df,
     _spot_market_amount_yi,
+    _top_board_stock_chg,
     _trend,
     date_str,
     fetch_intraday_board_stats,
@@ -232,6 +233,8 @@ def fetch_intraday_snapshot(ref_metrics: Optional[dict] = None, ref_d: str = "")
         "prev_volume_raw": prev_vol if prev_vol and prev_vol > 0 else None,
         "prev_volume_label": vol_prev_s,
         "prev_sse_chg": prev_sse,
+        "high_board_chg_live": board.get("high_board_chg_live"),
+        "prev_max_board": board.get("prev_max_board"),
         "top10_avg_live": board.get("top10_avg_live"),
         "prev_top10_avg": board.get("prev_top10_avg"),
         "promote_live": board.get("promote_live"),
@@ -314,6 +317,11 @@ def build_intraday_items(snap: dict) -> list:
     top10_val = _fmt_pct_val(top10)
     top10_prev = _fmt_pct_val(prev_top10) if prev_top10 is not None else "--"
 
+    high_board_chg = snap.get("high_board_chg_live")
+    prev_max_board = int(snap.get("prev_max_board") or 0)
+    high_board_val = _fmt_pct_val(high_board_chg)
+    high_board_prev = f"{prev_max_board}板" if prev_max_board else "--"
+
     promote = snap.get("promote_live")
     prev_promote = snap.get("prev_promote")
     promote_val = _fmt_rate_val(promote)
@@ -340,50 +348,12 @@ def build_intraday_items(snap: dict) -> list:
 
     return [
         _item(
-            "sseIndex",
-            "昨日涨停指数",
-            sse_val,
-            sse_prev,
-            _trend(sse, prev_sse),
-            up=(sse or 0) >= 0 if sse is not None else None,
-        ),
-        _item(
-            "upRatio",
-            "上涨占比",
-            ratio_val,
-            f"{prev_ratio:.1f}%" if prev_ratio is not None else "--",
-            _trend(ratio, prev_ratio),
-        ),
-        _item(
-            "limitUpLive",
-            "实时涨停",
-            str(lu) if lu else "--",
-            str(prev_lu) if prev_lu is not None else "--",
-            _trend(lu, prev_lu),
-        ),
-        _item(
-            "limitDownLive",
-            "实时跌停",
-            str(ld) if ld else "--",
-            str(prev_ld) if prev_ld is not None else "--",
-            _trend(ld, prev_ld),
-        ),
-        _item(
-            "marketVolumeLive",
-            "全市量能",
-            vol_val,
-            vol_prev,
-            _trend(vol_pct, 0) if vol_pct is not None else _trend(amount_raw, prev_vol_f if prev_vol_f else None),
-            up=(vol_pct or 0) >= 0 if vol_pct is not None else None,
-            chg_pct=vol_pct,
-        ),
-        _item(
-            "top10AvgChgLive",
-            "T-1成交额前10平均涨幅",
-            top10_val,
-            top10_prev,
-            _trend(top10, prev_top10),
-            up=(top10 or 0) >= 0 if top10 is not None else None,
+            "highBoardChgLive",
+            "高标实时反馈",
+            high_board_val,
+            high_board_prev,
+            _trend(high_board_chg, 0),
+            up=(high_board_chg or 0) >= 0 if high_board_chg is not None else None,
         ),
         _item(
             "promoteLive",
@@ -398,6 +368,52 @@ def build_intraday_items(snap: dict) -> list:
             break_val,
             break_prev,
             _trend(break_r, prev_break),
+        ),
+        _item(
+            "limitDownLive",
+            "实时跌停",
+            str(ld) if ld else "--",
+            str(prev_ld) if prev_ld is not None else "--",
+            _trend(ld, prev_ld),
+        ),
+        _item(
+            "sseIndex",
+            "昨日涨停指数",
+            sse_val,
+            sse_prev,
+            _trend(sse, prev_sse),
+            up=(sse or 0) >= 0 if sse is not None else None,
+        ),
+        _item(
+            "top10AvgChgLive",
+            "T-1成交额前10平均涨幅",
+            top10_val,
+            top10_prev,
+            _trend(top10, prev_top10),
+            up=(top10 or 0) >= 0 if top10 is not None else None,
+        ),
+        _item(
+            "limitUpLive",
+            "实时涨停",
+            str(lu) if lu else "--",
+            str(prev_lu) if prev_lu is not None else "--",
+            _trend(lu, prev_lu),
+        ),
+        _item(
+            "upRatio",
+            "上涨占比",
+            ratio_val,
+            f"{prev_ratio:.1f}%" if prev_ratio is not None else "--",
+            _trend(ratio, prev_ratio),
+        ),
+        _item(
+            "marketVolumeLive",
+            "全市量能",
+            vol_val,
+            vol_prev,
+            _trend(vol_pct, 0) if vol_pct is not None else _trend(amount_raw, prev_vol_f if prev_vol_f else None),
+            up=(vol_pct or 0) >= 0 if vol_pct is not None else None,
+            chg_pct=vol_pct,
         ),
     ]
 
@@ -415,6 +431,7 @@ def build_intraday_placeholder_items(ref_metrics: Optional[dict] = None) -> list
     prev_top10 = ref.get("top10_avg_chg")
     prev_promote = ref.get("promote_rate")
     prev_break = ref.get("break_rate")
+    prev_max_board = int(ref.get("max_board") or 0)
     prev_ratio = _prev_up_ratio(prev_adv, prev_dec)
 
     def _item(key, label, prev_val=None, **extra):
@@ -432,16 +449,7 @@ def build_intraday_placeholder_items(ref_metrics: Optional[dict] = None) -> list
     sse_prev = f"{float(prev_sse):+.2f}%" if prev_sse is not None else "--"
     vol_prev = vol_prev_s if vol_prev_s not in ("", "--") else "--"
     return [
-        _item("sseIndex", "昨日涨停指数", sse_prev),
-        _item("upRatio", "上涨占比", f"{prev_ratio:.1f}%" if prev_ratio is not None else "--"),
-        _item("limitUpLive", "实时涨停", str(prev_lu) if prev_lu is not None else "--"),
-        _item("limitDownLive", "实时跌停", str(prev_ld) if prev_ld is not None else "--"),
-        _item("marketVolumeLive", "全市量能", vol_prev),
-        _item(
-            "top10AvgChgLive",
-            "T-1成交额前10平均涨幅",
-            _fmt_pct_val(float(prev_top10)) if prev_top10 is not None else "--",
-        ),
+        _item("highBoardChgLive", "高标实时反馈", f"{prev_max_board}板" if prev_max_board else "--"),
         _item(
             "promoteLive",
             "晋级率",
@@ -452,6 +460,16 @@ def build_intraday_placeholder_items(ref_metrics: Optional[dict] = None) -> list
             "实时炸板率",
             _fmt_rate_val(float(prev_break)) if prev_break is not None else "--",
         ),
+        _item("limitDownLive", "实时跌停", str(prev_ld) if prev_ld is not None else "--"),
+        _item("sseIndex", "昨日涨停指数", sse_prev),
+        _item(
+            "top10AvgChgLive",
+            "T-1成交额前10平均涨幅",
+            _fmt_pct_val(float(prev_top10)) if prev_top10 is not None else "--",
+        ),
+        _item("limitUpLive", "实时涨停", str(prev_lu) if prev_lu is not None else "--"),
+        _item("upRatio", "上涨占比", f"{prev_ratio:.1f}%" if prev_ratio is not None else "--"),
+        _item("marketVolumeLive", "全市量能", vol_prev),
     ]
 
 
@@ -494,6 +512,8 @@ def build_intraday_closed_items(
     top10_prev = board.get("prev_top10_avg")
     if top10_prev is None and prev.get("top10_avg_chg") is not None:
         top10_prev = float(prev.get("top10_avg_chg"))
+    high_board_chg = _top_board_stock_chg(prev_d, ref_d) if prev_d and ref_d else None
+    prev_max_board = int(prev.get("max_board") or 0)
 
     def _item(key, label, value=None, prev_val="--"):
         value_s = str(value) if value not in (None, "") else "--"
@@ -509,24 +529,29 @@ def build_intraday_closed_items(
 
     return [
         _item(
+            "highBoardChgLive",
+            "高标实时反馈",
+            _fmt_pct_val(float(high_board_chg)) if high_board_chg is not None else "--",
+            f"{prev_max_board}板" if prev_max_board else "--",
+        ),
+        _item(
+            "promoteLive",
+            "晋级率",
+            _fmt_rate_val(float(ref.get("promote_rate"))) if ref.get("promote_rate") is not None else "--",
+            _fmt_rate_val(float(prev.get("promote_rate"))) if prev.get("promote_rate") is not None else "--",
+        ),
+        _item(
+            "breakLive",
+            "实时炸板率",
+            _fmt_rate_val(float(ref.get("break_rate"))) if ref.get("break_rate") is not None else "--",
+            _fmt_rate_val(float(prev.get("break_rate"))) if prev.get("break_rate") is not None else "--",
+        ),
+        _item("limitDownLive", "实时跌停", ref.get("limit_down_count"), prev.get("limit_down_count")),
+        _item(
             "sseIndex",
             "昨日涨停指数",
             f"{float(sse):+.2f}%" if sse is not None else "--",
             f"{float(prev_sse):+.2f}%" if prev_sse is not None else "--",
-        ),
-        _item(
-            "upRatio",
-            "上涨占比",
-            f"{ratio:.1f}%" if ratio is not None else "--",
-            f"{prev_ratio:.1f}%" if prev_ratio is not None else "--",
-        ),
-        _item("limitUpLive", "实时涨停", ref.get("limit_up_count"), prev.get("limit_up_count")),
-        _item("limitDownLive", "实时跌停", ref.get("limit_down_count"), prev.get("limit_down_count")),
-        _item(
-            "marketVolumeLive",
-            "全市量能",
-            vol_label if vol_label not in ("", "--") else ref.get("volume_amount"),
-            prev_vol_label if prev_vol_label not in ("", "--") else prev.get("volume_amount"),
         ),
         _item(
             "top10AvgChgLive",
@@ -546,17 +571,18 @@ def build_intraday_closed_items(
                 else "--"
             ),
         ),
+        _item("limitUpLive", "实时涨停", ref.get("limit_up_count"), prev.get("limit_up_count")),
         _item(
-            "promoteLive",
-            "晋级率",
-            _fmt_rate_val(float(ref.get("promote_rate"))) if ref.get("promote_rate") is not None else "--",
-            _fmt_rate_val(float(prev.get("promote_rate"))) if prev.get("promote_rate") is not None else "--",
+            "upRatio",
+            "上涨占比",
+            f"{ratio:.1f}%" if ratio is not None else "--",
+            f"{prev_ratio:.1f}%" if prev_ratio is not None else "--",
         ),
         _item(
-            "breakLive",
-            "实时炸板率",
-            _fmt_rate_val(float(ref.get("break_rate"))) if ref.get("break_rate") is not None else "--",
-            _fmt_rate_val(float(prev.get("break_rate"))) if prev.get("break_rate") is not None else "--",
+            "marketVolumeLive",
+            "全市量能",
+            vol_label if vol_label not in ("", "--") else ref.get("volume_amount"),
+            prev_vol_label if prev_vol_label not in ("", "--") else prev.get("volume_amount"),
         ),
     ]
 

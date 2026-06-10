@@ -3872,7 +3872,7 @@ def fetch_intraday_board_stats(
     live: bool = False,
 ) -> dict:
     """
-    盘中扩展指标：T-1 成交额前10平均涨幅、T-1日涨停晋级率、实时炸板率。
+    盘中扩展指标：高标实时反馈、T-1 成交额前10平均涨幅、T-1日涨停晋级率、实时炸板率。
     对比基准均为 ref_metrics（昨日收盘归档）。
     live=True 时按 INTRADAY_CACHE_TTL 刷新（与 2 分钟任务对齐）。
     """
@@ -3881,7 +3881,7 @@ def fetch_intraday_board_stats(
     today = date_str(bj_now())
 
     cache_ttl = INTRADAY_CACHE_TTL if live else 90
-    cached = _cache_get("intraday_board_stats_v1", cache_ttl)
+    cached = _cache_get("intraday_board_stats_v2", cache_ttl)
     if cached:
         return cached
 
@@ -3901,6 +3901,10 @@ def fetch_intraday_board_stats(
         top10_live = _avg_open_pct_for_top_amount(spot_df, ref_codes)
     prev_top10_f = _resolve_prev_top10_avg(ref_metrics, ref_d)
 
+    high_board_codes = _pool_codes_by_max_board(fetch_limit_up(ref_d)) if ref_d else []
+    high_board_chg_live = _avg_pct_chg(spot_df, high_board_codes) if high_board_codes else None
+    prev_max_board = int(ref_metrics.get("max_board") or 0)
+
     promote_live = _promote_rate(ref_d, today) if ref_d and ref_d != today else None
     prev_promote = float(ref_metrics.get("promote_rate") or 0)
 
@@ -3908,6 +3912,8 @@ def fetch_intraday_board_stats(
     prev_break = float(ref_metrics.get("break_rate") or 0)
 
     out = {
+        "high_board_chg_live": high_board_chg_live,
+        "prev_max_board": prev_max_board,
         "top10_avg_live": top10_live,
         "prev_top10_avg": prev_top10_f,
         "promote_live": promote_live,
@@ -3915,7 +3921,7 @@ def fetch_intraday_board_stats(
         "break_live": break_live,
         "prev_break": prev_break,
     }
-    _cache_set("intraday_board_stats_v1", out)
+    _cache_set("intraday_board_stats_v2", out)
     return out
 
 

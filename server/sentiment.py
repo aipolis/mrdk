@@ -14,14 +14,15 @@ LIVE_AUC_W_AT_1500 = 0.15
 
 # 盘中 9 项权重（展示分融合用，总和 1.0）
 W_INTRADAY = {
-    "sseIndex": 0.06,
-    "upRatio": 0.07,
-    "limitUpLive": 0.10,
-    "limitDownLive": 0.15,
-    "marketVolumeLive": 0.06,
-    "top10AvgChgLive": 0.16,
-    "promoteLive": 0.22,
-    "breakLive": 0.18,
+    "sseIndex": 0.05,
+    "upRatio": 0.06,
+    "limitUpLive": 0.08,
+    "limitDownLive": 0.13,
+    "marketVolumeLive": 0.05,
+    "top10AvgChgLive": 0.13,
+    "promoteLive": 0.18,
+    "breakLive": 0.15,
+    "highBoardChgLive": 0.17,
 }
 
 # 竞价 6 项权重：接力信号（近期溢价/首板涨幅）权重更高
@@ -425,6 +426,7 @@ def score_intraday_block(snap: dict) -> dict[str, int]:
     top10 = snap.get("top10_avg_live")
     promote = snap.get("promote_live")
     break_r = snap.get("break_live")
+    high_board_chg = snap.get("high_board_chg_live")
 
     if ratio is not None:
         # lo=34% → 20  hi=66% → 90
@@ -457,6 +459,9 @@ def score_intraday_block(snap: dict) -> dict[str, int]:
         out["promoteLive"] = score_promote(float(promote))
     if break_r is not None:
         out["breakLive"] = score_break_rate(float(break_r))
+    if high_board_chg is not None:
+        # -5% 及以下为强退潮，+9% 及以上接近续板强度。
+        out["highBoardChgLive"] = _linear_high(float(high_board_chg), lo=-5.0, hi=9.0)
     return out
 
 

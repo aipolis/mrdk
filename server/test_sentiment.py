@@ -1,5 +1,6 @@
 import unittest
 
+from intraday import build_intraday_items
 from sentiment import (
     _score_auction_block,
     calc_sentiment,
@@ -72,6 +73,32 @@ class SentimentV2Test(unittest.TestCase):
             {},
         )
         self.assertEqual(set(auction), {"recentMulti"})
+
+    def test_high_board_live_feedback_is_scored_as_leading_signal(self):
+        weak = score_intraday_block({"limit_up": 20, "limit_down": 3, "high_board_chg_live": -5})
+        strong = score_intraday_block({"limit_up": 20, "limit_down": 3, "high_board_chg_live": 9})
+        self.assertEqual(weak["highBoardChgLive"], 20)
+        self.assertEqual(strong["highBoardChgLive"], 90)
+
+    def test_intraday_items_follow_longkong_priority_order(self):
+        items = build_intraday_items({"high_board_chg_live": 6.8, "prev_max_board": 5})
+        self.assertEqual(len(items), 9)
+        self.assertEqual(
+            [item["key"] for item in items],
+            [
+                "highBoardChgLive",
+                "promoteLive",
+                "breakLive",
+                "limitDownLive",
+                "sseIndex",
+                "top10AvgChgLive",
+                "limitUpLive",
+                "upRatio",
+                "marketVolumeLive",
+            ],
+        )
+        self.assertEqual(items[0]["value"], "+6.80%")
+        self.assertEqual(items[0]["yesterday"], "5板")
 
 
 if __name__ == "__main__":

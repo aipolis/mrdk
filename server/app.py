@@ -212,14 +212,15 @@ def _build_fallback_home_payload(ref_d: str, prev_d: Optional[str], advice_d: st
         {"key": "top10AuctionChg", "label": "昨日成交额前10平均竞价涨幅", "value": "--", "prev": "--", "yesterday": "--", "trend": "flat"},
     ]
     fallback_intraday = [
-        {"key": "sseIndex", "label": "昨日涨停指数", "value": "--", "prev": "--", "yesterday": "--", "trend": "flat"},
-        {"key": "upRatio", "label": "上涨占比", "value": "--", "prev": "--", "yesterday": "--", "trend": "flat"},
-        {"key": "limitUpLive", "label": "实时涨停", "value": "--", "prev": "--", "yesterday": "--", "trend": "flat"},
-        {"key": "limitDownLive", "label": "实时跌停", "value": "--", "prev": "--", "yesterday": "--", "trend": "flat"},
-        {"key": "marketVolumeLive", "label": "全市量能", "value": "--", "prev": "--", "yesterday": "--", "trend": "flat"},
-        {"key": "top10AvgChgLive", "label": "T-1成交额前10平均涨幅", "value": "--", "prev": "--", "yesterday": "--", "trend": "flat"},
+        {"key": "highBoardChgLive", "label": "高标实时反馈", "value": "--", "prev": "--", "yesterday": "--", "trend": "flat"},
         {"key": "promoteLive", "label": "昨日涨停股今日晋级率", "value": "--", "prev": "--", "yesterday": "--", "trend": "flat"},
         {"key": "breakLive", "label": "实时炸板率", "value": "--", "prev": "--", "yesterday": "--", "trend": "flat"},
+        {"key": "limitDownLive", "label": "实时跌停", "value": "--", "prev": "--", "yesterday": "--", "trend": "flat"},
+        {"key": "sseIndex", "label": "昨日涨停指数", "value": "--", "prev": "--", "yesterday": "--", "trend": "flat"},
+        {"key": "top10AvgChgLive", "label": "T-1成交额前10平均涨幅", "value": "--", "prev": "--", "yesterday": "--", "trend": "flat"},
+        {"key": "limitUpLive", "label": "实时涨停", "value": "--", "prev": "--", "yesterday": "--", "trend": "flat"},
+        {"key": "upRatio", "label": "上涨占比", "value": "--", "prev": "--", "yesterday": "--", "trend": "flat"},
+        {"key": "marketVolumeLive", "label": "全市量能", "value": "--", "prev": "--", "yesterday": "--", "trend": "flat"},
     ]
     fallback_longkong_risk = [
         {"key": "highBreakFeedback", "label": "高标断板负反馈", "value": "--", "prev": "--", "yesterday": "--", "trend": "flat"},
@@ -814,14 +815,15 @@ def _payload_quality(data: dict) -> dict:
         "top10AuctionChg",
     ]
     intraday_required = [
-        "sseIndex",
-        "upRatio",
-        "limitUpLive",
-        "limitDownLive",
-        "marketVolumeLive",
-        "top10AvgChgLive",
+        "highBoardChgLive",
         "promoteLive",
         "breakLive",
+        "limitDownLive",
+        "sseIndex",
+        "top10AvgChgLive",
+        "limitUpLive",
+        "upRatio",
+        "marketVolumeLive",
     ]
     grid_missing = _missing_item_keys(data.get("grid9") or (sections.get("yesterday") or {}).get("items") or [])
     auction_missing = _missing_item_keys(data.get("auction") or (sections.get("auction") or {}).get("items") or [], auction_required)

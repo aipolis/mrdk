@@ -51,14 +51,15 @@ const auctionMock = [
 ]
 
 const intradayMock = [
-  { key: 'sseIndex', label: '上证涨跌', value: '+0.42%', yesterday: '-0.18%', trend: 'up', up: true },
-  { key: 'upRatio', label: '上涨占比', value: '59.1%', yesterday: '52.9%', trend: 'up' },
-  { key: 'limitUpLive', label: '实时涨停', value: '52', yesterday: '58', trend: 'down' },
-  { key: 'limitDownLive', label: '实时跌停', value: '8', yesterday: '12', trend: 'down' },
-  { key: 'marketVolumeLive', label: '全市量能', value: '8232亿 +5.2%', yesterday: '7821亿', trend: 'up', up: true },
-  { key: 'top10AvgChgLive', label: 'T-1成交额前10平均涨幅', value: '+1.85%', yesterday: '+0.62%', trend: 'up', up: true },
+  { key: 'highBoardChgLive', label: '高标实时反馈', value: '+6.80%', yesterday: '5板', trend: 'up' },
   { key: 'promoteLive', label: 'T-1日涨停晋级率', value: '28%', yesterday: '23%', trend: 'up' },
-  { key: 'breakLive', label: '实时炸板率', value: '32%', yesterday: '37%', trend: 'down' }
+  { key: 'breakLive', label: '实时炸板率', value: '32%', yesterday: '37%', trend: 'down' },
+  { key: 'limitDownLive', label: '实时跌停', value: '8', yesterday: '12', trend: 'down' },
+  { key: 'sseIndex', label: '昨日涨停指数', value: '+0.42%', yesterday: '-0.18%', trend: 'up', up: true },
+  { key: 'top10AvgChgLive', label: 'T-1成交额前10平均涨幅', value: '+1.85%', yesterday: '+0.62%', trend: 'up', up: true },
+  { key: 'limitUpLive', label: '实时涨停', value: '52', yesterday: '58', trend: 'down' },
+  { key: 'upRatio', label: '上涨占比', value: '59.1%', yesterday: '52.9%', trend: 'up' },
+  { key: 'marketVolumeLive', label: '全市量能', value: '8232亿 +5.2%', yesterday: '7821亿', trend: 'up', up: true }
 ]
 
 const homeData = {
