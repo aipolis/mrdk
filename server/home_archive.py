@@ -15,7 +15,7 @@ from fetcher import (
     load_auction_snapshot,
     load_longkong_risk_cached,
 )
-from history_store import fetch_daily_detail
+from history_store import fetch_daily_detail, fetch_intraday_snapshot_at_or_before
 from intraday import order_indicator_sections
 from sentiment import (
     apply_display_longkong,
@@ -109,6 +109,9 @@ def assemble_home_from_archive(
         if isinstance(advice_detail.get("intraday"), list)
         else _section_items(indicator_sections, "intraday")
     )
+    intraday_snapshot = fetch_intraday_snapshot_at_or_before(advice_d, "15:00")
+    if intraday_snapshot and intraday_snapshot.get("items"):
+        intraday = intraday_snapshot["items"]
 
     sentiment = calc_sentiment(
         metrics,
@@ -160,6 +163,16 @@ def assemble_home_from_archive(
                 sec["pending"] = False
         # Filter out any legacy peripheral sections from DB
         indicator_sections = [sec for sec in indicator_sections if sec.get("id") != "peripheral"]
+        if intraday and not any(sec.get("id") == "intraday" for sec in indicator_sections):
+            indicator_sections.append({
+                "id": "intraday",
+                "title": "盘中实时情绪",
+                "meta": metas.get("intraday") or "",
+                "layout": "grid3",
+                "cols": 3,
+                "items": intraday,
+                "pending": False,
+            })
         indicator_sections = order_indicator_sections(indicator_sections)
     else:
         from fetcher import build_indicator_sections
