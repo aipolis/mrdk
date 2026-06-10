@@ -12,7 +12,6 @@ from fetcher import (
     build_yesterday_sentiment,
     display_level_class,
     display_level_label,
-    fetch_intraday_board_stats,
     load_auction_snapshot,
     load_longkong_risk_cached,
 )
@@ -75,6 +74,7 @@ def assemble_home_from_archive(
         advice_detail = ref_detail
 
     metrics = _detail_metrics(ref_detail)
+    prev_detail = None
     prev_metrics = None
     if prev_d:
         prev_detail = fetch_daily_detail(prev_d)
@@ -114,32 +114,37 @@ def assemble_home_from_archive(
     if intraday_snapshot and intraday_snapshot.get("items"):
         intraday = intraday_snapshot["items"]
     if intraday and advice_d == ref_d:
-        board = fetch_intraday_board_stats(ref_d, metrics, live=False)
+        previous_intraday = (
+            prev_detail.get("intraday")
+            if prev_detail and isinstance(prev_detail.get("intraday"), list)
+            else _section_items((prev_detail or {}).get("indicatorSections") or [], "intraday")
+        )
+        previous_by_key = {item.get("key"): item for item in previous_intraday or []}
+        risk_by_key = {item.get("key"): item for item in longkong_risk or []}
+        previous_high_board = (previous_by_key.get("highBoardChgLive") or {}).get("value")
+        if "%" not in str(previous_high_board or ""):
+            previous_high_board = "--"
         board_values = {
             "highBoardChgLive": (
-                board.get("high_board_chg_live"),
-                board.get("prev_high_board_chg"),
-                "pct",
+                (risk_by_key.get("highBreakFeedback") or {}).get("value"),
+                previous_high_board,
             ),
             "promoteLive": (
-                board.get("promote_live"),
-                board.get("prev_promote"),
-                "rate",
+                metrics.get("promote_rate"),
+                (prev_metrics or {}).get("promote_rate"),
             ),
         }
         corrected = []
         for item in intraday:
             cell = dict(item)
-            current, previous, value_type = board_values.get(cell.get("key"), (None, None, ""))
+            current, previous = board_values.get(cell.get("key"), (None, None))
             if current is not None:
-                digits = 2 if value_type == "pct" else 0
-                cell["value"] = f"{float(current):+.{digits}f}%" if value_type == "pct" else f"{float(current):.{digits}f}%"
-                cell["yesterday"] = (
-                    f"{float(previous):+.{digits}f}%" if value_type == "pct"
-                    else f"{float(previous):.{digits}f}%"
-                ) if previous is not None else "--"
+                if cell.get("key") == "promoteLive":
+                    current = f"{float(current):.0f}%"
+                    previous = f"{float(previous):.0f}%" if previous is not None else "--"
+                cell["value"] = str(current)
+                cell["yesterday"] = str(previous) if previous not in (None, "") else "--"
                 cell["prev"] = cell["yesterday"]
-                cell["trend"] = "up" if previous is not None and current > previous else "down" if previous is not None and current < previous else "flat"
             corrected.append(cell)
         intraday = corrected
 
