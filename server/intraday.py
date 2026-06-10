@@ -88,12 +88,12 @@ def is_data_prep_window(now: Optional[datetime] = None) -> bool:
 
 
 def is_intraday_pinned_window(now: Optional[datetime] = None) -> bool:
-    """盘中板块置顶时段：交易日 9:00–15:30"""
+    """盘中板块置顶时段：交易日 9:00–15:05"""
     now = now or bj_now()
     if not is_trading_day(now):
         return False
     hm = now.hour * 60 + now.minute
-    return 9 * 60 <= hm <= 15 * 60 + 30
+    return 9 * 60 <= hm <= 15 * 60 + 5
 
 
 # 交易时段完整顺序：盘中 → 龙空风控 → 竞价 → 昨日
@@ -106,7 +106,7 @@ _TRADING_SECTION_ORDER = (
 
 
 def order_indicator_sections(sections: list, *, now: Optional[datetime] = None) -> list:
-    """9:00–15:30 按交易时段顺序排列；非置顶时段仅盘中块沉底。"""
+    """9:00–15:05 按交易时段顺序排列；非置顶时段仅盘中块沉底。"""
     if not sections:
         return sections
     if is_intraday_pinned_window(now):

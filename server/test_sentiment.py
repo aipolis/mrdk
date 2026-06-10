@@ -15,7 +15,13 @@ from fetcher import (
     fetch_intraday_board_stats,
     invalidate_auction_day_cache,
 )
-from intraday import _live_blend_weight, build_intraday_items, build_intraday_payload, fetch_intraday_snapshot
+from intraday import (
+    _live_blend_weight,
+    build_intraday_items,
+    build_intraday_payload,
+    fetch_intraday_snapshot,
+    is_intraday_pinned_window,
+)
 from app import _strip_removed_indicators
 from sentiment import (
     _score_auction_block,
@@ -46,6 +52,11 @@ def complete_metrics(**overrides):
 
 
 class SentimentV2Test(unittest.TestCase):
+    @patch("intraday.is_trading_day", return_value=True)
+    def test_intraday_pin_window_ends_after_1505(self, trading_day):
+        self.assertTrue(is_intraday_pinned_window(datetime(2026, 6, 10, 15, 5)))
+        self.assertFalse(is_intraday_pinned_window(datetime(2026, 6, 10, 15, 6)))
+
     def test_intraday_snapshot_backfills_live_counts_when_breadth_source_drops(self):
         _cache.pop("intraday_breadth_last_valid_20260610", None)
         valid = {"advance": 3000, "decline": 2000, "limit_up": 0, "limit_down": 0}
