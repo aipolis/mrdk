@@ -533,17 +533,49 @@ def _fetch_em_a_share_snapshot() -> dict:
     return result
 
 
-def _spot_market_amount_yi(spot_df: Optional[pd.DataFrame] = None) -> tuple[str, float]:
-    """A 股实时总成交额（亿）；优先交易所口径，再东财全 A 聚合/指数兜底。"""
-    today = date_str(bj_now())
-    amt, raw = _fetch_market_amount_exchange(today)
+def _should_prefer_live_amount_snapshot(now: Optional[datetime] = None) -> bool:
+    """盘中及收盘后短时内，交易所日报可能未追平，优先东财全 A 实时聚合。"""
+    now = now or bj_now()
+    hm = now.hour * 60 + now.minute
+    if _in_trading_minute_window(now):
+        return True
+    return 9 * 60 + 30 <= hm <= 15 * 60 + 30
+
+
+def _resolve_today_market_amount() -> tuple[str, float]:
+    """
+    当日成交额（亿）。
+    盘中优先东财全 A 聚合；收盘后仍以东财纠偏交易所日报未对齐的缺口。
+    """
+    ex_amt, ex_raw = _fetch_market_amount_exchange(date_str(bj_now()))
+    snap = _fetch_em_a_share_snapshot()
+    em_raw = float(snap.get("amount_raw") or 0)
+
+    if _should_prefer_live_amount_snapshot():
+        if em_raw > 0:
+            return f"{round(em_raw)}亿", em_raw
+        if ex_raw > 0:
+            return ex_amt, ex_raw
+    else:
+        if ex_raw > 0:
+            if em_raw > ex_raw * 1.08:
+                return f"{round(em_raw)}亿", em_raw
+            return ex_amt, ex_raw
+        if em_raw > 0:
+            return f"{round(em_raw)}亿", em_raw
+
+    amt, raw = _fetch_market_amount_tencent(date_str(bj_now()))
     if raw > 0:
         return amt, raw
+    return "--", 0.0
 
-    snap = _fetch_em_a_share_snapshot()
-    raw = float(snap.get("amount_raw") or 0)
+
+def _spot_market_amount_yi(spot_df: Optional[pd.DataFrame] = None) -> tuple[str, float]:
+    """A 股实时总成交额（亿）；盘中东财聚合优先，收盘后交易所口径优先。"""
+    today = date_str(bj_now())
+    amt, raw = _resolve_today_market_amount()
     if raw > 0:
-        return f"{round(raw)}亿", raw
+        return amt, raw
 
     amt, raw = _fetch_market_amount_tencent(today)
     if raw > 0:
@@ -1299,26 +1331,21 @@ def _fetch_daily_market_amount_with_raw(trade_d: str) -> tuple[str, float]:
     if not trade_d:
         return "--", 0.0
     key = f"market_amt_{trade_d}"
-    ttl = 90 if trade_d == date_str(bj_now()) else 86400
+    ttl = (
+        60 if _should_prefer_live_amount_snapshot() else 90
+    ) if trade_d == date_str(bj_now()) else 86400
     cached = _cache_get(key, ttl)
     if cached is not None:
         return cached
 
     today = date_str(bj_now())
     if trade_d == today:
-        amt, raw = _fetch_market_amount_exchange(trade_d)
+        amt, raw = _resolve_today_market_amount()
         if raw > 0:
             result = (amt, raw)
             _cache_set(key, result)
             return result
-        snap = _fetch_em_a_share_snapshot()
-        raw = float(snap.get("amount_raw") or 0)
-        if raw > 0:
-            result = (f"{round(raw)}亿", raw)
-            _cache_set(key, result)
-            return result
         chain = (
-            _fetch_market_amount_tencent,
             _fetch_market_amount_baostock,
             _fetch_market_amount_akshare_em,
         )

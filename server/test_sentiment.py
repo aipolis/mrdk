@@ -7,6 +7,9 @@ import pandas as pd
 from fetcher import (
     _cache,
     _cache_set,
+    _fetch_daily_market_amount_with_raw,
+    _resolve_today_market_amount,
+    _spot_market_amount_yi,
     build_longkong_risk_items,
     build_yesterday_sentiment,
     fetch_ref_volume_at_same_time,
@@ -233,6 +236,38 @@ class SentimentV2Test(unittest.TestCase):
         self.assertEqual(patched["indicatorSections"][0]["items"][0]["value"], "-2.59%")
         self.assertEqual(patched["metrics"]["top10_avg_chg"], -2.59)
         historical_avg.assert_called_once()
+
+    @patch("fetcher._should_prefer_live_amount_snapshot", return_value=True)
+    @patch("fetcher._fetch_em_a_share_snapshot", return_value={"amount_raw": 31657.0})
+    @patch("fetcher._fetch_market_amount_exchange", return_value=("16884亿", 16884.0))
+    @patch("fetcher.date_str", return_value="20260612")
+    def test_today_volume_prefers_em_snapshot_during_trading(
+        self, date_str_mock, exchange_mock, em_mock, prefer_live_mock
+    ):
+        _cache.pop("market_amt_20260612", None)
+
+        amt, raw = _resolve_today_market_amount()
+        self.assertEqual(raw, 31657.0)
+        self.assertEqual(amt, "31657亿")
+
+        daily_amt, daily_raw = _fetch_daily_market_amount_with_raw("20260612")
+        self.assertEqual(daily_raw, 31657.0)
+        self.assertEqual(daily_amt, "31657亿")
+
+        spot_amt, spot_raw = _spot_market_amount_yi()
+        self.assertEqual(spot_raw, 31657.0)
+        self.assertEqual(spot_amt, "31657亿")
+
+    @patch("fetcher._should_prefer_live_amount_snapshot", return_value=False)
+    @patch("fetcher._fetch_em_a_share_snapshot", return_value={"amount_raw": 32284.0})
+    @patch("fetcher._fetch_market_amount_exchange", return_value=("16884亿", 16884.0))
+    @patch("fetcher.date_str", return_value="20260612")
+    def test_today_volume_corrects_partial_exchange_after_close(
+        self, date_str_mock, exchange_mock, em_mock, prefer_live_mock
+    ):
+        amt, raw = _resolve_today_market_amount()
+        self.assertEqual(raw, 32284.0)
+        self.assertEqual(amt, "32284亿")
 
     @patch("fetcher._compute_market_auction_volume_yi", return_value=None)
     @patch("fetcher.date_str", return_value="20260610")
