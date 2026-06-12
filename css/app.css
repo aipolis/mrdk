@@ -763,6 +763,174 @@ a {
   margin-top: 8px;
 }
 
+.footer-contact {
+  position: relative;
+  margin-bottom: 18px;
+  padding: 18px 16px 16px;
+  border-radius: 16px;
+  background:
+    radial-gradient(ellipse 80% 60% at 20% 0%, rgba(248, 113, 113, 0.12), transparent 55%),
+    radial-gradient(ellipse 70% 50% at 85% 100%, rgba(96, 165, 250, 0.1), transparent 50%),
+    rgba(21, 27, 43, 0.65);
+  border: 1px solid rgba(205, 215, 232, 0.1);
+  backdrop-filter: blur(12px);
+  -webkit-backdrop-filter: blur(12px);
+  overflow: hidden;
+}
+
+.footer-contact::before {
+  content: '';
+  position: absolute;
+  top: 0;
+  left: -40%;
+  width: 180%;
+  height: 1px;
+  background: linear-gradient(
+    90deg,
+    transparent 0%,
+    rgba(96, 165, 250, 0.5) 25%,
+    rgba(248, 113, 113, 0.9) 50%,
+    rgba(96, 165, 250, 0.5) 75%,
+    transparent 100%
+  );
+  animation: footer-shimmer 4s ease-in-out infinite;
+}
+
+.footer-contact-kicker {
+  position: relative;
+  font-size: 12px;
+  font-weight: 600;
+  letter-spacing: 0.22em;
+  text-transform: uppercase;
+  color: var(--muted);
+  margin-bottom: 14px;
+}
+
+.footer-contact-grid {
+  display: flex;
+  flex-direction: column;
+  align-items: stretch;
+  gap: 10px;
+}
+
+.footer-contact-chip {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 12px 14px;
+  border-radius: 12px;
+  background: rgba(11, 16, 32, 0.55);
+  border: 1px solid rgba(205, 215, 232, 0.08);
+  font-size: 14px;
+  line-height: 1.4;
+  transition: border-color 0.25s, box-shadow 0.25s, transform 0.2s;
+}
+
+a.footer-contact-chip {
+  text-decoration: none;
+  color: inherit;
+  cursor: pointer;
+}
+
+.footer-contact-chip:hover {
+  border-color: rgba(248, 113, 113, 0.35);
+  box-shadow: 0 0 20px rgba(248, 113, 113, 0.08);
+  transform: translateY(-1px);
+}
+
+.footer-contact-icon {
+  flex-shrink: 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 34px;
+  height: 34px;
+  border-radius: 10px;
+  background: rgba(255, 255, 255, 0.04);
+  border: 1px solid rgba(205, 215, 232, 0.06);
+}
+
+.footer-contact-icon.wechat {
+  color: #4ade80;
+}
+
+.footer-contact-icon.mail {
+  color: var(--blue);
+}
+
+.footer-contact-label {
+  flex-shrink: 0;
+  font-size: 12px;
+  font-weight: 600;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+  color: var(--dim);
+  min-width: 48px;
+}
+
+.footer-contact-value {
+  flex: 1;
+  min-width: 0;
+  text-align: right;
+  font-weight: 600;
+  font-family: ui-monospace, "SF Mono", "Cascadia Code", monospace;
+  font-size: 13px;
+  letter-spacing: 0.01em;
+  color: var(--text);
+  word-break: break-all;
+}
+
+.footer-contact-copy {
+  flex-shrink: 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 34px;
+  height: 34px;
+  margin-left: 2px;
+  padding: 0;
+  border: 1px solid rgba(205, 215, 232, 0.1);
+  border-radius: 10px;
+  background: rgba(255, 255, 255, 0.05);
+  color: var(--muted);
+  cursor: pointer;
+  transition: color 0.2s, background 0.2s, border-color 0.2s, transform 0.15s;
+}
+
+.footer-contact-copy:hover {
+  color: #4ade80;
+  background: rgba(74, 222, 128, 0.1);
+  border-color: rgba(74, 222, 128, 0.25);
+  transform: scale(1.05);
+}
+
+.footer-contact-copy:active {
+  transform: scale(0.96);
+}
+
+.footer-contact-copy.is-copied {
+  color: #4ade80;
+  background: rgba(74, 222, 128, 0.14);
+  border-color: rgba(74, 222, 128, 0.35);
+}
+
+.footer-contact-copy-done {
+  display: none;
+}
+
+.footer-contact-copy.is-copied .footer-contact-copy-icon {
+  display: none;
+}
+
+.footer-contact-copy.is-copied .footer-contact-copy-done {
+  display: block;
+}
+
+@keyframes footer-shimmer {
+  0%, 100% { transform: translateX(-15%); opacity: 0.5; }
+  50% { transform: translateX(15%); opacity: 1; }
+}
+
 @keyframes pulse {
   0%, 100% { opacity: 0.5; }
   50% { opacity: 1; }
