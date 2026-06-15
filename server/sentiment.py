@@ -68,6 +68,13 @@ SCORE_VERSION = "longkong-v2"
 _SIGNAL_WEAK = 40          # 一般指标
 _SIGNAL_WEAK_PRIMARY = 45  # leading indicators（晋级率/炸板率/封板率）：阈值更高，更早预警
 
+RISK_MULTIPLIERS = {
+    "none": 1.0,
+    "caution": 0.8,
+    "warning": 0.5,
+    "critical": 0.0,
+}
+
 
 # ── 连续线性评分函数 ───────────────────────────────────────────
 
@@ -678,31 +685,130 @@ def _collect_live_weak_reasons(
     return reasons
 
 
-def _calc_risk_level(reasons: list[str], score: int) -> str:
-    """
-    分级风险：none / caution / warning / critical。
-    - caution（提示）：1 条弱信号，仓位轻微收窄
-    - warning（警示）：3 条弱信号或分数偏低，仓位减半
-    - critical（高风险）：5+ 条弱信号或极低分，仓位归零
-    """
-    n = len(reasons)
-    if score <= 30 or n >= 5:
+def _risk_items(y: dict[str, int], metrics: dict) -> list[dict]:
+    """按独立风险主题加权，避免封板率与炸板率等相关指标重复计量。"""
+    items = []
+
+    def add(key: str, weight: float, reason: str) -> None:
+        items.append({"key": key, "weight": weight, "reason": reason})
+
+    high_cont = metrics.get("high_board_promote_continued")
+    high_total = metrics.get("high_board_promote_total")
+    if high_cont is not None and high_total is not None and int(high_total or 0) >= 3:
+        if y.get("highBoardPromote", 99) < _SIGNAL_WEAK_PRIMARY:
+            add("highBoardFailure", 3.0, f"高位板晋级仅{int(high_cont)}/{int(high_total)}")
+    if y.get("promote", 99) < _SIGNAL_WEAK_PRIMARY:
+        add("promote", 2.0, f"昨日涨停股今日晋级率仅{metrics.get('promote_rate', 0):.0f}%")
+    if y.get("sealQuality", 99) < _SIGNAL_WEAK_PRIMARY:
+        add(
+            "sealQuality",
+            2.0,
+            f"封板质量偏弱（封板率{metrics.get('seal_rate', 0):.0f}% / 炸板率{metrics.get('break_rate', 0):.0f}%）",
+        )
+    if y.get("continuationDepth", 99) < _SIGNAL_WEAK_PRIMARY:
+        add(
+            "continuationDepth",
+            1.0,
+            f"连板占比仅{int(metrics.get('multi_board_count') or 0)}/{int(metrics.get('limit_up_count') or 1)}",
+        )
+    sc = metrics.get("sector_concentration") or {}
+    if y.get("sectorConcentration", 99) < _SIGNAL_WEAK_PRIMARY and sc.get("total", 0) >= 10:
+        add("sectorConcentration", 0.5, f"前三板块占比仅{sc.get('top3Ratio', 0):.0f}%")
+    if y.get("limitUp", 99) < _SIGNAL_WEAK:
+        add("limitUp", 1.0, f"涨停仅{metrics.get('limit_up_count', 0)}只")
+    if y.get("height", 99) < _SIGNAL_WEAK:
+        add("height", 1.0, f"最高连板仅{metrics.get('max_board', 0)}板")
+    if y.get("advance", 99) < _SIGNAL_WEAK:
+        adv = int(metrics.get("advance_count") or 0)
+        dec = int(metrics.get("decline_count") or 0)
+        if adv + dec >= 50:
+            add("breadth", 1.0, f"上涨家数占比偏低（涨{adv}/跌{dec}）")
+    top10 = metrics.get("top10_avg_chg")
+    if top10 is not None and y.get("top10AvgChg", 99) < _SIGNAL_WEAK:
+        add("top10AvgChg", 1.0, f"成交额前10平均涨幅仅{float(top10):.2f}%")
+    return items
+
+
+def _calc_risk_level(risk_score: float, score: int) -> str:
+    """根据加权风险分和情绪分确定最终风险等级。"""
+    if score <= 30 or risk_score >= 7:
         return "critical"
-    if score <= 40 or n >= 3:
+    if score <= 40 or risk_score >= 4:
         return "warning"
-    if score <= 45 or n >= 1:
+    if score <= 45 or risk_score >= 1:
         return "caution"
     return "none"
 
 
 def _apply_risk_to_position(position: int, risk_level: str) -> int:
-    if risk_level == "critical":
-        return 0
-    if risk_level == "warning":
-        return position // 2
-    if risk_level == "caution":
-        return min(position, 30)
-    return position
+    return _floor_position(position * RISK_MULTIPLIERS.get(risk_level, 1.0))
+
+
+def _base_position_from_score(score: int) -> int:
+    """连续情绪仓位曲线：35 分以下为 0，90 分附近达到 70%。"""
+    return _round_position(max(0, min(70, (int(score or 0) - 35) * 1.2)))
+
+
+def _round_position(value: float) -> int:
+    """仓位统一到 10% 档，避免输出缺乏可靠性的个位数建议。"""
+    return max(0, min(100, int(float(value) / 10 + 0.5) * 10))
+
+
+def _floor_position(value: float) -> int:
+    """风险调整采用保守向下取整，确保降档确实降低暴露。"""
+    return max(0, min(100, int(float(value) // 10) * 10))
+
+
+def _volatility_proxy(metrics: dict) -> dict:
+    """用现有市场压力指标构造波动代理；它不是统计历史波动率。"""
+    metrics = metrics or {}
+    stress = 0
+    reasons = []
+    index_chg = metrics.get("index_chg")
+    top10 = metrics.get("top10_avg_chg")
+
+    if index_chg is not None and abs(float(index_chg)) >= 3:
+        stress += 2
+        reasons.append("指数波动较大")
+    elif index_chg is not None and abs(float(index_chg)) >= 1.5:
+        stress += 1
+        reasons.append("指数波动偏大")
+    if top10 is not None and abs(float(top10)) >= 4:
+        stress += 2
+        reasons.append("成交额前10波动较大")
+    elif top10 is not None and abs(float(top10)) >= 2:
+        stress += 1
+        reasons.append("成交额前10波动偏大")
+
+    multiplier = 0.7 if stress >= 3 else 0.85 if stress >= 1 else 1.0
+    return {"score": stress, "multiplier": multiplier, "reasons": reasons}
+
+
+def _stabilize_position(
+    target: int,
+    *,
+    previous_position: Optional[int] = None,
+    increase_confirmations: int = 0,
+    score_mode: str = "baseline",
+    critical: bool = False,
+) -> tuple[int, int, str]:
+    """限制仓位跳变；盘中只降不升，非盘中改善确认两次后再升仓。"""
+    target = _round_position(target)
+    if previous_position is None:
+        return target, 0, "initial"
+    previous = _round_position(previous_position)
+    if critical:
+        return 0, 0, "critical"
+    if target < previous:
+        return max(target, previous - 10), 0, "reduced"
+    if target == previous:
+        return previous, 0, "unchanged"
+    if score_mode == "live":
+        return previous, 0, "live_hold"
+    confirmations = int(increase_confirmations or 0) + 1
+    if confirmations < 2:
+        return previous, confirmations, "confirming"
+    return min(target, previous + 10), 0, "increased"
 
 
 def calc_sentiment(
@@ -731,32 +837,36 @@ def calc_sentiment(
 
     if score >= 90:
         level, color, signal = "极度亢奋", "#CF1322", "强"
-        position = 70
     elif score >= 80:
         level, color, signal = "高潮", "#FF4D4F", "强"
-        position = 60
     elif score >= 60:
         level, color, signal = "偏乐观", "#FF4D4F", "强"
-        position = 50
     elif score >= 50:
         level, color, signal = "中性", "#FAAD14", "中"
-        position = 30
     elif score >= 40:
         level, color, signal = "偏谨慎", "#FA8C16", "弱"
-        position = 10
     elif score >= 30:
         level, color, signal = "偏冷", "#38BDF8", "弱"
-        position = 0
     else:
         level, color, signal = "冰点", "#1890FF", "极弱"
-        position = 0
 
-    empty_reasons = _collect_weak_reasons(y_scores, metrics)
-    risk_level = _calc_risk_level(empty_reasons, score)
+    risk_items = _risk_items(y_scores, metrics)
+    empty_reasons = [item["reason"] for item in risk_items]
+    risk_score = sum(float(item["weight"]) for item in risk_items)
+    risk_level = _calc_risk_level(risk_score, score)
     gate_level = _baseline_risk_gate(metrics)
     levels = ("none", "caution", "warning", "critical")
     risk_level = levels[max(levels.index(risk_level), levels.index(gate_level))]
-    position = _apply_risk_to_position(position, risk_level)
+    if gate_level == "critical":
+        risk_items.insert(0, {"key": "hardGate", "weight": 7.0, "reason": "高位核心集体晋级失败"})
+        risk_score = max(risk_score, 7.0)
+    elif gate_level == "warning":
+        risk_items.insert(0, {"key": "hardGate", "weight": 4.0, "reason": "高位核心晋级失败"})
+        risk_score = max(risk_score, 4.0)
+    volatility = _volatility_proxy(metrics)
+    base_position = _base_position_from_score(score)
+    risk_position = _apply_risk_to_position(base_position, risk_level)
+    position = _floor_position(risk_position * volatility["multiplier"])
     empty_warning = risk_level == "critical"
 
     return {
@@ -766,9 +876,19 @@ def calc_sentiment(
         "levelColor": color,
         "longkongSignal": signal,
         "positionPercent": position,
+        "positionTargetPercent": position,
+        "basePositionPercent": base_position,
+        "riskMultiplier": RISK_MULTIPLIERS.get(risk_level, 1.0),
+        "volatilityMultiplier": volatility["multiplier"],
+        "volatilityProxy": volatility,
+        "positionReasons": [item["reason"] for item in risk_items] + volatility["reasons"],
+        "positionConfirmations": 0,
+        "positionStability": "baseline",
         "positionLabel": "",
         "emptyWarning": empty_warning,
         "riskLevel": risk_level,
+        "riskScore": round(risk_score, 1),
+        "riskItems": risk_items,
         "emptyReasons": empty_reasons,
         "scoreMode": mode,
         "subScores": {
@@ -858,6 +978,8 @@ def apply_display_longkong(
     display_score: int,
     *,
     score_mode: str = "baseline",
+    previous_position: Optional[int] = None,
+    increase_confirmations: int = 0,
 ) -> dict:
     """
     龙空信号 / riskLevel / emptyWarning 随展示分更新。
@@ -867,6 +989,8 @@ def apply_display_longkong(
     baseline_risk = baseline_sentiment.get("riskLevel", "none")
     baseline_empty = bool(baseline_sentiment.get("emptyWarning"))
     reasons = list(baseline_sentiment.get("emptyReasons") or [])
+    risk_items = list(baseline_sentiment.get("riskItems") or [])
+    risk_score = float(baseline_sentiment.get("riskScore") or 0)
     display_score = int(display_score or 0)
 
     display_risk = display_score < DISPLAY_LONGKONG_THRESHOLD
@@ -877,26 +1001,51 @@ def apply_display_longkong(
             risk_reason = f"综合情绪分{display_score}，低于{DISPLAY_LONGKONG_THRESHOLD}分"
         if risk_reason not in reasons:
             reasons.insert(0, risk_reason)
+            display_weight = 2.0 if display_score < 40 else 1.0
+            risk_items.insert(0, {"key": "displayScore", "weight": display_weight, "reason": risk_reason})
+            risk_score += display_weight
 
     # 综合展示分重新计算风险等级
-    risk_level = _calc_risk_level(reasons, display_score)
+    risk_level = _calc_risk_level(risk_score, display_score)
     # 取基准与展示风险的较高档
     _levels = ("none", "caution", "warning", "critical")
     risk_level = _levels[max(_levels.index(baseline_risk), _levels.index(risk_level))]
 
     empty_warning = baseline_empty or risk_level == "critical" or display_score <= 30
 
-    position = int(baseline_sentiment.get("positionPercent") or 0)
-    position = _apply_risk_to_position(position, risk_level)
+    baseline_score = int(baseline_sentiment.get("score") or 0)
+    base_position = _base_position_from_score(baseline_score)
+    risk_position = _apply_risk_to_position(base_position, risk_level)
+    volatility = baseline_sentiment.get("volatilityProxy") or {"score": 0, "multiplier": 1.0, "reasons": []}
+    volatility_multiplier = float(volatility.get("multiplier") or 1.0)
+    target_position = _floor_position(risk_position * volatility_multiplier)
     if empty_warning:
-        position = 0
+        target_position = 0
+    position, confirmations, stability = _stabilize_position(
+        target_position,
+        previous_position=previous_position,
+        increase_confirmations=increase_confirmations,
+        score_mode=score_mode,
+        critical=empty_warning,
+    )
 
     return {
         "longkongSignal": longkong_signal_from_score(display_score),
         "emptyWarning": empty_warning,
         "riskLevel": risk_level,
+        "riskScore": round(risk_score, 1),
+        "riskItems": risk_items,
         "emptyReasons": reasons,
         "positionPercent": position,
+        "positionTargetPercent": target_position,
+        "basePositionPercent": base_position,
+        "riskMultiplier": RISK_MULTIPLIERS.get(risk_level, 1.0),
+        "volatilityMultiplier": volatility_multiplier,
+        "volatilityProxy": volatility,
+        "positionReasons": [item.get("reason", "") for item in risk_items if item.get("reason")]
+        + list(volatility.get("reasons") or []),
+        "positionConfirmations": confirmations,
+        "positionStability": stability,
         "positionLabel": "",
     }
 

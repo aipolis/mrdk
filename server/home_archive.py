@@ -273,12 +273,22 @@ def assemble_home_from_archive(
             intraday_sub_scores={},
         ),
         "positionPercent": longkong["positionPercent"],
+        "positionTargetPercent": longkong.get("positionTargetPercent", longkong["positionPercent"]),
+        "basePositionPercent": longkong.get("basePositionPercent", sentiment.get("basePositionPercent")),
+        "riskMultiplier": longkong.get("riskMultiplier", sentiment.get("riskMultiplier", 1.0)),
+        "volatilityMultiplier": longkong.get("volatilityMultiplier", sentiment.get("volatilityMultiplier", 1.0)),
+        "volatilityProxy": longkong.get("volatilityProxy", sentiment.get("volatilityProxy") or {}),
+        "positionReasons": longkong.get("positionReasons") or [],
+        "positionConfirmations": longkong.get("positionConfirmations", 0),
+        "positionStability": longkong.get("positionStability", "initial"),
         "positionLabel": longkong["positionLabel"],
         "positionDesc": position_desc(
             display_score, longkong["emptyWarning"], longkong.get("riskLevel", "none")
         ),
         "emptyWarning": longkong["emptyWarning"],
         "riskLevel": longkong.get("riskLevel", "none"),
+        "riskScore": longkong.get("riskScore", 0),
+        "riskItems": longkong.get("riskItems") or [],
         "emptyReasons": longkong["emptyReasons"],
         "strategyNote": strategy_note_for_home(
             sentiment, display_score, score_mode=score_mode, longkong=longkong
@@ -291,6 +301,10 @@ def assemble_home_from_archive(
         "baselineRiskLevel": sentiment.get("riskLevel", "none"),
         "baselineEmptyReasons": sentiment.get("emptyReasons") or [],
         "baselinePositionPercent": sentiment.get("positionPercent"),
+        "baselineBasePositionPercent": sentiment.get("basePositionPercent"),
+        "baselineRiskScore": sentiment.get("riskScore", 0),
+        "baselineRiskItems": sentiment.get("riskItems") or [],
+        "baselineVolatilityProxy": sentiment.get("volatilityProxy") or {},
         "baselinePositionLabel": sentiment.get("positionLabel"),
         "indicators": advice_detail.get("indicators") or build_indicators(metrics, prev_metrics),
         "trend": build_home_trend(ref_d),

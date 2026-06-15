@@ -95,7 +95,7 @@
     <view class="gauge-foot" wx:if="{{scoreMode === 'live' && baselineScore != null}}">
       <view class="gauge-baseline-row">
         <text class="gauge-baseline">基准分 {{baselineScore}}</text>
-        <text class="gauge-baseline-hint"> · 昨日+外围，盘中不变</text>
+        <text class="gauge-baseline-hint"> · 昨日收盘，盘中不变</text>
       </view>
     </view>
 

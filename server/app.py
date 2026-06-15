@@ -84,6 +84,7 @@ from history_sync import (
 from ocr import ocr_image
 from scheduler import run_async_coro, start_internal_cron, stop_internal_cron
 from sentiment import (
+    _stabilize_position,
     apply_display_longkong,
     calc_sentiment,
     longkong_state,
@@ -442,10 +443,20 @@ def _build_home_payload(ref_d: str, prev_d: Optional[str], advice_d: str, is_rea
             intraday_sub_scores=intraday_payload.get("intradaySubScores") or {},
         ),
         "positionPercent": longkong["positionPercent"],
+        "positionTargetPercent": longkong.get("positionTargetPercent", longkong["positionPercent"]),
+        "basePositionPercent": longkong.get("basePositionPercent", sentiment.get("basePositionPercent")),
+        "riskMultiplier": longkong.get("riskMultiplier", sentiment.get("riskMultiplier", 1.0)),
+        "volatilityMultiplier": longkong.get("volatilityMultiplier", sentiment.get("volatilityMultiplier", 1.0)),
+        "volatilityProxy": longkong.get("volatilityProxy", sentiment.get("volatilityProxy") or {}),
+        "positionReasons": longkong.get("positionReasons") or [],
+        "positionConfirmations": longkong.get("positionConfirmations", 0),
+        "positionStability": longkong.get("positionStability", "initial"),
         "positionLabel": longkong["positionLabel"],
         "positionDesc": position_desc(display_score, longkong["emptyWarning"], longkong.get("riskLevel", "none")),
         "emptyWarning": longkong["emptyWarning"],
         "riskLevel": longkong.get("riskLevel", "none"),
+        "riskScore": longkong.get("riskScore", 0),
+        "riskItems": longkong.get("riskItems") or [],
         "emptyReasons": longkong["emptyReasons"],
         "strategyNote": strategy_note,
         "subScores": sentiment.get("subScores") or {},
@@ -456,6 +467,10 @@ def _build_home_payload(ref_d: str, prev_d: Optional[str], advice_d: str, is_rea
         "baselineRiskLevel": sentiment.get("riskLevel", "none"),
         "baselineEmptyReasons": sentiment["emptyReasons"],
         "baselinePositionPercent": sentiment["positionPercent"],
+        "baselineBasePositionPercent": sentiment.get("basePositionPercent"),
+        "baselineRiskScore": sentiment.get("riskScore", 0),
+        "baselineRiskItems": sentiment.get("riskItems") or [],
+        "baselineVolatilityProxy": sentiment.get("volatilityProxy") or {},
         "baselinePositionLabel": sentiment["positionLabel"],
         "indicators": [
             {**ind, "yesterday": ind["yesterday"].replace("前日 ", "") if str(ind["yesterday"]).startswith("前日") else ind["yesterday"]}
@@ -474,6 +489,22 @@ def _build_home_payload(ref_d: str, prev_d: Optional[str], advice_d: str, is_rea
 def _build_home_for_cache() -> tuple[dict, dict]:
     ref_d, prev_d, advice_d, is_ready = resolve_advice_dates()
     data = _strip_removed_indicators(_build_home_payload(ref_d, prev_d, advice_d, is_ready))
+    previous = get_snapshot()
+    previous_payload = (previous or {}).get("payload") or {}
+    if (
+        previous_payload.get("basePositionPercent") is not None
+        and _date_key(previous_payload.get("adviceDate")) == _date_key(data.get("adviceDate"))
+    ):
+        position, confirmations, stability = _stabilize_position(
+            int(data.get("positionTargetPercent", data.get("positionPercent")) or 0),
+            previous_position=previous_payload.get("positionPercent"),
+            increase_confirmations=int(previous_payload.get("positionConfirmations") or 0),
+            score_mode=data.get("scoreMode") or "baseline",
+            critical=bool(data.get("emptyWarning")),
+        )
+        data["positionPercent"] = position
+        data["positionConfirmations"] = confirmations
+        data["positionStability"] = stability
     data["isReportReady"] = is_ready
     data["quality"] = _payload_quality(data)
     context = {
@@ -680,14 +711,22 @@ def _sync_intraday_display_fields(
     prev_baseline_2 = int(calc_sentiment(p.get("prevMetrics") or {})["score"]) if p.get("prevMetrics") else None
     display_score, score_mode = calc_display_score(baseline, live_raw, prev_baseline=prev_baseline_2)
     baseline_sentiment = {
+        "score": baseline,
         "emptyWarning": bool(p.get("baselineEmptyWarning")),
         "riskLevel": p.get("baselineRiskLevel") or "none",
+        "riskScore": p.get("baselineRiskScore") or 0,
+        "riskItems": list(p.get("baselineRiskItems") or []),
         "emptyReasons": list(p.get("baselineEmptyReasons") or []),
         "positionPercent": p.get("baselinePositionPercent"),
+        "volatilityProxy": p.get("baselineVolatilityProxy") or {},
         "positionLabel": p.get("baselinePositionLabel") or "",
     }
     longkong = apply_display_longkong(
-        baseline_sentiment, display_score, score_mode=score_mode
+        baseline_sentiment,
+        display_score,
+        score_mode=score_mode,
+        previous_position=p.get("positionPercent"),
+        increase_confirmations=int(p.get("positionConfirmations") or 0),
     )
     updated = intraday_payload.get("updatedAt") or gauge_hm
     p["liveScore"] = live_raw
@@ -708,8 +747,18 @@ def _sync_intraday_display_fields(
     p["longkongSignal"] = longkong["longkongSignal"]
     p["emptyWarning"] = longkong["emptyWarning"]
     p["riskLevel"] = longkong.get("riskLevel", "none")
+    p["riskScore"] = longkong.get("riskScore", 0)
+    p["riskItems"] = longkong.get("riskItems") or []
     p["emptyReasons"] = longkong["emptyReasons"]
     p["positionPercent"] = longkong["positionPercent"]
+    p["positionTargetPercent"] = longkong.get("positionTargetPercent", longkong["positionPercent"])
+    p["basePositionPercent"] = longkong.get("basePositionPercent")
+    p["riskMultiplier"] = longkong.get("riskMultiplier", 1.0)
+    p["volatilityMultiplier"] = longkong.get("volatilityMultiplier", 1.0)
+    p["volatilityProxy"] = longkong.get("volatilityProxy") or {}
+    p["positionReasons"] = longkong.get("positionReasons") or []
+    p["positionConfirmations"] = longkong.get("positionConfirmations", 0)
+    p["positionStability"] = longkong.get("positionStability", "unchanged")
     p["positionLabel"] = longkong["positionLabel"]
     p["positionDesc"] = position_desc(display_score, longkong["emptyWarning"], longkong.get("riskLevel", "none"))
     p = _attach_longkong_state(

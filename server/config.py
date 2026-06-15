@@ -15,7 +15,11 @@ PORT = int(os.getenv("PORT", "8000"))
 CACHE_TTL = int(os.getenv("CACHE_TTL", "300"))
 
 # 首页预计算缓存（/api/sentiment/today 秒回）
-HOME_CACHE_FILE = os.getenv("HOME_CACHE_FILE", "/tmp/mingri_home_cache.json")
+_DEFAULT_CACHE_DIR = os.path.join(os.path.dirname(os.path.abspath(__file__)), ".cache")
+HOME_CACHE_FILE = os.getenv(
+    "HOME_CACHE_FILE",
+    os.path.join(_DEFAULT_CACHE_DIR, "mingri_home_cache.json"),
+)
 HOME_CACHE_MAX_STALE_SEC = int(os.getenv("HOME_CACHE_MAX_STALE_SEC", str(86400 * 2)))
 
 # 云托管 MySQL（控制台 MySQL 页 → 内网地址 + 账号）

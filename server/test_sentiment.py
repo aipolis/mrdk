@@ -27,7 +27,12 @@ from intraday import (
 )
 from app import _strip_removed_indicators
 from sentiment import (
+    _base_position_from_score,
+    _risk_items,
     _score_auction_block,
+    _stabilize_position,
+    _volatility_proxy,
+    apply_display_longkong,
     calc_sentiment,
     score_high_board_promote,
     score_intraday_block,
@@ -120,6 +125,75 @@ class SentimentV2Test(unittest.TestCase):
         self.assertEqual(result["riskLevel"], "warning")
         self.assertFalse(result["emptyWarning"])
         self.assertTrue(any("高位板晋级仅0/3" in reason for reason in result["emptyReasons"]))
+
+    def test_display_longkong_does_not_apply_baseline_warning_twice(self):
+        baseline = {
+            "score": 50,
+            "positionPercent": 15,
+            "riskLevel": "warning",
+            "emptyWarning": False,
+            "emptyReasons": ["弱信号1", "弱信号2", "弱信号3"],
+        }
+
+        result = apply_display_longkong(baseline, 53, score_mode="live")
+
+        self.assertEqual(result["riskLevel"], "warning")
+        self.assertEqual(result["positionPercent"], 10)
+
+    def test_display_longkong_applies_new_live_warning_once(self):
+        baseline = {
+            "score": 60,
+            "positionPercent": 50,
+            "riskLevel": "none",
+            "emptyWarning": False,
+            "emptyReasons": [],
+        }
+
+        result = apply_display_longkong(baseline, 40, score_mode="live")
+
+        self.assertEqual(result["riskLevel"], "warning")
+        self.assertEqual(result["positionPercent"], 10)
+
+    def test_continuous_base_position_uses_ten_percent_steps(self):
+        self.assertEqual(_base_position_from_score(35), 0)
+        self.assertEqual(_base_position_from_score(45), 10)
+        self.assertEqual(_base_position_from_score(50), 20)
+        self.assertEqual(_base_position_from_score(60), 30)
+        self.assertEqual(_base_position_from_score(80), 50)
+        self.assertEqual(_base_position_from_score(90), 70)
+
+    def test_weighted_risk_combines_seal_and_break_quality(self):
+        items = _risk_items(
+            {"sealQuality": 30, "seal": 20, "break": 20},
+            complete_metrics(seal_rate=45, break_rate=50),
+        )
+        seal_items = [item for item in items if item["key"] == "sealQuality"]
+        self.assertEqual(len(seal_items), 1)
+        self.assertEqual(seal_items[0]["weight"], 2.0)
+
+    def test_volatility_proxy_reduces_position_under_market_stress(self):
+        proxy = _volatility_proxy(
+            complete_metrics(
+                index_chg=-3.5,
+                top10_avg_chg=-4.5,
+            )
+        )
+        self.assertEqual(proxy["multiplier"], 0.7)
+        self.assertGreaterEqual(proxy["score"], 4)
+
+    def test_position_stability_blocks_live_increase_and_confirms_later(self):
+        held = _stabilize_position(40, previous_position=20, score_mode="live")
+        first = _stabilize_position(40, previous_position=20, score_mode="baseline")
+        second = _stabilize_position(
+            40,
+            previous_position=20,
+            increase_confirmations=first[1],
+            score_mode="baseline",
+        )
+
+        self.assertEqual(held, (20, 0, "live_hold"))
+        self.assertEqual(first, (20, 1, "confirming"))
+        self.assertEqual(second, (30, 0, "increased"))
 
     def test_optional_missing_data_is_reported(self):
         result = calc_sentiment(complete_metrics())
