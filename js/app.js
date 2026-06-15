@@ -10,7 +10,7 @@ import {
   setGaugeLevelClass,
   normalizeRiskReason,
   buildRiskCopy,
-} from './longkongState.js?v=20260615h'
+} from './longkongState.js?v=20260615m'
 import { fetchToday, fetchHistory, fetchDay, fetchIntradaySeries } from './api.js?v=20260609c'
 import { drawIntradayChart } from './intradayChart.js?v=20260615i'
 import { createTrendController } from './trendDraw.js?v=20260529i'

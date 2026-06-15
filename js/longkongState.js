@@ -64,10 +64,23 @@ export function resolveLongkongTone(data) {
 
 export function buildLongkongHeroText(data, lk) {
   const levelLabel = String(data?.levelLabel || data?.displayLevel || '').trim()
-  const positionDesc = String(data?.positionDesc || '').trim()
+  const positionDesc = normalizePositionDesc(data)
   const lkDesc = String(lk?.desc || '').trim()
   const desc = positionDesc || lkDesc
   return { levelLabel, desc }
+}
+
+/** 修正旧版/API 文案：展示分≥50 时不应再提示“低于50”。 */
+export function normalizePositionDesc(data) {
+  const score = Number(data?.displayScore ?? data?.score ?? 0)
+  const raw = String(data?.positionDesc || '').trim()
+  if (!raw) return raw
+  if (score >= 50 && /低于\s*50/.test(raw)) {
+    if (data?.riskLevel === 'warning' || data?.emptyWarning) {
+      return '接力结构偏弱，宜控节奏'
+    }
+  }
+  return raw
 }
 
 export function normalizeRiskReason(reason) {
@@ -106,12 +119,20 @@ export function buildRiskCopy(data) {
   }
 }
 
+const DISPLAY_LONGKONG_THRESHOLD = 50
+
 const RISK_MULTIPLIERS = {
   none: 1.0,
-  caution: 0.8,
+  caution: 0.9,
   warning: 0.5,
   critical: 0.0,
 }
+
+const POSITION_SCORE_BASE = 30
+const POSITION_SCORE_SLOPE = 1.3
+const POSITION_SCORE_CAP = 100
+const WARNING_MULT_STRUCTURAL = 0.75
+const WARNING_MULT_WEAK = 0.5
 
 function roundPosition(value) {
   return Math.max(0, Math.min(100, Math.round(Number(value) / 10) * 10))
@@ -123,12 +144,26 @@ function floorPosition(value) {
 
 export function basePositionFromScore(score) {
   const s = Number(score) || 0
-  return roundPosition(Math.max(0, Math.min(70, Math.max(0, (s - 35) * 1.2))))
+  const raw = Math.max(0, (s - POSITION_SCORE_BASE) * POSITION_SCORE_SLOPE)
+  return roundPosition(Math.max(0, Math.min(POSITION_SCORE_CAP, raw)))
 }
 
-function applyRiskToPosition(position, riskLevel) {
-  const mult = RISK_MULTIPLIERS[riskLevel] ?? 1.0
-  return floorPosition(Number(position) * mult)
+function riskMultiplierForPosition(riskLevel, score) {
+  if (riskLevel === 'critical') return 0
+  if (riskLevel === 'warning') {
+    return Number(score) >= DISPLAY_LONGKONG_THRESHOLD ? WARNING_MULT_STRUCTURAL : WARNING_MULT_WEAK
+  }
+  return RISK_MULTIPLIERS[riskLevel] ?? 1.0
+}
+
+function finalPositionFromComponents(basePosition, riskLevel, score, volatilityMultiplier) {
+  const mult = riskMultiplierForPosition(riskLevel, score)
+  return roundPosition(Number(basePosition) * mult * Number(volatilityMultiplier || 1))
+}
+
+function applyRiskToPosition(position, riskLevel, score = 0) {
+  const mult = riskMultiplierForPosition(riskLevel, score)
+  return roundPosition(Number(position) * mult)
 }
 
 function stabilizePosition(target, options = {}) {
@@ -151,7 +186,10 @@ function stabilizePosition(target, options = {}) {
     return { percent: previous, stability: 'unchanged', confirmations: 0 }
   }
   if (scoreMode === 'live') {
-    return { percent: previous, stability: 'live_hold', confirmations: 0 }
+    if (previous > 0 && nextTarget > previous) {
+      return { percent: previous, stability: 'live_hold', confirmations: 0 }
+    }
+    return { percent: nextTarget, stability: 'initial', confirmations: 0 }
   }
   const confirmations = Number(increaseConfirmations || 0) + 1
   if (confirmations < 2) {
@@ -187,7 +225,8 @@ function resolveVolatilityMultiplier(data) {
 function resolveRiskMultiplier(data, riskLevel) {
   const direct = Number(data?.riskMultiplier)
   if (Number.isFinite(direct) && direct >= 0) return direct
-  return RISK_MULTIPLIERS[riskLevel] ?? 1.0
+  const score = Number(data?.baselineScore ?? data?.score ?? 0)
+  return riskMultiplierForPosition(riskLevel, score)
 }
 
 /** 与 server/sentiment.py 一致的仓位展示计算。 */
@@ -222,10 +261,15 @@ export function resolvePositionDisplay(data) {
 
   const hasNewPayload = data?.basePositionPercent != null && !isLegacyPositionPayload(data)
   if (hasNewPayload) {
-    const percent = Number(data.positionPercent)
+    const targetPercent = roundPosition(Number(data?.positionTargetPercent ?? data?.positionPercent))
+    let percent = roundPosition(Number(data.positionPercent))
+    const stability = data?.positionStability || 'unchanged'
+    if (stability === 'live_hold' && percent <= 0 && targetPercent > 0) {
+      percent = targetPercent
+    }
     return {
-      percent: Number.isFinite(percent) ? roundPosition(percent) : null,
-      targetPercent: Number(data?.positionTargetPercent ?? data?.positionPercent),
+      percent: Number.isFinite(percent) ? percent : null,
+      targetPercent,
       basePercent: Number(data?.basePositionPercent),
       riskMultiplier: resolveRiskMultiplier(data, data?.riskLevel || 'none'),
       volatilityMultiplier: resolveVolatilityMultiplier(data),
@@ -240,8 +284,12 @@ export function resolvePositionDisplay(data) {
   const basePercent = basePositionFromScore(baselineScore)
   const riskMultiplier = resolveRiskMultiplier(data, riskLevel)
   const volatilityMultiplier = resolveVolatilityMultiplier(data)
-  const riskAdjusted = applyRiskToPosition(basePercent, riskLevel)
-  const targetPercent = floorPosition(riskAdjusted * volatilityMultiplier)
+  const targetPercent = finalPositionFromComponents(
+    basePercent,
+    riskLevel,
+    baselineScore,
+    volatilityMultiplier,
+  )
   const stabilized = stabilizePosition(targetPercent, {
     previousPosition: isLegacyPositionPayload(data) ? null : data?.positionPercent,
     increaseConfirmations: data?.positionConfirmations,
