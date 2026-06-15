@@ -1,4 +1,4 @@
-import { FETCH_TIMEOUT_MS, resolveApiBase } from './config.js?v=20260609c'
+import { FETCH_TIMEOUT_MS, resolveApiBase } from './config.js?v=20260615g'
 
 async function fetchJson(path) {
   const ctrl = new AbortController()

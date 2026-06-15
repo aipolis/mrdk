@@ -2,7 +2,9 @@ import { beijingDateKey } from './time.js?v=20260609a'
 
 /** 首页 localStorage 缓存：二次打开秒开，后台再刷新 */
 
-const STORAGE_KEY = 'mrdk_home_sentiment_v1'
+const IS_LOCAL_PREVIEW = typeof location !== 'undefined'
+  && (location.hostname === '127.0.0.1' || location.hostname === 'localhost')
+const STORAGE_KEY = IS_LOCAL_PREVIEW ? 'mrdk_home_sentiment_local_v2' : 'mrdk_home_sentiment_v1'
 export const FRESH_TTL_MS = 30 * 60 * 1000
 const STALE_MAX_MS = 48 * 60 * 60 * 1000
 
@@ -25,7 +27,9 @@ function readPayload() {
 }
 
 export function getHomeCache() {
-  return readPayload()?.data || null
+  const data = readPayload()?.data || null
+  if (data?.cacheWarmup) return null
+  return data
 }
 
 export function getHomeCacheMeta() {

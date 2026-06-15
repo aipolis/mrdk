@@ -329,7 +329,7 @@ function drawGaugeCard(ctx, x, y, w, data) {
     ctx.fillStyle = COLORS.dim
     ctx.font = `400 ${sc(22)}px ${FONT}`
     ctx.textAlign = 'center'
-    ctx.fillText(`基准分 ${data.baselineScore} · 昨日+外围，盘中不变`, x + w / 2, footY)
+    ctx.fillText(`基准分 ${data.baselineScore} · 昨日收盘，盘中不变`, x + w / 2, footY)
     footY += sc(28)
   }
   if (data.emptyWarning) {

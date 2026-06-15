@@ -334,7 +334,7 @@ function ensureAuctionSection(sections, data) {
 
     items,
 
-    pending: items.every((it) => it.value === '--'),
+    pending: !data?.cacheWarmup && items.every((it) => it.value === '--'),
 
   }
 
@@ -550,7 +550,7 @@ function ensureIntradaySection(sections, data) {
 
     items,
 
-    pending: items.every((it) => it.value === '--'),
+    pending: !data?.cacheWarmup && items.every((it) => it.value === '--'),
 
   }
 

@@ -105,3 +105,162 @@ export function buildRiskCopy(data) {
     tip: `复盘｜重点：${focus}；应对：${action}。`,
   }
 }
+
+const RISK_MULTIPLIERS = {
+  none: 1.0,
+  caution: 0.8,
+  warning: 0.5,
+  critical: 0.0,
+}
+
+function roundPosition(value) {
+  return Math.max(0, Math.min(100, Math.round(Number(value) / 10) * 10))
+}
+
+function floorPosition(value) {
+  return Math.max(0, Math.min(100, Math.floor(Number(value) / 10) * 10))
+}
+
+export function basePositionFromScore(score) {
+  const s = Number(score) || 0
+  return roundPosition(Math.max(0, Math.min(70, Math.max(0, (s - 35) * 1.2))))
+}
+
+function applyRiskToPosition(position, riskLevel) {
+  const mult = RISK_MULTIPLIERS[riskLevel] ?? 1.0
+  return floorPosition(Number(position) * mult)
+}
+
+function stabilizePosition(target, options = {}) {
+  const {
+    previousPosition = null,
+    increaseConfirmations = 0,
+    scoreMode = 'baseline',
+    emptyWarning = false,
+  } = options
+  let nextTarget = roundPosition(target)
+  if (emptyWarning) return { percent: 0, stability: 'critical', confirmations: 0 }
+  if (previousPosition == null) {
+    return { percent: nextTarget, stability: 'initial', confirmations: 0 }
+  }
+  const previous = roundPosition(previousPosition)
+  if (nextTarget < previous) {
+    return { percent: Math.max(nextTarget, previous - 10), stability: 'reduced', confirmations: 0 }
+  }
+  if (nextTarget === previous) {
+    return { percent: previous, stability: 'unchanged', confirmations: 0 }
+  }
+  if (scoreMode === 'live') {
+    return { percent: previous, stability: 'live_hold', confirmations: 0 }
+  }
+  const confirmations = Number(increaseConfirmations || 0) + 1
+  if (confirmations < 2) {
+    return { percent: previous, stability: 'confirming', confirmations }
+  }
+  return { percent: Math.min(nextTarget, previous + 10), stability: 'increased', confirmations: 0 }
+}
+
+function isTenStep(value) {
+  if (value == null || value === '') return true
+  const n = Number(value)
+  return Number.isFinite(n) && n % 10 === 0
+}
+
+/** 线上旧版 API 会把仓位连续 //2，出现 5、2 等非 10% 档位。 */
+export function isLegacyPositionPayload(data) {
+  if (data?.cacheWarmup) return false
+  if (data?.basePositionPercent != null) return false
+  if (!isTenStep(data?.positionPercent)) return true
+  if (data?.baselinePositionPercent != null && !isTenStep(data?.baselinePositionPercent)) return true
+  if (data?.positionTargetPercent != null && !isTenStep(data?.positionTargetPercent)) return true
+  return false
+}
+
+function resolveVolatilityMultiplier(data) {
+  const direct = Number(data?.volatilityMultiplier)
+  if (Number.isFinite(direct) && direct > 0) return direct
+  const proxy = data?.volatilityProxy?.multiplier ?? data?.baselineVolatilityProxy?.multiplier
+  const parsed = Number(proxy)
+  return Number.isFinite(parsed) && parsed > 0 ? parsed : 1.0
+}
+
+function resolveRiskMultiplier(data, riskLevel) {
+  const direct = Number(data?.riskMultiplier)
+  if (Number.isFinite(direct) && direct >= 0) return direct
+  return RISK_MULTIPLIERS[riskLevel] ?? 1.0
+}
+
+/** 与 server/sentiment.py 一致的仓位展示计算。 */
+export function resolvePositionDisplay(data) {
+  if (data?.cacheWarmup) {
+    const score = Number(data?.displayScore ?? data?.score ?? 0)
+    const percent = Number.isFinite(score) && score > 0 ? basePositionFromScore(score) : null
+    return {
+      percent,
+      targetPercent: percent,
+      basePercent: percent,
+      riskMultiplier: null,
+      volatilityMultiplier: null,
+      stability: 'warmup',
+      reasons: [],
+      legacyFixed: false,
+    }
+  }
+
+  if (data?.emptyWarning) {
+    return {
+      percent: 0,
+      targetPercent: 0,
+      basePercent: basePositionFromScore(data?.baselineScore ?? data?.score),
+      riskMultiplier: resolveRiskMultiplier(data, data?.riskLevel || 'none'),
+      volatilityMultiplier: resolveVolatilityMultiplier(data),
+      stability: data?.positionStability || 'critical',
+      reasons: Array.isArray(data?.positionReasons) ? data.positionReasons : [],
+      legacyFixed: false,
+    }
+  }
+
+  const hasNewPayload = data?.basePositionPercent != null && !isLegacyPositionPayload(data)
+  if (hasNewPayload) {
+    const percent = Number(data.positionPercent)
+    return {
+      percent: Number.isFinite(percent) ? roundPosition(percent) : null,
+      targetPercent: Number(data?.positionTargetPercent ?? data?.positionPercent),
+      basePercent: Number(data?.basePositionPercent),
+      riskMultiplier: resolveRiskMultiplier(data, data?.riskLevel || 'none'),
+      volatilityMultiplier: resolveVolatilityMultiplier(data),
+      stability: data?.positionStability || 'unchanged',
+      reasons: Array.isArray(data?.positionReasons) ? data.positionReasons : [],
+      legacyFixed: false,
+    }
+  }
+
+  const baselineScore = Number(data?.baselineScore ?? data?.score ?? 0)
+  const riskLevel = data?.riskLevel || data?.baselineRiskLevel || 'none'
+  const basePercent = basePositionFromScore(baselineScore)
+  const riskMultiplier = resolveRiskMultiplier(data, riskLevel)
+  const volatilityMultiplier = resolveVolatilityMultiplier(data)
+  const riskAdjusted = applyRiskToPosition(basePercent, riskLevel)
+  const targetPercent = floorPosition(riskAdjusted * volatilityMultiplier)
+  const stabilized = stabilizePosition(targetPercent, {
+    previousPosition: isLegacyPositionPayload(data) ? null : data?.positionPercent,
+    increaseConfirmations: data?.positionConfirmations,
+    scoreMode: data?.scoreMode || 'baseline',
+    emptyWarning: false,
+  })
+  const reasons = Array.isArray(data?.positionReasons) && data.positionReasons.length
+    ? data.positionReasons
+    : (data?.emptyReasons || [])
+
+  return {
+    percent: stabilized.percent,
+    targetPercent,
+    basePercent,
+    riskMultiplier,
+    volatilityMultiplier,
+    stability: stabilized.stability,
+    confirmations: stabilized.confirmations,
+    reasons,
+    legacyFixed: isLegacyPositionPayload(data),
+  }
+}

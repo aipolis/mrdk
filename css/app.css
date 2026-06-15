@@ -488,6 +488,58 @@ a {
 
 /* .longkong-state-desc colors handled by --s-color consolidated rule */
 
+.longkong-position {
+  display: flex;
+  align-items: baseline;
+  justify-content: center;
+  flex-wrap: wrap;
+  gap: 3px 6px;
+  max-width: 100%;
+  min-width: 132px;
+  margin-top: 4px;
+  padding: 7px 14px;
+  border-radius: 999px;
+  color: var(--s-color);
+  background: rgba(255, 255, 255, 0.06);
+  border: 1px solid rgba(255, 255, 255, 0.12);
+}
+
+.longkong-position[hidden] {
+  display: none !important;
+}
+
+.longkong-position-label {
+  margin-right: 5px;
+  font-size: 12px;
+  font-weight: 600;
+  color: var(--muted);
+  letter-spacing: 0.04em;
+}
+
+.longkong-position-value {
+  font-size: 22px;
+  font-weight: 800;
+  line-height: 1;
+}
+
+.longkong-position-unit {
+  font-size: 12px;
+  font-weight: 700;
+  opacity: 0.86;
+}
+
+.longkong-position-detail {
+  margin: 2px 0 0;
+  max-width: 320px;
+  font-size: 11px;
+  line-height: 1.55;
+  color: var(--muted);
+}
+
+.longkong-position-detail[hidden] {
+  display: none !important;
+}
+
 .longkong-state-subdesc {
   margin: 0;
   max-width: 280px;

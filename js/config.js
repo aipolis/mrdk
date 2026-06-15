@@ -15,6 +15,14 @@ function resolveApiBase() {
     const stored = localStorage.getItem('mrdk_api_base')
     if (stored && stored.trim()) return stored.trim()
   }
+  if (
+    typeof localStorage !== 'undefined'
+    && localStorage.getItem('mrdk_use_local_api') === '1'
+    && typeof location !== 'undefined'
+    && (location.hostname === '127.0.0.1' || location.hostname === 'localhost')
+  ) {
+    return 'http://127.0.0.1:8010'
+  }
   if (typeof process !== 'undefined' && process.env && process.env.VITE_API_BASE) {
     return process.env.VITE_API_BASE
   }
@@ -59,6 +67,9 @@ export function resolveVolumeSurgePollMs(now = new Date()) {
  * 开发环境设置 API 地址
  * 在浏览器控制台执行：localStorage.setItem('mrdk_api_base', 'http://127.0.0.1:8000')
  * 然后刷新页面，或者直接 window.__API_BASE__ = 'http://127.0.0.1:8000'
+ *
+ * 本地预览默认走线上 API；仅调试后端时：
+ * localStorage.setItem('mrdk_use_local_api', '1')
  */
 export function setApiBase(url) {
   if (typeof localStorage !== 'undefined') {

@@ -1,20 +1,21 @@
-import { resolveAutoRefreshMs } from './config.js?v=20260609c'
+import { resolveAutoRefreshMs } from './config.js?v=20260615g'
 import { getDisplayLevel, dailyQuote, formatHeaderDate, HOME_QUOTE } from './theme.js?v=20260609c'
-import { normalizeSections } from './indicators.js?v=20260609b'
+import { normalizeSections } from './indicators.js?v=20260615g'
 import {
   buildLongkongHeroText,
   resolveLongkongState,
   resolveLongkongTone,
+  resolvePositionDisplay,
   renderLongkongLightsHtml,
   setGaugeLevelClass,
   normalizeRiskReason,
   buildRiskCopy,
-} from './longkongState.js?v=20260604c'
+} from './longkongState.js?v=20260615h'
 import { fetchToday, fetchHistory, fetchDay, fetchIntradaySeries } from './api.js?v=20260609c'
-import { drawIntradayChart } from './intradayChart.js?v=20260604c'
+import { drawIntradayChart } from './intradayChart.js?v=20260615i'
 import { createTrendController } from './trendDraw.js?v=20260529i'
 import { createGaugeController, IDLE_MIN_MS, SKIP_ANIM_MS } from './gaugeAnim.js?v=20260529m'
-import { getHomeCache, saveHomeCache, isSameHomeSnapshot } from './homeCache.js?v=20260609c'
+import { getHomeCache, saveHomeCache, isSameHomeSnapshot } from './homeCache.js?v=20260615g'
 import { beijingDateKey } from './time.js?v=20260609a'
 
 export { fetchToday, fetchHistory }
@@ -121,7 +122,7 @@ function setGaugeCalculating(on) {
 }
 
 
-function applyGaugeMeta(data, displayScore, level) {
+function applyLongkongMeta(data, displayScore, level) {
   const meta = gaugePendingMeta || {}
   const riskCopy = buildRiskCopy(data)
   const levelLabel = data.levelLabel || data.displayLevel || meta.levelLabel || level.label
@@ -135,8 +136,12 @@ function applyGaugeMeta(data, displayScore, level) {
     levelClass,
     positionDesc,
   })
+}
+
+function applyGaugeMeta(data, displayScore, level) {
+  applyLongkongMeta(data, displayScore, level)
   $('#displayScore').textContent = displayScore
-  $('#displayScore').className = `gauge-score ${levelClass}`
+  $('#displayScore').className = `gauge-score ${data.levelClass || level.class}`
   setGaugeCalculating(false)
 }
 
@@ -197,6 +202,7 @@ function finishGaugeAnimation(displayScore, data, level, options = {}) {
 
   gaugeIdleTimer = setTimeout(() => {
     gaugeIdleTimer = null
+    applyLongkongMeta(data, displayScore, level)
     ctrl.settleTo(displayScore, done)
   }, remain)
 }
@@ -378,6 +384,9 @@ function applyLongkongState(data) {
   const levelEl = $('#longkongStateLevel')
   const lightsEl = $('#longkongLights')
   const descEl = $('#longkongStateDesc')
+  const positionEl = $('#longkongPosition')
+  const positionValueEl = $('#longkongPositionValue')
+  const positionDetailEl = $('#longkongPositionDetail')
   setGaugeLevelClass(heroEl, tone.class)
   if (labelEl) {
     labelEl.textContent = lk.label
@@ -398,6 +407,35 @@ function applyLongkongState(data) {
     descEl.textContent = hero.desc || lk.desc || ''
     descEl.className = `longkong-state-desc ${tone.class}`
     descEl.hidden = !descEl.textContent
+  }
+  if (positionEl && positionValueEl) {
+    const pos = resolvePositionDisplay(data)
+    const rawPosition = pos?.percent
+    const hasPosition = data?.levelClass !== 'calculating'
+      && rawPosition != null
+      && Number.isFinite(rawPosition)
+    positionEl.hidden = !hasPosition
+    positionValueEl.textContent = hasPosition
+      ? String(Math.max(0, Math.min(100, Math.round(rawPosition))))
+      : '--'
+    if (positionDetailEl) {
+      const details = []
+      if (Number.isFinite(pos.basePercent)) details.push(`基础 ${Math.round(pos.basePercent)}%`)
+      if (Number.isFinite(pos.riskMultiplier)) details.push(`风险 × ${pos.riskMultiplier.toFixed(1)}`)
+      if (Number.isFinite(pos.volatilityMultiplier) && pos.volatilityMultiplier !== 1) {
+        details.push(`波动 × ${pos.volatilityMultiplier.toFixed(2)}`)
+      }
+      if (Number.isFinite(pos.targetPercent) && Math.round(pos.targetPercent) !== Math.round(rawPosition)) {
+        details.push(`目标 ${Math.round(pos.targetPercent)}%`)
+      }
+      if (pos.stability === 'live_hold') details.push('盘中暂不升仓')
+      if (pos.stability === 'confirming') details.push('等待连续确认')
+      if (data?.cacheWarmup || pos.stability === 'warmup') details.push('本地数据预热中，仅显示基础估算')
+      const mainReason = Array.isArray(pos.reasons) ? pos.reasons[0] : ''
+      if (mainReason) details.push(`主因：${mainReason}`)
+      positionDetailEl.textContent = details.join(' · ')
+      positionDetailEl.hidden = !hasPosition || !positionDetailEl.textContent
+    }
   }
   if (lightsEl) lightsEl.innerHTML = renderLongkongLightsHtml(lk.state, tone.class, data?.riskLevel || 'none')
 }
@@ -571,6 +609,8 @@ function archiveHomeData(detail, histList, err) {
     levelClass: hist.levelClass || sentiment.levelClass || level.class,
     levelColor: sentiment.levelColor || level.color,
     positionDesc: '首页缓存更新中，暂显示最近归档数据',
+    positionPercent: sentiment.positionPercent ?? hist.position ?? null,
+    baselinePositionPercent: sentiment.positionPercent ?? hist.position ?? null,
     emptyWarning: Boolean(sentiment.emptyWarning),
     emptyReasons: sentiment.emptyReasons || [],
     baselineEmptyWarning: Boolean(sentiment.emptyWarning),
