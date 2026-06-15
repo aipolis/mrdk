@@ -45,9 +45,21 @@ function resolveLongkongTone(data) {
 }
 
 
+function normalizePositionDesc(data) {
+  const score = Number((data && (data.displayScore != null ? data.displayScore : data.score)) || 0)
+  const raw = String((data && data.positionDesc) || '').trim()
+  if (!raw) return raw
+  if (score >= 50 && /低于\s*50/.test(raw)) {
+    if ((data && data.riskLevel) === 'warning' || (data && data.emptyWarning)) {
+      return '接力结构偏弱，宜控节奏'
+    }
+  }
+  return raw
+}
+
 function buildLongkongHeroText(data, lk) {
   const levelLabel = String((data && (data.levelLabel || data.displayLevel)) || '').trim()
-  const positionDesc = String((data && data.positionDesc) || '').trim()
+  const positionDesc = normalizePositionDesc(data)
   const lkDesc = String((lk && lk.desc) || '').trim()
   const desc = positionDesc || lkDesc
   return { levelLabel, desc }

@@ -34,6 +34,7 @@ from sentiment import (
     _volatility_proxy,
     apply_display_longkong,
     calc_sentiment,
+    position_desc,
     score_high_board_promote,
     score_intraday_block,
 )
@@ -138,7 +139,7 @@ class SentimentV2Test(unittest.TestCase):
         result = apply_display_longkong(baseline, 53, score_mode="live")
 
         self.assertEqual(result["riskLevel"], "warning")
-        self.assertEqual(result["positionPercent"], 10)
+        self.assertEqual(result["positionPercent"], 20)
 
     def test_display_longkong_applies_new_live_warning_once(self):
         baseline = {
@@ -152,15 +153,29 @@ class SentimentV2Test(unittest.TestCase):
         result = apply_display_longkong(baseline, 40, score_mode="live")
 
         self.assertEqual(result["riskLevel"], "warning")
-        self.assertEqual(result["positionPercent"], 10)
+        self.assertEqual(result["positionPercent"], 30)
 
     def test_continuous_base_position_uses_ten_percent_steps(self):
-        self.assertEqual(_base_position_from_score(35), 0)
-        self.assertEqual(_base_position_from_score(45), 10)
-        self.assertEqual(_base_position_from_score(50), 20)
-        self.assertEqual(_base_position_from_score(60), 30)
-        self.assertEqual(_base_position_from_score(80), 50)
-        self.assertEqual(_base_position_from_score(90), 70)
+        self.assertEqual(_base_position_from_score(30), 0)
+        self.assertEqual(_base_position_from_score(35), 10)
+        self.assertEqual(_base_position_from_score(45), 20)
+        self.assertEqual(_base_position_from_score(50), 30)
+        self.assertEqual(_base_position_from_score(60), 40)
+        self.assertEqual(_base_position_from_score(80), 70)
+        self.assertEqual(_base_position_from_score(90), 80)
+        self.assertEqual(_base_position_from_score(100), 90)
+
+    def test_warning_multiplier_uses_structural_tier_at_or_above_fifty(self):
+        from sentiment import _final_position_from_components
+
+        self.assertEqual(
+            _final_position_from_components(30, "warning", 53, 1.0),
+            20,
+        )
+        self.assertEqual(
+            _final_position_from_components(20, "warning", 48, 1.0),
+            10,
+        )
 
     def test_weighted_risk_combines_seal_and_break_quality(self):
         items = _risk_items(
@@ -178,7 +193,7 @@ class SentimentV2Test(unittest.TestCase):
                 top10_avg_chg=-4.5,
             )
         )
-        self.assertEqual(proxy["multiplier"], 0.7)
+        self.assertEqual(proxy["multiplier"], 0.85)
         self.assertGreaterEqual(proxy["score"], 4)
 
     def test_position_stability_blocks_live_increase_and_confirms_later(self):
@@ -194,6 +209,24 @@ class SentimentV2Test(unittest.TestCase):
         self.assertEqual(held, (20, 0, "live_hold"))
         self.assertEqual(first, (20, 1, "confirming"))
         self.assertEqual(second, (30, 0, "increased"))
+
+    def test_live_mode_from_zero_shows_target_not_hold(self):
+        self.assertEqual(
+            _stabilize_position(10, previous_position=0, score_mode="live"),
+            (10, 0, "initial"),
+        )
+
+    def test_position_desc_warning_above_threshold_uses_structure_copy(self):
+        self.assertEqual(
+            position_desc(53, empty_warning=False, risk_level="warning"),
+            "接力结构偏弱，宜控节奏",
+        )
+
+    def test_position_desc_warning_below_threshold_uses_score_copy(self):
+        self.assertEqual(
+            position_desc(48, empty_warning=False, risk_level="warning"),
+            "综合情绪走弱，展示分低于50，宜控节奏",
+        )
 
     def test_optional_missing_data_is_reported(self):
         result = calc_sentiment(complete_metrics())

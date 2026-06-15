@@ -68,12 +68,22 @@ SCORE_VERSION = "longkong-v2"
 _SIGNAL_WEAK = 40          # 一般指标
 _SIGNAL_WEAK_PRIMARY = 45  # leading indicators（晋级率/炸板率/封板率）：阈值更高，更早预警
 
+DISPLAY_LONGKONG_THRESHOLD = 50
+
 RISK_MULTIPLIERS = {
     "none": 1.0,
-    "caution": 0.8,
+    "caution": 0.9,
     "warning": 0.5,
     "critical": 0.0,
 }
+
+POSITION_SCORE_BASE = 30
+POSITION_SCORE_SLOPE = 1.3
+POSITION_SCORE_CAP = 100
+WARNING_MULT_STRUCTURAL = 0.75
+WARNING_MULT_WEAK = 0.5
+VOLATILITY_MULT_HIGH = 0.85
+VOLATILITY_MULT_MID = 0.92
 
 
 # ── 连续线性评分函数 ───────────────────────────────────────────
@@ -740,13 +750,37 @@ def _calc_risk_level(risk_score: float, score: int) -> str:
     return "none"
 
 
-def _apply_risk_to_position(position: int, risk_level: str) -> int:
-    return _floor_position(position * RISK_MULTIPLIERS.get(risk_level, 1.0))
+def _risk_multiplier_for_position(risk_level: str, score: int) -> float:
+    """warning 分档：展示分≥50 为结构性风险，<50 为综合走弱。"""
+    if risk_level == "critical":
+        return 0.0
+    if risk_level == "warning":
+        if int(score or 0) >= DISPLAY_LONGKONG_THRESHOLD:
+            return WARNING_MULT_STRUCTURAL
+        return WARNING_MULT_WEAK
+    return RISK_MULTIPLIERS.get(risk_level, 1.0)
+
+
+def _apply_risk_to_position(position: int, risk_level: str, score: int = 0) -> int:
+    mult = _risk_multiplier_for_position(risk_level, score)
+    return _round_position(position * mult)
 
 
 def _base_position_from_score(score: int) -> int:
-    """连续情绪仓位曲线：35 分以下为 0，90 分附近达到 70%。"""
-    return _round_position(max(0, min(70, (int(score or 0) - 35) * 1.2)))
+    """连续情绪仓位曲线：30 分以下为 0，高分可达 100%。"""
+    raw = max(0, (int(score or 0) - POSITION_SCORE_BASE) * POSITION_SCORE_SLOPE)
+    return _round_position(max(0, min(POSITION_SCORE_CAP, raw)))
+
+
+def _final_position_from_components(
+    base_position: int,
+    risk_level: str,
+    score: int,
+    volatility_multiplier: float,
+) -> int:
+    """风险与波动一次 round，避免双重 floor 额外降档。"""
+    mult = _risk_multiplier_for_position(risk_level, score)
+    return _round_position(base_position * mult * float(volatility_multiplier or 1.0))
 
 
 def _round_position(value: float) -> int:
@@ -780,7 +814,7 @@ def _volatility_proxy(metrics: dict) -> dict:
         stress += 1
         reasons.append("成交额前10波动偏大")
 
-    multiplier = 0.7 if stress >= 3 else 0.85 if stress >= 1 else 1.0
+    multiplier = VOLATILITY_MULT_HIGH if stress >= 3 else VOLATILITY_MULT_MID if stress >= 1 else 1.0
     return {"score": stress, "multiplier": multiplier, "reasons": reasons}
 
 
@@ -804,7 +838,9 @@ def _stabilize_position(
     if target == previous:
         return previous, 0, "unchanged"
     if score_mode == "live":
-        return previous, 0, "live_hold"
+        if previous > 0 and target > previous:
+            return previous, 0, "live_hold"
+        return target, 0, "initial"
     confirmations = int(increase_confirmations or 0) + 1
     if confirmations < 2:
         return previous, confirmations, "confirming"
@@ -865,8 +901,9 @@ def calc_sentiment(
         risk_score = max(risk_score, 4.0)
     volatility = _volatility_proxy(metrics)
     base_position = _base_position_from_score(score)
-    risk_position = _apply_risk_to_position(base_position, risk_level)
-    position = _floor_position(risk_position * volatility["multiplier"])
+    position = _final_position_from_components(
+        base_position, risk_level, score, volatility["multiplier"]
+    )
     empty_warning = risk_level == "critical"
 
     return {
@@ -878,7 +915,7 @@ def calc_sentiment(
         "positionPercent": position,
         "positionTargetPercent": position,
         "basePositionPercent": base_position,
-        "riskMultiplier": RISK_MULTIPLIERS.get(risk_level, 1.0),
+        "riskMultiplier": _risk_multiplier_for_position(risk_level, score),
         "volatilityMultiplier": volatility["multiplier"],
         "volatilityProxy": volatility,
         "positionReasons": [item["reason"] for item in risk_items] + volatility["reasons"],
@@ -900,9 +937,6 @@ def calc_sentiment(
             "dataQuality": _score_data_quality(y_scores),
         },
     }
-
-
-DISPLAY_LONGKONG_THRESHOLD = 50
 
 
 def longkong_signal_from_score(score: int) -> str:
@@ -1015,10 +1049,11 @@ def apply_display_longkong(
 
     baseline_score = int(baseline_sentiment.get("score") or 0)
     base_position = _base_position_from_score(baseline_score)
-    risk_position = _apply_risk_to_position(base_position, risk_level)
     volatility = baseline_sentiment.get("volatilityProxy") or {"score": 0, "multiplier": 1.0, "reasons": []}
     volatility_multiplier = float(volatility.get("multiplier") or 1.0)
-    target_position = _floor_position(risk_position * volatility_multiplier)
+    target_position = _final_position_from_components(
+        base_position, risk_level, baseline_score, volatility_multiplier
+    )
     if empty_warning:
         target_position = 0
     position, confirmations, stability = _stabilize_position(
@@ -1039,7 +1074,7 @@ def apply_display_longkong(
         "positionPercent": position,
         "positionTargetPercent": target_position,
         "basePositionPercent": base_position,
-        "riskMultiplier": RISK_MULTIPLIERS.get(risk_level, 1.0),
+        "riskMultiplier": _risk_multiplier_for_position(risk_level, baseline_score),
         "volatilityMultiplier": volatility_multiplier,
         "volatilityProxy": volatility,
         "positionReasons": [item.get("reason", "") for item in risk_items if item.get("reason")]
@@ -1077,8 +1112,12 @@ def position_desc(score: int, empty_warning: bool, risk_level: str = "none") -> 
     score = int(score or 0)
     if risk_level == "critical" or (empty_warning and score <= 30):
         return "综合情绪极弱，盘面偏冷"
-    if risk_level == "warning" or (empty_warning and score < DISPLAY_LONGKONG_THRESHOLD):
+    if empty_warning and score < DISPLAY_LONGKONG_THRESHOLD:
         return "综合情绪走弱，展示分低于50，宜控节奏"
+    if risk_level == "warning":
+        if score < DISPLAY_LONGKONG_THRESHOLD:
+            return "综合情绪走弱，展示分低于50，宜控节奏"
+        return "接力结构偏弱，宜控节奏"
     if empty_warning:
         return "综合情绪偏弱，龙空风险提示"
     if risk_level == "caution":
