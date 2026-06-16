@@ -88,9 +88,9 @@ function getSections(data) {
   return normalizeSections(data.indicatorSections || data.sections || [], data)
 }
 
-/** 海报仅保留昨日概览、盘中实时（不含外围、竞价、趋势图） */
+/** 海报仅保留昨日概览（不含外围、竞价、盘中实时、趋势图） */
 function getPosterSections(data) {
-  const keep = new Set(['yesterday', 'intraday'])
+  const keep = new Set(['yesterday'])
   return getSections(data).filter((sec) => keep.has(sec.id))
 }
 

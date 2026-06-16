@@ -906,8 +906,48 @@ a.footer-contact-chip {
   color: #4ade80;
 }
 
+.footer-contact-icon.mp {
+  color: #ef4444;
+}
+
 .footer-contact-icon.mail {
   color: var(--blue);
+}
+
+/* 主推 chip（公众号）—— 视觉前排突出 */
+.footer-contact-chip.is-primary {
+  background: rgba(248, 113, 113, 0.10);
+  border-color: rgba(248, 113, 113, 0.32);
+}
+.footer-contact-chip.is-primary:hover {
+  border-color: rgba(248, 113, 113, 0.55);
+  box-shadow: 0 0 24px rgba(248, 113, 113, 0.12);
+}
+
+/* 添加微信备注提示 */
+.footer-contact-tip {
+  position: relative;
+  margin: 12px 4px 0;
+  font-size: 12px;
+  line-height: 1.7;
+  color: var(--muted);
+}
+.footer-contact-tip strong {
+  color: #fbbf24;
+  font-weight: 600;
+}
+
+/* 母品牌挂名 */
+.footer-brand {
+  text-align: center;
+  margin: 14px 0 6px;
+  font-size: 12px;
+  letter-spacing: 0.04em;
+  color: var(--dim);
+}
+.footer-brand strong {
+  color: #ef4444;
+  font-weight: 700;
 }
 
 .footer-contact-label {

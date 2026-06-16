@@ -34,10 +34,11 @@ async function copyText(text) {
 
 function showCopied(btn) {
   btn.classList.add('is-copied')
+  if (btn._originalTitle == null) btn._originalTitle = btn.title || '复制'
   btn.title = '已复制'
   clearTimeout(btn._copyTimer)
   btn._copyTimer = setTimeout(() => {
     btn.classList.remove('is-copied')
-    btn.title = '复制微信号'
+    btn.title = btn._originalTitle
   }, 2000)
 }
