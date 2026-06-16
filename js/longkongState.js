@@ -229,7 +229,6 @@ function resolveRiskMultiplier(data, riskLevel) {
   return riskMultiplierForPosition(riskLevel, score)
 }
 
-/** 与 server/sentiment.py 一致的仓位展示计算。 */
 export function resolvePositionDisplay(data) {
   if (data?.cacheWarmup) {
     const score = Number(data?.displayScore ?? data?.score ?? 0)
@@ -311,4 +310,20 @@ export function resolvePositionDisplay(data) {
     reasons,
     legacyFixed: isLegacyPositionPayload(data),
   }
+}
+
+/** 结构性风险条数（不含波动代理项）。 */
+export function countRiskItems(data) {
+  if (Array.isArray(data?.riskItems)) return data.riskItems.length
+  const reasons = Array.isArray(data?.positionReasons) ? data.positionReasons : []
+  const volReasons = data?.volatilityProxy?.reasons || []
+  if (volReasons.length) {
+    return Math.max(0, reasons.length - volReasons.length)
+  }
+  return reasons.length
+}
+
+export function formatRiskPositionCoeff(data, riskMultiplier) {
+  const count = countRiskItems(data)
+  return `风险项 ${count} 个，仓位系数 ${Number(riskMultiplier).toFixed(1)}`
 }

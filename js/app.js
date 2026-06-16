@@ -6,11 +6,12 @@ import {
   resolveLongkongState,
   resolveLongkongTone,
   resolvePositionDisplay,
+  formatRiskPositionCoeff,
   renderLongkongLightsHtml,
   setGaugeLevelClass,
   normalizeRiskReason,
   buildRiskCopy,
-} from './longkongState.js?v=20260615m'
+} from './longkongState.js?v=20260617b'
 import { fetchToday, fetchHistory, fetchDay, fetchIntradaySeries } from './api.js?v=20260609c'
 import { drawIntradayChart } from './intradayChart.js?v=20260615i'
 import { createTrendController } from './trendDraw.js?v=20260529i'
@@ -421,9 +422,11 @@ function applyLongkongState(data) {
     if (positionDetailEl) {
       const details = []
       if (Number.isFinite(pos.basePercent)) details.push(`基础 ${Math.round(pos.basePercent)}%`)
-      if (Number.isFinite(pos.riskMultiplier)) details.push(`风险 × ${pos.riskMultiplier.toFixed(1)}`)
+      if (Number.isFinite(pos.riskMultiplier)) {
+        details.push(formatRiskPositionCoeff(data, pos.riskMultiplier))
+      }
       if (Number.isFinite(pos.volatilityMultiplier) && pos.volatilityMultiplier !== 1) {
-        details.push(`波动 × ${pos.volatilityMultiplier.toFixed(2)}`)
+        details.push(`波动系数 ${pos.volatilityMultiplier.toFixed(2)}`)
       }
       if (Number.isFinite(pos.targetPercent) && Math.round(pos.targetPercent) !== Math.round(rawPosition)) {
         details.push(`目标 ${Math.round(pos.targetPercent)}%`)
