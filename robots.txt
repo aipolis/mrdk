@@ -1,0 +1,8 @@
+User-agent: *
+Allow: /
+Disallow: /preview.ps1
+Disallow: /web.zip
+Disallow: /DEPLOY.md
+Disallow: /mingri_dangkong_web_project_scaffold.md
+
+Sitemap: https://mrdk.pages.dev/sitemap.xml

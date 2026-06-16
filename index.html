@@ -3,8 +3,51 @@
 <head>
   <meta charset="UTF-8"/>
   <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover"/>
-  <meta name="description" content="明日当空｜每天收盘，看清明天的市场温度。不怕错过，就怕做错。帮你识别下雨天。"/>
-  <title>明日当空 · 市场情绪</title>
+
+  <title>明日当空 · A股超短情绪 / 龙空预警 / 打板情绪雷达</title>
+  <meta name="description" content="明日当空｜A股超短交易情绪指数。每日盘中实时跟踪打板、竞价、连板情绪，龙空信号智能预警，帮短线交易者识别下雨天——情绪不对，宁愿空仓。"/>
+  <meta name="keywords" content="打板情绪,龙空预警,龙空信号,超短情绪,竞价情绪,涨停情绪,连板情绪,A股情绪指数,情绪温度,接力情绪,短线交易,打板雷达,明日当空"/>
+  <meta name="author" content="明日当空 · 量化新手村"/>
+  <meta name="robots" content="index,follow"/>
+  <meta name="theme-color" content="#0B1020"/>
+  <meta name="format-detection" content="telephone=no"/>
+  <link rel="canonical" href="https://mrdk.pages.dev/"/>
+
+  <!-- Open Graph（微信 / 微博 / 朋友圈 分享卡片） -->
+  <meta property="og:type" content="website"/>
+  <meta property="og:site_name" content="明日当空"/>
+  <meta property="og:title" content="明日当空 · A股超短情绪 / 龙空预警雷达"/>
+  <meta property="og:description" content="A股超短交易情绪指数。每日盘中跟踪打板、竞价、连板情绪，龙空信号智能预警。"/>
+  <meta property="og:url" content="https://mrdk.pages.dev/"/>
+  <meta property="og:image" content="https://mrdk.pages.dev/logo.png"/>
+  <meta property="og:locale" content="zh_CN"/>
+
+  <!-- Twitter Card -->
+  <meta name="twitter:card" content="summary_large_image"/>
+  <meta name="twitter:title" content="明日当空 · A股超短情绪 / 龙空预警雷达"/>
+  <meta name="twitter:description" content="A股超短交易情绪指数。每日盘中跟踪打板、竞价、连板情绪，龙空信号智能预警。"/>
+  <meta name="twitter:image" content="https://mrdk.pages.dev/logo.png"/>
+
+  <!-- 结构化数据：让搜索引擎理解这是一个金融类 Web 应用 -->
+  <script type="application/ld+json">
+  {
+    "@context": "https://schema.org",
+    "@type": "WebApplication",
+    "name": "明日当空",
+    "alternateName": "A股超短情绪雷达",
+    "description": "A股超短交易情绪指数，每日盘中跟踪打板、竞价、连板情绪，龙空信号智能预警。",
+    "url": "https://mrdk.pages.dev/",
+    "applicationCategory": "FinanceApplication",
+    "operatingSystem": "Web",
+    "inLanguage": "zh-CN",
+    "offers": {
+      "@type": "Offer",
+      "price": "0",
+      "priceCurrency": "CNY"
+    }
+  }
+  </script>
+
   <link rel="icon" type="image/svg+xml" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'%3E%3Crect width='32' height='32' rx='8' fill='%23ef4444'/%3E%3Ctext x='16' y='22' text-anchor='middle' font-family='system-ui,sans-serif' font-size='18' font-weight='700' fill='%231f2937'%3E%E6%98%8E%3C/text%3E%3C/svg%3E"/>
   <link rel="preconnect" href="https://mingri-api-260693-8-1435576840.sh.run.tcloudbase.com" crossorigin/>
   <link rel="modulepreload" href="/js/app.js?v=20260617b"/>
@@ -30,9 +73,11 @@
       </nav>
     </header>
 
+    <h1 style="position:absolute;width:1px;height:1px;padding:0;margin:-1px;overflow:hidden;clip:rect(0,0,0,0);white-space:nowrap;border:0;">明日当空 · A股超短交易情绪指数：打板情绪、龙空预警、竞价情绪实时跟踪</h1>
+
     <section class="hero-intro" aria-label="明日当空定位">
       <p class="hero-kicker">情绪不对，宁愿空仓，才是复利</p>
-      <p class="hero-copy">盘中实时感知，收盘研判明日方向</p>
+      <p class="hero-copy">盘中实时感知打板情绪，收盘预判明日龙空风险</p>
     </section>
 
     <p class="status-bar" id="statusBar">正在加载…</p>
