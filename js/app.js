@@ -14,7 +14,7 @@ import {
 } from './longkongState.js?v=20260617b'
 import { fetchToday, fetchHistory, fetchDay, fetchIntradaySeries } from './api.js?v=20260609c'
 import { drawIntradayChart } from './intradayChart.js?v=20260615i'
-import { createTrendController } from './trendDraw.js?v=20260529i'
+import { createTrendController } from './trendDraw.js?v=20260617f'
 import { createGaugeController, IDLE_MIN_MS, SKIP_ANIM_MS } from './gaugeAnim.js?v=20260529m'
 import { getHomeCache, saveHomeCache, isSameHomeSnapshot } from './homeCache.js?v=20260615g'
 import { beijingDateKey } from './time.js?v=20260609a'

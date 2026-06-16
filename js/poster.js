@@ -1,5 +1,5 @@
-import { fetchToday } from './api.js?v=20260609c'
-import { renderPosterToCanvas, posterFilename, posterToBlob, isAlertModeAvailable } from './posterDraw.js?v=20260617e'
+import { fetchToday, fetchHistory } from './api.js?v=20260609c'
+import { renderPosterToCanvas, posterFilename, posterToBlob, isAlertModeAvailable } from './posterDraw.js?v=20260617m'
 
 const preview = document.getElementById('previewCanvas')
 const statusBar = document.getElementById('statusBar')
@@ -79,8 +79,35 @@ async function loadAndDraw() {
   previewWrap?.classList.add('loading')
 
   try {
-    const data = await fetchToday()
+    // 并发拉今日数据 + 近期历史，用历史第一条非今日记录的 score 作 prevScore
+    const [data, history] = await Promise.all([
+      fetchToday(),
+      fetchHistory(5).catch(() => null),
+    ])
     latestData = data
+    const histList = Array.isArray(history) ? history : (history?.list || [])
+    if (histList.length) {
+      const todayKey = String(
+        data.refDate || data.adviceDate || data.date || ''
+      ).replace(/-/g, '')
+      const todayScore = Math.round(Number(data.displayScore ?? data.score ?? NaN))
+      const prev = histList.find((item) => {
+        const k = String(item.date || '').replace(/-/g, '')
+        if (!k) return false
+        // 主匹配：date 等于今日则跳过
+        if (todayKey && k === todayKey) return false
+        // 兜底：todayKey 缺失时，跳过分数与今日完全一致的项（大概率是今日本身）
+        if (
+          !todayKey
+          && Number.isFinite(todayScore)
+          && Math.round(Number(item.score)) === todayScore
+        ) return false
+        return true
+      })
+      if (prev && Number.isFinite(Number(prev.score))) {
+        latestData.prevScore = Number(prev.score)
+      }
+    }
   } catch (err) {
     previewWrap?.classList.remove('loading')
     setStatus(err?.message || '加载失败，请稍后重试', 'err')

@@ -1,6 +1,6 @@
 import { fetchHistory } from './api.js?v=20260609c'
 import { getDisplayLevel } from './theme.js?v=20260609c'
-import { createTrendController } from './trendDraw.js'
+import { createTrendController } from './trendDraw.js?v=20260617f'
 import { beijingParts } from './time.js?v=20260609a'
 
 const $ = (sel) => document.querySelector(sel)
@@ -108,6 +108,8 @@ function indexChgClass(item) {
   return up ? 'index-up' : 'index-down'
 }
 
+const HISTORY_TABLE_LIMIT = 10
+
 function renderList(list) {
   const tbody = $('#historyBody')
   if (!tbody) return
@@ -115,7 +117,9 @@ function renderList(list) {
     tbody.innerHTML = '<tr><td colspan="4" class="empty">暂无历史数据</td></tr>'
     return
   }
-  tbody.innerHTML = list.map((item) => {
+  const expanded = tbody.dataset.expanded === '1'
+  const visible = expanded ? list : list.slice(0, HISTORY_TABLE_LIMIT)
+  const rowsHtml = visible.map((item) => {
     const level = getDisplayLevel(item.score)
     const idxCls = indexChgClass(item)
     return `
@@ -127,6 +131,19 @@ function renderList(list) {
       </tr>
     `
   }).join('')
+  const hasMore = !expanded && list.length > HISTORY_TABLE_LIMIT
+  const moreRow = hasMore
+    ? `<tr><td colspan="4" class="history-more-cell">
+         <button type="button" class="history-more-btn">展开剩余 ${list.length - HISTORY_TABLE_LIMIT} 条 ↓</button>
+       </td></tr>`
+    : ''
+  tbody.innerHTML = rowsHtml + moreRow
+  if (hasMore) {
+    tbody.querySelector('.history-more-btn')?.addEventListener('click', () => {
+      tbody.dataset.expanded = '1'
+      renderList(list)
+    })
+  }
 }
 
 let trendCtrl = null

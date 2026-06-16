@@ -1088,6 +1088,28 @@ a.footer-contact-chip {
   padding: 32px 8px;
 }
 
+.history-more-cell {
+  text-align: center;
+  padding: 12px 8px;
+  border-bottom: none;
+}
+.history-more-btn {
+  background: transparent;
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  padding: 8px 18px;
+  color: var(--muted);
+  font-size: 13px;
+  font-family: inherit;
+  cursor: pointer;
+  transition: color 0.2s, border-color 0.2s, background 0.2s;
+}
+.history-more-btn:hover {
+  color: var(--text);
+  border-color: rgba(255, 77, 79, 0.4);
+  background: rgba(255, 77, 79, 0.08);
+}
+
 @media (min-width: 520px) {
   .page { padding-top: 24px; }
 }

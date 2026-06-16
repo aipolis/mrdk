@@ -35,9 +35,10 @@ function barColor(score) {
 }
 
 function shouldShowDateLabel(i, n) {
-  if (n <= 8) return true
+  if (n <= 1) return true
   if (i === 0 || i === n - 1) return true
-  const step = Math.max(1, Math.ceil(n / 6))
+  // 始终显示首尾，中间按 1/3 步长抽取，总数维持在 3-4 个
+  const step = Math.max(1, Math.ceil(n / 3))
   return i % step === 0
 }
 

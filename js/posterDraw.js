@@ -3,7 +3,7 @@
  */
 import { drawSteeringGauge } from './gaugeDraw.js?v=20260531a'
 import { getDisplayLevel, formatHeaderDate, HOME_QUOTE } from './theme.js?v=20260609c'
-import { scoreToLongkongState, LONGKONG_STATE_STEPS, buildRiskCopy, normalizeRiskReason } from './longkongState.js?v=20260604c'
+import { scoreToLongkongState, LONGKONG_STATE_STEPS, buildRiskCopy, normalizeRiskReason, resolvePositionDisplay } from './longkongState.js?v=20260617m'
 import { normalizeSections } from './indicators.js?v=20260609b'
 import { drawQrCode } from './qrDraw.js?v=20260531a'
 import { beijingDateKey } from './time.js?v=20260609a'
@@ -210,6 +210,8 @@ function calcGaugeCardHeight(data) {
   let h = sc(28) + sc(44) + sc(40) + sc(44) + sc(100) + sc(292) + sc(28)
   if (data.scoreMode === 'live' && data.baselineScore != null) h += sc(28)
   if (data.emptyWarning) h += sc(44)
+  h += sc(60) // 今日应对 一行
+  h += sc(50) // 短线接力仓位建议 一行
   return h
 }
 
@@ -239,8 +241,34 @@ function drawGaugeCard(ctx, x, y, w, data) {
     ctx.fillText(wrapText(ctx, positionDesc, w - sc(80))[0] || positionDesc, x + w / 2, levelY + sc(34))
   }
 
-  // 龙空龙状态灯（竖排四格，对齐首页 CSS）
-  const lightsAreaY = y + sc(148)
+  // 短线接力仓位建议（首页核心数字，海报必带）
+  const positionDisplay = resolvePositionDisplay(data)
+  const positionPercent = Number.isFinite(Number(positionDisplay.percent))
+    ? Math.round(Number(positionDisplay.percent))
+    : null
+  if (positionPercent != null) {
+    const lineY = levelY + sc(82)
+    ctx.textBaseline = 'alphabetic'
+    ctx.font = `400 ${sc(22)}px ${FONT}`
+    const labelTxt = '短线接力仓位建议  '
+    const labelW = ctx.measureText(labelTxt).width
+    ctx.font = `700 ${sc(34)}px ${FONT}`
+    const valTxt = `${positionPercent}%`
+    const valW = ctx.measureText(valTxt).width
+    const startX = x + w / 2 - (labelW + valW) / 2
+
+    ctx.font = `400 ${sc(22)}px ${FONT}`
+    ctx.fillStyle = COLORS.dim
+    ctx.textAlign = 'left'
+    ctx.fillText(labelTxt, startX, lineY)
+
+    ctx.font = `700 ${sc(34)}px ${FONT}`
+    ctx.fillStyle = positionPercent === 0 ? '#ef4444' : '#fbbf24'
+    ctx.fillText(valTxt, startX + labelW, lineY)
+  }
+
+  // 龙空龙状态灯（竖排四格，对齐首页 CSS）—— 下移以让出仓位建议行的空间
+  const lightsAreaY = y + sc(198)
   const lightsAreaH = sc(88)
   const lightsLx = x + sc(28)
   const lightsLw = w - sc(56)
@@ -301,7 +329,7 @@ function drawGaugeCard(ctx, x, y, w, data) {
   })
 
   const gx = x + sc(28)
-  const gy = y + sc(248)
+  const gy = y + sc(298) // 下移以让出仓位建议行的空间
   const gw = w - sc(56)
   ctx.save()
   roundRect(ctx, gx, gy, gw, gaugeH, sc(14))
@@ -314,14 +342,31 @@ function drawGaugeCard(ctx, x, y, w, data) {
   ctx.translate(gx, gy)
   drawSteeringGauge(ctx, gw, gaugeH, score, 'dark', { skipClear: true, bandWidth: sc(28) })
   const hubY = gaugeH * 0.58
+  const scoreStr = String(Math.round(score))
   ctx.fillStyle = levelColor
   ctx.font = `700 ${sc(92)}px ${FONT}`
   ctx.textAlign = 'center'
   ctx.textBaseline = 'middle'
-  ctx.fillText(String(Math.round(score)), gw / 2, hubY)
+  ctx.fillText(scoreStr, gw / 2, hubY)
+
   ctx.fillStyle = COLORS.muted
   ctx.font = `500 ${sc(24)}px ${FONT}`
   ctx.fillText('情绪分', gw / 2, hubY + sc(54))
+
+  // 环比变化：放在「情绪分」下方（固定坐标，无 measureText 风险）
+  const prevScore = Number(data.prevScore ?? data.previousScore)
+  if (Number.isFinite(prevScore)) {
+    const diff = Math.round(score) - Math.round(prevScore)
+    const arrow = diff > 0 ? '↑' : diff < 0 ? '↓' : '·'
+    const diffStr = diff === 0
+      ? '与昨日持平'
+      : `比昨日 ${arrow}${Math.abs(diff)}`
+    const diffColor = diff > 0 ? '#ef4444' : diff < 0 ? '#52c41a' : COLORS.dim
+    ctx.fillStyle = diffColor
+    ctx.font = `600 ${sc(22)}px ${FONT}`
+    ctx.textBaseline = 'alphabetic'
+    ctx.fillText(diffStr, gw / 2, hubY + sc(94))
+  }
   ctx.restore()
 
   let footY = gy + gaugeH + sc(20)
@@ -336,14 +381,39 @@ function drawGaugeCard(ctx, x, y, w, data) {
     const tip = riskCopy?.tip || '复盘｜重点：接力结构偏弱；应对：控制节奏，等待确认。'
     ctx.fillStyle = COLORS.green
     ctx.font = `400 ${sc(20)}px ${FONT}`
+    ctx.textAlign = 'center'
     const tipLines = wrapText(ctx, tip, w - sc(56)).slice(0, 2)
-    // 末尾孤立标点合并到上一行
     if (tipLines.length === 2 && /^[。！？…]$/.test(tipLines[1].trim())) {
       tipLines[0] = tipLines[0] + tipLines[1].trim()
       tipLines.length = 1
     }
     tipLines.forEach((line, i) => ctx.fillText(line, x + w / 2, footY + i * sc(28)))
+    footY += tipLines.length * sc(28)
   }
+
+  // 今日应对（始终展示）
+  const actionY = footY + sc(8)
+  const actionText = buildTodayAction(data)
+  ctx.textAlign = 'center'
+  ctx.textBaseline = 'alphabetic'
+  // 「今日应对」标签 + 文本，两段不同字重
+  ctx.font = `400 ${sc(22)}px ${FONT}`
+  ctx.fillStyle = COLORS.dim
+  const labelStr = '今日应对  '
+  const labelW = ctx.measureText(labelStr).width
+  ctx.font = `600 ${sc(24)}px ${FONT}`
+  ctx.fillStyle = '#fbbf24'
+  const actionW = ctx.measureText(actionText).width
+  const totalW = labelW + actionW
+  const startX = x + w / 2 - totalW / 2
+  ctx.font = `400 ${sc(22)}px ${FONT}`
+  ctx.fillStyle = COLORS.dim
+  ctx.textAlign = 'left'
+  ctx.fillText(labelStr, startX, actionY + sc(20))
+  ctx.font = `600 ${sc(24)}px ${FONT}`
+  ctx.fillStyle = '#fbbf24'
+  ctx.fillText(actionText, startX + labelW, actionY + sc(20))
+
   return h
 }
 
@@ -518,7 +588,8 @@ function drawTrendCard(ctx, x, y, w, trend) {
 }
 
 function calcFooterHeight() {
-  return sc(28) + sc(40) + sc(156) + sc(48) + sc(28)
+  // top + QR + cta + divider gap + 公众号 + disclaimer + bottom
+  return sc(32) + sc(156) + sc(40) + sc(28) + sc(40) + sc(48) + sc(28)
 }
 
 function drawFooter(ctx, x, y, w) {
@@ -526,23 +597,38 @@ function drawFooter(ctx, x, y, w) {
   const h = calcFooterHeight()
   drawCard(ctx, x, y, w, h)
 
-  ctx.textAlign = 'center'
-  ctx.textBaseline = 'alphabetic'
-  ctx.fillStyle = COLORS.muted
-  ctx.font = `400 ${sc(22)}px ${FONT}`
-  ctx.fillText('数据仅供参考，不构成投资建议', x + w / 2, y + sc(36))
-
+  // 二维码（顶部直接放,无前缀免责声明）
   const qrX = x + (w - qrSize) / 2
-  const qrY = y + sc(52)
+  const qrY = y + sc(32)
   drawQrCode(ctx, qrX, qrY, qrSize)
 
+  ctx.textAlign = 'center'
+  ctx.textBaseline = 'alphabetic'
+
+  // 主标：扫码看实时
   ctx.fillStyle = COLORS.red
   ctx.font = `600 ${sc(28)}px ${FONT}`
-  ctx.fillText('完整实时数据更新', x + w / 2, qrY + qrSize + sc(40))
+  ctx.fillText('扫码看实时 · 龙空预警', x + w / 2, qrY + qrSize + sc(40))
 
+  // 分隔细线
+  const divY = qrY + qrSize + sc(60)
+  const divW = sc(120)
+  ctx.strokeStyle = 'rgba(255,255,255,0.12)'
+  ctx.lineWidth = 1
+  ctx.beginPath()
+  ctx.moveTo(x + w / 2 - divW / 2, divY)
+  ctx.lineTo(x + w / 2 + divW / 2, divY)
+  ctx.stroke()
+
+  // 公众号引导
   ctx.fillStyle = COLORS.dim
   ctx.font = `400 ${sc(20)}px ${FONT}`
-  ctx.fillText('扫码访问', x + w / 2, qrY + qrSize + sc(72))
+  ctx.fillText('公众号 · 量化新手村', x + w / 2, qrY + qrSize + sc(86))
+
+  // 免责声明 —— 移到最底，作为真正的"小尾巴"
+  ctx.fillStyle = COLORS.dim
+  ctx.font = `400 ${sc(18)}px ${FONT}`
+  ctx.fillText('数据仅供参考，不构成投资建议', x + w / 2, y + h - sc(20))
 
   return h
 }
@@ -551,23 +637,43 @@ function drawTopBrand(ctx, x, y, w, data) {
   const h = drawTopBrandHeight()
   ctx.textBaseline = 'alphabetic'
 
+  // 主标：明日当空（左上）
   ctx.textAlign = 'left'
   ctx.fillStyle = COLORS.red
   ctx.font = `700 ${sc(36)}px ${FONT}`
   ctx.fillText('明日当空', x, y + sc(38))
 
+  // 母品牌挂名（左下小字）
+  ctx.fillStyle = COLORS.dim
+  ctx.font = `400 ${sc(20)}px ${FONT}`
+  ctx.fillText('量化新手村 旗下 · A股短线情绪', x, y + sc(72))
+
+  // 日期（右上）
   ctx.textAlign = 'right'
   ctx.fillStyle = COLORS.muted
   ctx.font = `400 ${sc(24)}px ${FONT}`
   ctx.fillText(formatHeaderDate(), x + w, y + sc(38))
 
+  // 参考日（右下小字）
   const ref = data.refDate || data.adviceDate || ''
-  ctx.textAlign = 'center'
-  ctx.fillStyle = COLORS.dim
-  ctx.font = `400 ${sc(22)}px ${FONT}`
-  ctx.fillText(ref ? `参考日 ${ref}` : 'A股短线情绪 · 日更', x + w / 2, y + sc(82))
+  if (ref) {
+    ctx.fillStyle = COLORS.dim
+    ctx.font = `400 ${sc(18)}px ${FONT}`
+    ctx.fillText(`参考日 ${ref}`, x + w, y + sc(72))
+  }
 
   return h
+}
+
+/** 根据当日情绪状态生成"今日应对"一句话 */
+function buildTodayAction(data) {
+  if (data?.emptyWarning) return '建议清仓 · 等待修复确认'
+  const score = Math.round(Number(data?.displayScore ?? data?.score ?? 0))
+  if (score >= 80) return '情绪高涨,警惕分歧 · 跟高分股设好止损'
+  if (score >= 60) return '可关注模型高分股 · 留意盘中分歧'
+  if (score >= 50) return '情绪修复中 · 仓位偏轻试错'
+  if (score >= 40) return '减少接力 · 只做最强一线'
+  return '空仓为主 · 等待方向选择'
 }
 
 export function calcPosterHeight(data) {
@@ -600,11 +706,12 @@ export function drawDouyinPoster(ctx, data) {
   let y = PAD
 
   y += drawTopBrand(ctx, PAD, y, INNER_W, data) + CARD_GAP
-  y += drawQuoteCard(ctx, PAD, y, INNER_W, quote) + CARD_GAP
   y += drawGaugeCard(ctx, PAD, y, INNER_W, data) + CARD_GAP
   sections.forEach((sec) => {
     y += drawSectionCard(ctx, PAD, y, INNER_W, sec) + CARD_GAP
   })
+  // 引言卡：移到二维码上方，作为「读到底了的回报」
+  y += drawQuoteCard(ctx, PAD, y, INNER_W, quote) + CARD_GAP
   drawFooter(ctx, PAD, y, INNER_W)
 
   return { width: w, height: h }
