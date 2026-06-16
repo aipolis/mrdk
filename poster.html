@@ -60,6 +60,55 @@
     .poster-actions .btn-primary { flex: 1; }
     .poster-actions .btn-share { background: #1677ff; }
     .poster-actions .btn-secondary { flex: 0 0 auto; }
+
+    /* 海报模式切换 */
+    .poster-mode-switch {
+      display: flex;
+      gap: 8px;
+      margin: 12px 0 4px;
+      padding: 4px;
+      background: var(--card);
+      border: 1px solid var(--border);
+      border-radius: 10px;
+    }
+    .poster-mode-btn {
+      flex: 1;
+      padding: 10px 12px;
+      background: transparent;
+      border: none;
+      color: var(--muted);
+      font-size: 14px;
+      font-weight: 500;
+      font-family: inherit;
+      cursor: pointer;
+      border-radius: 8px;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      gap: 6px;
+      transition: background 0.18s, color 0.18s;
+    }
+    .poster-mode-btn:hover { color: var(--text); }
+    .poster-mode-btn.is-active {
+      background: rgba(255, 77, 79, 0.16);
+      color: #ff4d4f;
+    }
+    .poster-mode-btn .mode-badge {
+      display: inline-flex;
+      align-items: center;
+      justify-content: center;
+      padding: 1px 6px;
+      font-size: 10px;
+      line-height: 1.4;
+      border-radius: 4px;
+      background: rgba(251, 191, 36, 0.18);
+      color: #fbbf24;
+      font-weight: 600;
+    }
+    .poster-mode-btn[disabled] {
+      opacity: 0.35;
+      cursor: not-allowed;
+    }
     .btn-primary, .btn-secondary {
       border: none;
       border-radius: 12px;
@@ -110,6 +159,13 @@
 
     <p class="status-bar" id="statusBar">正在加载…</p>
 
+    <section class="poster-mode-switch" role="tablist" aria-label="海报样式">
+      <button type="button" class="poster-mode-btn is-active" data-mode="full" role="tab" aria-selected="true">完整版</button>
+      <button type="button" class="poster-mode-btn" data-mode="alert" role="tab" aria-selected="false" disabled>
+        预警版 <span class="mode-badge" id="alertBadge" hidden>触发</span>
+      </button>
+    </section>
+
     <section class="poster-preview-wrap">
       <canvas id="previewCanvas" aria-label="海报预览"></canvas>
     </section>
@@ -156,7 +212,7 @@
 
   </section>
 
-  <script type="module" src="/js/poster.js?v=20260609d"></script>
+  <script type="module" src="/js/poster.js?v=20260617c"></script>
   <script type="module">
     import { initFooterContact } from '/js/footerContact.js?v=20260612b'
     initFooterContact()

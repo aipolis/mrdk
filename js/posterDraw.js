@@ -3,7 +3,7 @@
  */
 import { drawSteeringGauge } from './gaugeDraw.js?v=20260531a'
 import { getDisplayLevel, formatHeaderDate, HOME_QUOTE } from './theme.js?v=20260609c'
-import { scoreToLongkongState, LONGKONG_STATE_STEPS, buildRiskCopy } from './longkongState.js?v=20260604c'
+import { scoreToLongkongState, LONGKONG_STATE_STEPS, buildRiskCopy, normalizeRiskReason } from './longkongState.js?v=20260604c'
 import { normalizeSections } from './indicators.js?v=20260609b'
 import { drawQrCode } from './qrDraw.js?v=20260531a'
 import { beijingDateKey } from './time.js?v=20260609a'
@@ -610,6 +610,218 @@ export function drawDouyinPoster(ctx, data) {
   return { width: w, height: h }
 }
 
+// ============================================================
+//  龙空预警海报 (Alert Mode) —— 强情绪信号专属海报，传播力 5-10x
+// ============================================================
+
+const ALERT_RED = '#dc2626'
+const ALERT_RED_SOFT = '#fca5a5'
+const ALERT_AMBER = '#fbbf24'
+
+export function isAlertModeAvailable(data) {
+  if (!data) return false
+  if (data.emptyWarning) return true
+  if (data.riskLevel === 'warning' || data.riskLevel === 'critical') return true
+  const score = Number(data.displayScore ?? data.score ?? 50)
+  return Number.isFinite(score) && score < 35
+}
+
+function drawAlertTopBrand(ctx, x, y, w) {
+  ctx.textBaseline = 'alphabetic'
+
+  ctx.textAlign = 'left'
+  ctx.fillStyle = ALERT_RED
+  ctx.font = `700 ${sc(42)}px ${FONT}`
+  ctx.fillText('明日当空', x, y + sc(44))
+
+  ctx.textAlign = 'right'
+  ctx.fillStyle = COLORS.muted
+  ctx.font = `400 ${sc(24)}px ${FONT}`
+  ctx.fillText(formatHeaderDate(), x + w, y + sc(44))
+
+  ctx.textAlign = 'center'
+  ctx.fillStyle = COLORS.dim
+  ctx.font = `400 ${sc(22)}px ${FONT}`
+  ctx.fillText('龙空预警 · 短线避险参考', x + w / 2, y + sc(82))
+
+  return sc(96)
+}
+
+function drawAlertWarningCard(ctx, x, y, w, data) {
+  const h = sc(540)
+
+  // 红色调渐变背景 + 红色边框
+  roundRect(ctx, x, y, w, h, sc(20))
+  const bg = ctx.createLinearGradient(0, y, 0, y + h)
+  bg.addColorStop(0, 'rgba(220, 38, 38, 0.18)')
+  bg.addColorStop(1, 'rgba(220, 38, 38, 0.04)')
+  ctx.fillStyle = bg
+  ctx.fill()
+  ctx.strokeStyle = 'rgba(220, 38, 38, 0.55)'
+  ctx.lineWidth = sc(2)
+  roundRect(ctx, x + 1, y + 1, w - 2, h - 2, sc(20))
+  ctx.stroke()
+
+  // ⚠ 警示图标
+  ctx.fillStyle = ALERT_AMBER
+  ctx.font = `700 ${sc(72)}px ${FONT}`
+  ctx.textAlign = 'center'
+  ctx.textBaseline = 'alphabetic'
+  ctx.fillText('⚠', x + w / 2, y + sc(90))
+
+  // 主标题
+  ctx.fillStyle = ALERT_RED_SOFT
+  ctx.font = `700 ${sc(48)}px ${FONT}`
+  ctx.fillText('龙空信号触发', x + w / 2, y + sc(160))
+
+  // 巨型情绪分
+  const score = Math.round(Number(data?.displayScore ?? data?.score ?? 0))
+  ctx.fillStyle = '#ef4444'
+  ctx.font = `800 ${sc(180)}px ${FONT}`
+  ctx.textBaseline = 'middle'
+  ctx.fillText(String(score), x + w / 2, y + sc(335))
+
+  ctx.fillStyle = COLORS.muted
+  ctx.font = `500 ${sc(24)}px ${FONT}`
+  ctx.textBaseline = 'alphabetic'
+  ctx.fillText('情绪分', x + w / 2, y + sc(450))
+
+  // 状态描述
+  const riskCopy = buildRiskCopy(data)
+  const desc = riskCopy?.desc || data?.positionDesc || '接力结构偏弱，风险优先'
+  const cleanDesc = String(desc).replace(/。$/, '')
+  ctx.fillStyle = COLORS.textSoft
+  ctx.font = `500 ${sc(28)}px ${FONT}`
+  ctx.fillText(cleanDesc, x + w / 2, y + sc(498))
+
+  return h
+}
+
+function pickAlertReasons(data) {
+  const raw = (data?.emptyReasons || data?.positionReasons || [])
+    .map(normalizeRiskReason)
+    .filter(Boolean)
+  const concrete = raw.filter((r) => /晋级率|炸板率|跌停|连板|溢价|封板率|情绪分/.test(r))
+  return [...new Set([...concrete, ...raw])].slice(0, 4)
+}
+
+function calcAlertReasonsHeight(reasons) {
+  const lineH = sc(48)
+  const count = Math.max(1, reasons.length)
+  return sc(48) + sc(40) + count * lineH + sc(20)
+}
+
+function drawAlertReasonsCard(ctx, x, y, w, data) {
+  const reasons = pickAlertReasons(data)
+  const h = calcAlertReasonsHeight(reasons)
+  drawCard(ctx, x, y, w, h)
+
+  ctx.textAlign = 'left'
+  ctx.textBaseline = 'alphabetic'
+  ctx.fillStyle = COLORS.text
+  ctx.font = `600 ${sc(30)}px ${FONT}`
+  ctx.fillText('风险点', x + sc(28), y + sc(48))
+
+  if (reasons.length === 0) {
+    ctx.fillStyle = COLORS.muted
+    ctx.font = `400 ${sc(24)}px ${FONT}`
+    ctx.fillText('— 接力结构整体偏弱 —', x + sc(28), y + sc(48) + sc(50))
+  } else {
+    const lineH = sc(48)
+    reasons.forEach((reason, i) => {
+      const ly = y + sc(48) + sc(50) + i * lineH
+      ctx.fillStyle = '#ef4444'
+      ctx.beginPath()
+      ctx.arc(x + sc(42), ly - sc(8), sc(5), 0, Math.PI * 2)
+      ctx.fill()
+
+      ctx.fillStyle = COLORS.textSoft
+      ctx.font = `500 ${sc(26)}px ${FONT}`
+      ctx.textAlign = 'left'
+      const maxW = w - sc(70) - sc(28)
+      const line = wrapText(ctx, reason, maxW)[0] || reason
+      ctx.fillText(line, x + sc(64), ly)
+    })
+  }
+  return h
+}
+
+function drawAlertPositionCard(ctx, x, y, w, data) {
+  const h = sc(280)
+  drawCard(ctx, x, y, w, h)
+
+  ctx.textAlign = 'left'
+  ctx.textBaseline = 'alphabetic'
+  ctx.fillStyle = COLORS.muted
+  ctx.font = `500 ${sc(24)}px ${FONT}`
+  ctx.fillText('短线接力仓位建议', x + sc(28), y + sc(48))
+
+  const positionPercent = data?.emptyWarning ? 0 : Number(data?.positionPercent ?? 0)
+  const isZero = positionPercent === 0
+  ctx.fillStyle = isZero ? '#ef4444' : ALERT_AMBER
+  ctx.font = `800 ${sc(120)}px ${FONT}`
+  ctx.textAlign = 'center'
+  ctx.textBaseline = 'middle'
+  ctx.fillText(`${positionPercent}%`, x + w / 2, y + sc(155))
+
+  ctx.fillStyle = COLORS.textSoft
+  ctx.font = `500 ${sc(24)}px ${FONT}`
+  ctx.textBaseline = 'alphabetic'
+  const tip = isZero ? '建议清仓 / 减仓 · 等待修复' : '控制节奏 · 等待信号确认'
+  ctx.fillText(tip, x + w / 2, y + sc(244))
+
+  return h
+}
+
+function drawAlertFooter(ctx, x, y, w) {
+  const qrSize = sc(160)
+  const h = sc(280)
+  drawCard(ctx, x, y, w, h)
+
+  const qrX = x + (w - qrSize) / 2
+  const qrY = y + sc(32)
+  drawQrCode(ctx, qrX, qrY, qrSize)
+
+  ctx.textAlign = 'center'
+  ctx.textBaseline = 'alphabetic'
+  ctx.fillStyle = COLORS.red
+  ctx.font = `600 ${sc(26)}px ${FONT}`
+  ctx.fillText('扫码查看实时数据', x + w / 2, qrY + qrSize + sc(36))
+
+  ctx.fillStyle = COLORS.dim
+  ctx.font = `400 ${sc(18)}px ${FONT}`
+  ctx.fillText('数据仅供参考，不构成投资建议', x + w / 2, qrY + qrSize + sc(64))
+
+  return h
+}
+
+export function calcAlertPosterHeight(data) {
+  const reasons = pickAlertReasons(data)
+  let h = PAD
+  h += sc(96) + CARD_GAP
+  h += sc(540) + CARD_GAP
+  h += calcAlertReasonsHeight(reasons) + CARD_GAP
+  h += sc(280) + CARD_GAP
+  h += sc(280) + PAD
+  return Math.ceil(h)
+}
+
+export function drawAlertPoster(ctx, data) {
+  const w = POSTER_W
+  const h = calcAlertPosterHeight(data)
+  ctx.clearRect(0, 0, w, h)
+  drawPageBackground(ctx, w, h)
+
+  let y = PAD
+  y += drawAlertTopBrand(ctx, PAD, y, INNER_W) + CARD_GAP
+  y += drawAlertWarningCard(ctx, PAD, y, INNER_W, data) + CARD_GAP
+  y += drawAlertReasonsCard(ctx, PAD, y, INNER_W, data) + CARD_GAP
+  y += drawAlertPositionCard(ctx, PAD, y, INNER_W, data) + CARD_GAP
+  drawAlertFooter(ctx, PAD, y, INNER_W)
+
+  return { width: w, height: h }
+}
+
 function syncCanvasDisplaySize(canvas, logicalW, logicalH) {
   const wrap = canvas.parentElement
   const wrapW = wrap?.clientWidth || logicalW
@@ -619,9 +831,15 @@ function syncCanvasDisplaySize(canvas, logicalW, logicalH) {
   if (wrap) wrap.style.minHeight = `${cssH}px`
 }
 
-export function renderPosterToCanvas(data, canvas) {
+function resolvePosterMode(data, requested) {
+  if (requested === 'alert' || requested === 'full') return requested
+  return isAlertModeAvailable(data) ? 'alert' : 'full'
+}
+
+export function renderPosterToCanvas(data, canvas, options = {}) {
   if (!canvas) throw new Error('canvas 不存在')
-  const height = calcPosterHeight(data)
+  const mode = resolvePosterMode(data, options.mode)
+  const height = mode === 'alert' ? calcAlertPosterHeight(data) : calcPosterHeight(data)
   const dpr = Math.min(window.devicePixelRatio || 1, 2)
   canvas.width = POSTER_W * dpr
   canvas.height = height * dpr
@@ -630,19 +848,20 @@ export function renderPosterToCanvas(data, canvas) {
   if (!ctx) throw new Error('无法创建 Canvas 上下文')
   ctx.setTransform(1, 0, 0, 1, 0, 0)
   ctx.scale(dpr, dpr)
-  return drawDouyinPoster(ctx, data)
+  return mode === 'alert' ? drawAlertPoster(ctx, data) : drawDouyinPoster(ctx, data)
 }
 
-export function posterFilename(data) {
+export function posterFilename(data, mode = 'full') {
   const displayScore = data.displayScore != null ? data.displayScore : data.score
   const d = data.adviceDate || data.date || ''
   const day = /^\d{8}$/.test(String(d)) ? String(d) : beijingDateKey()
-  return `明日当空-情绪${Math.round(Number(displayScore) || 0)}-${day}.jpg`
+  const prefix = mode === 'alert' ? '明日当空-龙空预警' : '明日当空-情绪'
+  return `${prefix}${Math.round(Number(displayScore) || 0)}-${day}.jpg`
 }
 
-export async function posterToBlob(data) {
+export async function posterToBlob(data, options = {}) {
   const canvas = document.createElement('canvas')
-  renderPosterToCanvas(data, canvas)
+  renderPosterToCanvas(data, canvas, options)
   return new Promise((resolve, reject) => {
     canvas.toBlob((blob) => {
       if (blob) resolve(blob)

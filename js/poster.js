@@ -1,5 +1,5 @@
 import { fetchToday } from './api.js?v=20260609c'
-import { renderPosterToCanvas, posterFilename, posterToBlob } from './posterDraw.js?v=20260609d'
+import { renderPosterToCanvas, posterFilename, posterToBlob, isAlertModeAvailable } from './posterDraw.js?v=20260617c'
 
 const preview = document.getElementById('previewCanvas')
 const statusBar = document.getElementById('statusBar')
@@ -11,9 +11,13 @@ const imageModal = document.getElementById('imageModal')
 const modalImage = document.getElementById('modalImage')
 const closeModal = document.getElementById('closeModal')
 
+const modeButtons = Array.from(document.querySelectorAll('.poster-mode-btn'))
+const alertBadge = document.getElementById('alertBadge')
+
 const isMobile = /Android|iPhone|iPad|iPod/i.test(navigator.userAgent)
 
 let latestData = null
+let currentMode = 'full'
 let modalBlobUrl = null
 let _blobCache = null   // 预生成的 blob
 let _blobPending = null // 生成中的 Promise
@@ -42,6 +46,29 @@ async function tryNativeShare(blob, filename) {
   return true
 }
 
+function syncModeUI() {
+  const alertAvailable = isAlertModeAvailable(latestData)
+  // 已经处于预警版（例如 URL 强制 / 龙空触发）时，按钮始终可点；否则只在数据触发时启用
+  const alertClickable = alertAvailable || currentMode === 'alert'
+  modeButtons.forEach((btn) => {
+    const mode = btn.dataset.mode
+    const isActive = mode === currentMode
+    btn.classList.toggle('is-active', isActive)
+    btn.setAttribute('aria-selected', isActive ? 'true' : 'false')
+    if (mode === 'alert') btn.disabled = !alertClickable
+  })
+  if (alertBadge) alertBadge.hidden = !alertAvailable
+}
+
+function renderCurrentMode() {
+  if (!latestData || !preview) return
+  renderPosterToCanvas(latestData, preview, { mode: currentMode })
+  // 切换后旧缓存失效；后台重新预生成对应模式的 blob
+  _blobCache = null
+  _blobPending = posterToBlob(latestData, { mode: currentMode })
+  _blobPending.then((b) => { _blobCache = b }).catch(() => {})
+}
+
 async function loadAndDraw() {
   if (!preview) {
     setStatus('页面元素加载失败，请刷新重试', 'err')
@@ -62,19 +89,27 @@ async function loadAndDraw() {
     return
   }
 
+  // 数据到手后决定初始模式：
+  //  1. URL 参数 ?mode=alert|full 强制指定（便于测试 / 内容创作截图）
+  //  2. 否则触发龙空时自动用预警版
+  const urlMode = new URLSearchParams(location.search).get('mode')
+  if (urlMode === 'alert' || urlMode === 'full') {
+    currentMode = urlMode
+  } else {
+    currentMode = isAlertModeAvailable(latestData) ? 'alert' : 'full'
+  }
+  syncModeUI()
+
   try {
     requestAnimationFrame(() => {
       try {
-        renderPosterToCanvas(latestData, preview)
+        renderCurrentMode()
         previewWrap?.classList.remove('loading')
         const score = latestData.displayScore != null ? latestData.displayScore : latestData.score
-        setStatus(`已生成 · 情绪分 ${score} · 可下载 JPG`, 'ok')
+        const tag = currentMode === 'alert' ? '龙空预警版' : '完整版'
+        setStatus(`已生成 · ${tag} · 情绪分 ${score}`, 'ok')
         if (downloadBtn) downloadBtn.disabled = false
         if (shareBtn) shareBtn.disabled = false
-        // 预览完成后立即后台生成 blob，用户点分享时直接取缓存
-        _blobCache = null
-        _blobPending = posterToBlob(latestData)
-        _blobPending.then((b) => { _blobCache = b }).catch(() => {})
       } catch (renderErr) {
         console.error(renderErr)
         previewWrap?.classList.remove('loading')
@@ -92,7 +127,9 @@ async function loadAndDraw() {
 }
 
 function getBlob() {
-  return _blobCache ? Promise.resolve(_blobCache) : (_blobPending || posterToBlob(latestData))
+  return _blobCache
+    ? Promise.resolve(_blobCache)
+    : (_blobPending || posterToBlob(latestData, { mode: currentMode }))
 }
 
 async function downloadPoster() {
@@ -100,7 +137,7 @@ async function downloadPoster() {
   if (downloadBtn) downloadBtn.disabled = true
   try {
     const blob = await getBlob()
-    const filename = posterFilename(latestData)
+    const filename = posterFilename(latestData, currentMode)
     if (isMobile) {
       const shared = await tryNativeShare(blob, filename).catch(() => false)
       if (shared) {
@@ -133,7 +170,7 @@ async function sharePoster() {
   if (shareBtn) shareBtn.disabled = true
   try {
     const blob = await getBlob()
-    const filename = posterFilename(latestData)
+    const filename = posterFilename(latestData, currentMode)
     const shared = await tryNativeShare(blob, filename).catch(() => false)
     if (shared) {
       setStatus('已打开分享', 'ok')
@@ -154,10 +191,30 @@ async function sharePoster() {
 
 downloadBtn?.addEventListener('click', downloadPoster)
 shareBtn?.addEventListener('click', sharePoster)
+
+modeButtons.forEach((btn) => {
+  btn.addEventListener('click', () => {
+    const next = btn.dataset.mode
+    if (!next || btn.disabled || next === currentMode) return
+    currentMode = next
+    syncModeUI()
+    if (!latestData) return
+    try {
+      renderCurrentMode()
+      const score = latestData.displayScore != null ? latestData.displayScore : latestData.score
+      const tag = currentMode === 'alert' ? '龙空预警版' : '完整版'
+      setStatus(`已切换 · ${tag} · 情绪分 ${score}`, 'ok')
+    } catch (err) {
+      console.error(err)
+      setStatus(err?.message || '海报绘制失败', 'err')
+    }
+  })
+})
+
 window.addEventListener('resize', () => {
   if (latestData && preview) {
     try {
-      renderPosterToCanvas(latestData, preview)
+      renderPosterToCanvas(latestData, preview, { mode: currentMode })
     } catch (err) {
       console.error(err)
     }
