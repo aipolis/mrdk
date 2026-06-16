@@ -155,6 +155,32 @@ class SentimentV2Test(unittest.TestCase):
         self.assertEqual(result["riskLevel"], "warning")
         self.assertEqual(result["positionPercent"], 30)
 
+    def test_live_promote_rate_refreshes_position_reasons(self):
+        baseline = calc_sentiment({**complete_metrics(), "promote_rate": 12})
+        self.assertTrue(any("12%" in r for r in baseline["positionReasons"]))
+
+        result = apply_display_longkong(
+            baseline,
+            65,
+            score_mode="live",
+            live_snap={"promote_live": 23.0},
+        )
+
+        self.assertFalse(any("12%" in r for r in result["positionReasons"]))
+        self.assertFalse(any("12%" in r for r in result["emptyReasons"]))
+        self.assertNotIn("promote", {item["key"] for item in result["riskItems"]})
+
+    def test_live_promote_rate_updates_reason_when_still_weak(self):
+        baseline = calc_sentiment({**complete_metrics(), "promote_rate": 12})
+        result = apply_display_longkong(
+            baseline,
+            65,
+            score_mode="live",
+            live_snap={"promote_live": 16.0},
+        )
+        self.assertTrue(any("16%" in r for r in result["positionReasons"]))
+        self.assertFalse(any("12%" in r for r in result["positionReasons"]))
+
     def test_continuous_base_position_uses_ten_percent_steps(self):
         self.assertEqual(_base_position_from_score(30), 0)
         self.assertEqual(_base_position_from_score(35), 10)

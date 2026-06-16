@@ -691,8 +691,65 @@ def _collect_live_weak_reasons(
     if live_scores.get("limitDownLive", 99) < _SIGNAL_WEAK:
         reasons.append("实时跌停偏多")
     if live_scores.get("breakLive", 99) < _SIGNAL_WEAK:
-        reasons.append(f"实时炸板率{m.get('break_rate', 0):.0f}%偏高")
+        break_rate = m.get("break_live")
+        if break_rate is None:
+            break_rate = m.get("break_rate", 0)
+        reasons.append(f"实时炸板率{float(break_rate or 0):.0f}%偏高")
     return reasons
+
+
+def _promote_reason_text(rate: float) -> str:
+    return f"昨日涨停股今日晋级率仅{float(rate):.0f}%"
+
+
+def reconcile_live_risk_overrides(
+    risk_items: list,
+    empty_reasons: list,
+    *,
+    promote_live: Optional[float] = None,
+    break_live: Optional[float] = None,
+) -> tuple[list, list, float]:
+    """
+    盘中用实时晋级率/炸板率刷新仓位主因文案与风险权重。
+    基准分仍用昨日收盘口径，但「昨日涨停股今日晋级率」应随盘中更新。
+    """
+    items = [dict(x) for x in (risk_items or [])]
+    reasons = list(empty_reasons or [])
+    promote_prefix = "昨日涨停股今日晋级率仅"
+
+    if promote_live is not None:
+        rate = float(promote_live)
+        promote_score = score_promote(rate)
+        new_reason = _promote_reason_text(rate)
+        if promote_score >= _SIGNAL_WEAK_PRIMARY:
+            items = [x for x in items if x.get("key") != "promote"]
+            reasons = [r for r in reasons if promote_prefix not in r]
+        else:
+            for item in items:
+                if item.get("key") == "promote":
+                    item["reason"] = new_reason
+            reasons = [new_reason if promote_prefix in r else r for r in reasons]
+
+    if break_live is not None:
+        rate = float(break_live)
+        break_score = score_break_rate(rate)
+        break_prefixes = ("实时炸板率", "炸板率")
+        new_break_reason = f"实时炸板率{rate:.0f}%偏高"
+        if break_score >= _SIGNAL_WEAK_PRIMARY:
+            items = [x for x in items if x.get("key") not in ("breakLive", "break")]
+            reasons = [r for r in reasons if not any(p in r for p in break_prefixes)]
+        else:
+            for item in items:
+                reason = str(item.get("reason") or "")
+                if item.get("key") in ("breakLive", "break") or "炸板率" in reason:
+                    item["reason"] = new_break_reason
+            reasons = [
+                new_break_reason if any(p in r for p in break_prefixes) else r
+                for r in reasons
+            ]
+
+    risk_score = sum(float(x.get("weight") or 0) for x in items)
+    return items, reasons, risk_score
 
 
 def _risk_items(y: dict[str, int], metrics: dict) -> list[dict]:
@@ -1014,17 +1071,35 @@ def apply_display_longkong(
     score_mode: str = "baseline",
     previous_position: Optional[int] = None,
     increase_confirmations: int = 0,
+    live_snap: Optional[dict] = None,
 ) -> dict:
     """
     龙空信号 / riskLevel / emptyWarning 随展示分更新。
     展示分 < 50 追加盘中或综合走弱风险提示。
     """
     baseline_sentiment = baseline_sentiment or {}
-    baseline_risk = baseline_sentiment.get("riskLevel", "none")
     baseline_empty = bool(baseline_sentiment.get("emptyWarning"))
+    baseline_score = int(baseline_sentiment.get("score") or 0)
     reasons = list(baseline_sentiment.get("emptyReasons") or [])
     risk_items = list(baseline_sentiment.get("riskItems") or [])
     risk_score = float(baseline_sentiment.get("riskScore") or 0)
+    live_snap = live_snap or {}
+    live_promote = live_snap.get("promote_live")
+    live_break = live_snap.get("break_live")
+    has_live_risk = (
+        score_mode == "live"
+        and (live_promote is not None or live_break is not None)
+    )
+    if has_live_risk:
+        risk_items, reasons, risk_score = reconcile_live_risk_overrides(
+            risk_items,
+            reasons,
+            promote_live=live_promote,
+            break_live=live_break,
+        )
+        baseline_risk = _calc_risk_level(risk_score, baseline_score)
+    else:
+        baseline_risk = baseline_sentiment.get("riskLevel", "none")
     display_score = int(display_score or 0)
 
     display_risk = display_score < DISPLAY_LONGKONG_THRESHOLD
@@ -1047,7 +1122,6 @@ def apply_display_longkong(
 
     empty_warning = baseline_empty or risk_level == "critical" or display_score <= 30
 
-    baseline_score = int(baseline_sentiment.get("score") or 0)
     base_position = _base_position_from_score(baseline_score)
     volatility = baseline_sentiment.get("volatilityProxy") or {"score": 0, "multiplier": 1.0, "reasons": []}
     volatility_multiplier = float(volatility.get("multiplier") or 1.0)

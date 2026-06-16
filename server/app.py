@@ -342,7 +342,10 @@ def _build_home_payload(ref_d: str, prev_d: Optional[str], advice_d: str, is_rea
         baseline_score, intraday_score, prev_baseline=prev_baseline
     )
     longkong = apply_display_longkong(
-        sentiment, display_score, score_mode=score_mode
+        sentiment,
+        display_score,
+        score_mode=score_mode,
+        live_snap=intraday_payload.get("snap"),
     )
     strategy_note = strategy_note_for_home(
         sentiment, display_score, score_mode=score_mode, longkong=longkong
@@ -727,6 +730,7 @@ def _sync_intraday_display_fields(
         score_mode=score_mode,
         previous_position=p.get("positionPercent"),
         increase_confirmations=int(p.get("positionConfirmations") or 0),
+        live_snap=intraday_payload.get("snap"),
     )
     updated = intraday_payload.get("updatedAt") or gauge_hm
     p["liveScore"] = live_raw
@@ -1269,7 +1273,7 @@ async def _run_daily_subscribe_push() -> dict:
     }
 
 
-app = FastAPI(title="明日当空 API", version="1.0.0", lifespan=lifespan)
+app = FastAPI(title="明日当空 API", version="1.0.1", lifespan=lifespan)
 
 app.add_middleware(
     CORSMiddleware,
@@ -1282,7 +1286,7 @@ app.add_middleware(
 
 @app.get("/")
 def root():
-    return {"service": "明日当空", "status": "ok", "version": "1.0.0"}
+    return {"service": "明日当空", "status": "ok", "version": "1.0.1"}
 
 
 @app.get("/api/health")
