@@ -1273,7 +1273,7 @@ async def _run_daily_subscribe_push() -> dict:
     }
 
 
-app = FastAPI(title="明日当空 API", version="1.0.1", lifespan=lifespan)
+app = FastAPI(title="明日当空 API", version="1.0.2", lifespan=lifespan)
 
 app.add_middleware(
     CORSMiddleware,
@@ -1286,7 +1286,7 @@ app.add_middleware(
 
 @app.get("/")
 def root():
-    return {"service": "明日当空", "status": "ok", "version": "1.0.1"}
+    return {"service": "明日当空", "status": "ok", "version": "1.0.2"}
 
 
 @app.get("/api/health")

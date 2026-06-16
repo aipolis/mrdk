@@ -864,12 +864,13 @@ def _volatility_proxy(metrics: dict) -> dict:
     elif index_chg is not None and abs(float(index_chg)) >= 1.5:
         stress += 1
         reasons.append("指数波动偏大")
-    if top10 is not None and abs(float(top10)) >= 4:
+    # 前10 仅对走弱加压力；大涨不算「波动风险」
+    if top10 is not None and float(top10) <= -4:
         stress += 2
-        reasons.append("成交额前10波动较大")
-    elif top10 is not None and abs(float(top10)) >= 2:
+        reasons.append("成交额前10明显走弱")
+    elif top10 is not None and float(top10) <= -2:
         stress += 1
-        reasons.append("成交额前10波动偏大")
+        reasons.append("成交额前10偏弱")
 
     multiplier = VOLATILITY_MULT_HIGH if stress >= 3 else VOLATILITY_MULT_MID if stress >= 1 else 1.0
     return {"score": stress, "multiplier": multiplier, "reasons": reasons}

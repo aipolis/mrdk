@@ -222,6 +222,15 @@ class SentimentV2Test(unittest.TestCase):
         self.assertEqual(proxy["multiplier"], 0.85)
         self.assertGreaterEqual(proxy["score"], 4)
 
+    def test_volatility_proxy_ignores_strong_positive_top10(self):
+        proxy = _volatility_proxy(complete_metrics(top10_avg_chg=4.5))
+        self.assertEqual(proxy["multiplier"], 1.0)
+        self.assertEqual(proxy["reasons"], [])
+
+        mixed = _volatility_proxy(complete_metrics(index_chg=-3.5, top10_avg_chg=4.5))
+        self.assertEqual(mixed["multiplier"], 0.92)
+        self.assertNotIn("成交额前10", " ".join(mixed["reasons"]))
+
     def test_position_stability_blocks_live_increase_and_confirms_later(self):
         held = _stabilize_position(40, previous_position=20, score_mode="live")
         first = _stabilize_position(40, previous_position=20, score_mode="baseline")
