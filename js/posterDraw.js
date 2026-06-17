@@ -9,6 +9,8 @@ import { drawQrCode } from './qrDraw.js?v=20260531a'
 import { beijingDateKey } from './time.js?v=20260609a'
 
 export const POSTER_W = 1080
+// 抖音/视频号标准 9:16 高度。短图模式定死 1920,长图模式(预留)走动态。
+export const POSTER_H_COMPACT = 1920
 const SCALE = POSTER_W / 750
 const sc = (n) => Math.round(n * SCALE)
 
@@ -207,7 +209,9 @@ function drawQuoteCard(ctx, x, y, w, quote) {
 }
 
 function calcGaugeCardHeight(data) {
-  let h = sc(28) + sc(44) + sc(40) + sc(44) + sc(100) + sc(292) + sc(28)
+  // sc(100) → sc(160): 龙空灯区高度 +sc(50)
+  // sc(292) → sc(372): 表盘高度 +sc(80)
+  let h = sc(28) + sc(44) + sc(40) + sc(44) + sc(160) + sc(372) + sc(28)
   if (data.scoreMode === 'live' && data.baselineScore != null) h += sc(28)
   if (data.emptyWarning) h += sc(44)
   h += sc(60) // 今日应对 一行
@@ -219,7 +223,7 @@ function drawGaugeCard(ctx, x, y, w, data) {
   const score = Number(data.displayScore != null ? data.displayScore : (data.score || 0))
   const level = getDisplayLevel(score)
   const levelColor = LEVEL_COLORS[data.levelClass] || level.color
-  const gaugeH = sc(292)
+  const gaugeH = sc(372) // 表盘高度,与 calcGaugeCardHeight 保持一致
   const h = calcGaugeCardHeight(data)
 
   const riskCopy = buildRiskCopy(data)
@@ -267,15 +271,15 @@ function drawGaugeCard(ctx, x, y, w, data) {
     ctx.fillText(valTxt, startX + labelW, lineY)
   }
 
-  // 龙空龙状态灯（竖排四格，对齐首页 CSS）—— 下移以让出仓位建议行的空间
+  // 龙空龙状态灯（竖排四格，对齐首页 CSS）—— 放大,更醒目
   const lightsAreaY = y + sc(198)
-  const lightsAreaH = sc(88)
+  const lightsAreaH = sc(138)
   const lightsLx = x + sc(28)
   const lightsLw = w - sc(56)
-  const cellPad = sc(8)
-  const cellGap = sc(7)
+  const cellPad = sc(10)
+  const cellGap = sc(8)
   const cellW = (lightsLw - cellPad * 2 - cellGap * 3) / 4
-  const cellH = sc(70)
+  const cellH = sc(108)
   const cellY = lightsAreaY + cellPad
   // 「空」状态固定用琥珀警告色（与首页 risk-warning/caution 覆盖逻辑一致）
   const lightPalette = lk.state === 'empty'
@@ -307,29 +311,29 @@ function drawGaugeCard(ctx, x, y, w, data) {
       ctx.stroke()
     }
 
-    // 圆点（激活时加光晕）
-    const dotR = sc(6)
-    const dotY = cellY + sc(22)
+    // 圆点（激活时加光晕）—— 放大
+    const dotR = sc(9)
+    const dotY = cellY + sc(36)
     ctx.beginPath()
     ctx.arc(centerX, dotY, dotR, 0, Math.PI * 2)
     if (active) {
       ctx.shadowColor = lightPalette.dot
-      ctx.shadowBlur = sc(12)
+      ctx.shadowBlur = sc(16)
     }
     ctx.fillStyle = active ? lightPalette.dot : 'rgba(255,255,255,0.22)'
     ctx.fill()
     ctx.shadowBlur = 0
 
-    // 标签
-    ctx.font = `${active ? 700 : 400} ${sc(23)}px ${FONT}`
-    ctx.fillStyle = active ? lightPalette.dot : 'rgba(255,255,255,0.28)'
+    // 标签 —— 字号加大,激活态加粗更重
+    ctx.font = `${active ? 700 : 500} ${sc(30)}px ${FONT}`
+    ctx.fillStyle = active ? lightPalette.dot : 'rgba(255,255,255,0.32)'
     ctx.textAlign = 'center'
     ctx.textBaseline = 'alphabetic'
-    ctx.fillText(step.label, centerX, dotY + dotR + sc(22))
+    ctx.fillText(step.label, centerX, dotY + dotR + sc(34))
   })
 
   const gx = x + sc(28)
-  const gy = y + sc(298) // 下移以让出仓位建议行的空间
+  const gy = y + sc(348) // 下移以让出更大的龙空灯区域(原 sc(298),+sc(50))
   const gw = w - sc(56)
   ctx.save()
   roundRect(ctx, gx, gy, gw, gaugeH, sc(14))
@@ -588,47 +592,47 @@ function drawTrendCard(ctx, x, y, w, trend) {
 }
 
 function calcFooterHeight() {
-  // top + QR + cta + divider gap + 公众号 + disclaimer + bottom
-  return sc(32) + sc(156) + sc(40) + sc(28) + sc(40) + sc(48) + sc(28)
+  // top + QR + cta + divider gap + 平台合并行 + disclaimer + bottom
+  return sc(24) + sc(120) + sc(36) + sc(22) + sc(36) + sc(36) + sc(20)
 }
 
 function drawFooter(ctx, x, y, w) {
-  const qrSize = sc(140)
+  const qrSize = sc(120)
   const h = calcFooterHeight()
   drawCard(ctx, x, y, w, h)
 
-  // 二维码（顶部直接放,无前缀免责声明）
+  // 二维码
   const qrX = x + (w - qrSize) / 2
-  const qrY = y + sc(32)
+  const qrY = y + sc(24)
   drawQrCode(ctx, qrX, qrY, qrSize)
 
   ctx.textAlign = 'center'
   ctx.textBaseline = 'alphabetic'
 
-  // 主标：扫码看实时
+  // 主标：扫码进入实时面板
   ctx.fillStyle = COLORS.red
-  ctx.font = `600 ${sc(28)}px ${FONT}`
-  ctx.fillText('扫码看实时 · 龙空预警', x + w / 2, qrY + qrSize + sc(40))
+  ctx.font = `600 ${sc(26)}px ${FONT}`
+  ctx.fillText('扫码进入实时面板', x + w / 2, qrY + qrSize + sc(36))
 
   // 分隔细线
-  const divY = qrY + qrSize + sc(60)
-  const divW = sc(120)
-  ctx.strokeStyle = 'rgba(255,255,255,0.12)'
+  const divY = qrY + qrSize + sc(54)
+  const divW = sc(100)
+  ctx.strokeStyle = 'rgba(255,255,255,0.10)'
   ctx.lineWidth = 1
   ctx.beginPath()
   ctx.moveTo(x + w / 2 - divW / 2, divY)
   ctx.lineTo(x + w / 2 + divW / 2, divY)
   ctx.stroke()
 
-  // 公众号引导
-  ctx.fillStyle = COLORS.dim
-  ctx.font = `400 ${sc(20)}px ${FONT}`
-  ctx.fillText('公众号 · 量化新手村', x + w / 2, qrY + qrSize + sc(86))
+  // 平台合并行：公众号 / 抖音 · 量化新手村
+  ctx.fillStyle = COLORS.textSoft
+  ctx.font = `500 ${sc(22)}px ${FONT}`
+  ctx.fillText('公众号 / 抖音搜 · 量化新手村', x + w / 2, qrY + qrSize + sc(86))
 
-  // 免责声明 —— 移到最底，作为真正的"小尾巴"
+  // 免责声明 —— 最底,小字
   ctx.fillStyle = COLORS.dim
   ctx.font = `400 ${sc(18)}px ${FONT}`
-  ctx.fillText('数据仅供参考，不构成投资建议', x + w / 2, y + h - sc(20))
+  ctx.fillText('数据仅供参考，不构成投资建议', x + w / 2, y + h - sc(16))
 
   return h
 }
@@ -676,7 +680,13 @@ function buildTodayAction(data) {
   return '空仓为主 · 等待方向选择'
 }
 
-export function calcPosterHeight(data) {
+// 紧凑(默认)模式固定 1080×1920。drawDouyinPoster 内部自适应间距。
+// 长图模式高度计算保留为 calcLongPosterHeight,后续如需多档输出可直接调用。
+export function calcPosterHeight() {
+  return POSTER_H_COMPACT
+}
+
+export function calcLongPosterHeight(data) {
   const sections = getPosterSections(data)
   let h = PAD + drawTopBrandHeight() + CARD_GAP
   h += calcQuoteCardHeight(2) + CARD_GAP
@@ -696,22 +706,29 @@ function drawTopBrandHeight() {
  */
 export function drawDouyinPoster(ctx, data) {
   const w = POSTER_W
-  const h = calcPosterHeight(data)
+  const h = POSTER_H_COMPACT
   // 勿 resetTransform：外层已按 dpr 缩放，reset 会导致导出 PNG 只占左上角 1/4
   ctx.clearRect(0, 0, w, h)
   drawPageBackground(ctx, w, h)
 
-  const quote = formatQuote()
-  const sections = getPosterSections(data)
-  let y = PAD
+  // 三块核心(舍弃 quote 和 yesterday sections,因为 9:16 高度装不下且这些是次要信息):
+  //   1. 顶部品牌 + 日期
+  //   2. 情绪表盘(已含:情绪分大数字 / 等级 / 龙空灯 / 今日应对 / 仓位建议)
+  //   3. 底部 CTA(二维码 + 公众号 + 抖音引导)
+  const brandH = drawTopBrandHeight()
+  const gaugeH = calcGaugeCardHeight(data)
+  const footerH = calcFooterHeight()
 
-  y += drawTopBrand(ctx, PAD, y, INNER_W, data) + CARD_GAP
-  y += drawGaugeCard(ctx, PAD, y, INNER_W, data) + CARD_GAP
-  sections.forEach((sec) => {
-    y += drawSectionCard(ctx, PAD, y, INNER_W, sec) + CARD_GAP
-  })
-  // 引言卡：移到二维码上方，作为「读到底了的回报」
-  y += drawQuoteCard(ctx, PAD, y, INNER_W, quote) + CARD_GAP
+  // 剩余空间均分到两个 gap 上;cap 在 sc(50) 内,避免中间出现明显"留空感"
+  // 极端情况(usable < 0,emptyWarning + live 双触发)允许 gap=0,卡片相邻不重叠
+  const usable = h - PAD * 2 - brandH - gaugeH - footerH
+  const gap = usable > CARD_GAP * 2
+    ? Math.min(sc(50), Math.floor(usable / 2))
+    : Math.max(0, Math.floor(usable / 2))
+
+  let y = PAD
+  y += drawTopBrand(ctx, PAD, y, INNER_W, data) + gap
+  y += drawGaugeCard(ctx, PAD, y, INNER_W, data) + gap
   drawFooter(ctx, PAD, y, INNER_W)
 
   return { width: w, height: h }
@@ -755,7 +772,7 @@ function drawAlertTopBrand(ctx, x, y, w) {
 }
 
 function drawAlertWarningCard(ctx, x, y, w, data) {
-  const h = sc(540)
+  const h = sc(380) // sc(540) → sc(380),压缩 sc(160) 内部 padding
 
   // 红色调渐变背景 + 红色边框
   roundRect(ctx, x, y, w, h, sc(20))
@@ -769,37 +786,48 @@ function drawAlertWarningCard(ctx, x, y, w, data) {
   roundRect(ctx, x + 1, y + 1, w - 2, h - 2, sc(20))
   ctx.stroke()
 
-  // ⚠ 警示图标
+  // ⚠ + 主标题 同一行,左右对齐(原来上下两行各占 ~sc(70),合并节省空间)
   ctx.fillStyle = ALERT_AMBER
-  ctx.font = `700 ${sc(72)}px ${FONT}`
+  ctx.font = `700 ${sc(54)}px ${FONT}`
   ctx.textAlign = 'center'
   ctx.textBaseline = 'alphabetic'
-  ctx.fillText('⚠', x + w / 2, y + sc(90))
-
-  // 主标题
+  // 用 measure 计算总宽度,使图标和文字水平居中
+  const iconStr = '⚠ '
+  const titleStr = '龙空信号触发'
+  const iconW = ctx.measureText(iconStr).width
+  ctx.font = `700 ${sc(42)}px ${FONT}`
+  const titleW = ctx.measureText(titleStr).width
+  const totalW = iconW + titleW
+  const lineY = y + sc(72)
+  const startX = x + w / 2 - totalW / 2
+  ctx.font = `700 ${sc(54)}px ${FONT}`
+  ctx.fillStyle = ALERT_AMBER
+  ctx.textAlign = 'left'
+  ctx.fillText(iconStr, startX, lineY)
+  ctx.font = `700 ${sc(42)}px ${FONT}`
   ctx.fillStyle = ALERT_RED_SOFT
-  ctx.font = `700 ${sc(48)}px ${FONT}`
-  ctx.fillText('龙空信号触发', x + w / 2, y + sc(160))
+  ctx.fillText(titleStr, startX + iconW, lineY - sc(4))
 
   // 巨型情绪分
   const score = Math.round(Number(data?.displayScore ?? data?.score ?? 0))
+  ctx.textAlign = 'center'
   ctx.fillStyle = '#ef4444'
-  ctx.font = `800 ${sc(180)}px ${FONT}`
+  ctx.font = `800 ${sc(150)}px ${FONT}`
   ctx.textBaseline = 'middle'
-  ctx.fillText(String(score), x + w / 2, y + sc(335))
+  ctx.fillText(String(score), x + w / 2, y + sc(210))
 
   ctx.fillStyle = COLORS.muted
-  ctx.font = `500 ${sc(24)}px ${FONT}`
+  ctx.font = `500 ${sc(22)}px ${FONT}`
   ctx.textBaseline = 'alphabetic'
-  ctx.fillText('情绪分', x + w / 2, y + sc(450))
+  ctx.fillText('情绪分', x + w / 2, y + sc(300))
 
   // 状态描述
   const riskCopy = buildRiskCopy(data)
   const desc = riskCopy?.desc || data?.positionDesc || '接力结构偏弱，风险优先'
   const cleanDesc = String(desc).replace(/。$/, '')
   ctx.fillStyle = COLORS.textSoft
-  ctx.font = `500 ${sc(28)}px ${FONT}`
-  ctx.fillText(cleanDesc, x + w / 2, y + sc(498))
+  ctx.font = `500 ${sc(26)}px ${FONT}`
+  ctx.fillText(cleanDesc, x + w / 2, y + sc(346))
 
   return h
 }
@@ -813,9 +841,9 @@ function pickAlertReasons(data) {
 }
 
 function calcAlertReasonsHeight(reasons) {
-  const lineH = sc(48)
+  const lineH = sc(42) // sc(48) → sc(42),行距压缩
   const count = Math.max(1, reasons.length)
-  return sc(48) + sc(40) + count * lineH + sc(20)
+  return sc(40) + sc(36) + count * lineH + sc(16)
 }
 
 function drawAlertReasonsCard(ctx, x, y, w, data) {
@@ -826,24 +854,24 @@ function drawAlertReasonsCard(ctx, x, y, w, data) {
   ctx.textAlign = 'left'
   ctx.textBaseline = 'alphabetic'
   ctx.fillStyle = COLORS.text
-  ctx.font = `600 ${sc(30)}px ${FONT}`
-  ctx.fillText('风险点', x + sc(28), y + sc(48))
+  ctx.font = `600 ${sc(28)}px ${FONT}`
+  ctx.fillText('风险点', x + sc(28), y + sc(40))
 
   if (reasons.length === 0) {
     ctx.fillStyle = COLORS.muted
-    ctx.font = `400 ${sc(24)}px ${FONT}`
-    ctx.fillText('— 接力结构整体偏弱 —', x + sc(28), y + sc(48) + sc(50))
+    ctx.font = `400 ${sc(22)}px ${FONT}`
+    ctx.fillText('— 接力结构整体偏弱 —', x + sc(28), y + sc(40) + sc(42))
   } else {
-    const lineH = sc(48)
+    const lineH = sc(42)
     reasons.forEach((reason, i) => {
-      const ly = y + sc(48) + sc(50) + i * lineH
+      const ly = y + sc(40) + sc(42) + i * lineH
       ctx.fillStyle = '#ef4444'
       ctx.beginPath()
       ctx.arc(x + sc(42), ly - sc(8), sc(5), 0, Math.PI * 2)
       ctx.fill()
 
       ctx.fillStyle = COLORS.textSoft
-      ctx.font = `500 ${sc(26)}px ${FONT}`
+      ctx.font = `500 ${sc(24)}px ${FONT}`
       ctx.textAlign = 'left'
       const maxW = w - sc(70) - sc(28)
       const line = wrapText(ctx, reason, maxW)[0] || reason
@@ -854,50 +882,28 @@ function drawAlertReasonsCard(ctx, x, y, w, data) {
 }
 
 function drawAlertPositionCard(ctx, x, y, w, data) {
-  const h = sc(280)
+  const h = sc(200) // sc(280) → sc(200),压缩 sc(80)
   drawCard(ctx, x, y, w, h)
 
   ctx.textAlign = 'left'
   ctx.textBaseline = 'alphabetic'
   ctx.fillStyle = COLORS.muted
-  ctx.font = `500 ${sc(24)}px ${FONT}`
-  ctx.fillText('短线接力仓位建议', x + sc(28), y + sc(48))
+  ctx.font = `500 ${sc(22)}px ${FONT}`
+  ctx.fillText('短线接力仓位建议', x + sc(28), y + sc(36))
 
   const positionPercent = data?.emptyWarning ? 0 : Number(data?.positionPercent ?? 0)
   const isZero = positionPercent === 0
   ctx.fillStyle = isZero ? '#ef4444' : ALERT_AMBER
-  ctx.font = `800 ${sc(120)}px ${FONT}`
+  ctx.font = `800 ${sc(96)}px ${FONT}`
   ctx.textAlign = 'center'
   ctx.textBaseline = 'middle'
-  ctx.fillText(`${positionPercent}%`, x + w / 2, y + sc(155))
+  ctx.fillText(`${positionPercent}%`, x + w / 2, y + sc(112))
 
   ctx.fillStyle = COLORS.textSoft
-  ctx.font = `500 ${sc(24)}px ${FONT}`
+  ctx.font = `500 ${sc(22)}px ${FONT}`
   ctx.textBaseline = 'alphabetic'
   const tip = isZero ? '建议清仓 / 减仓 · 等待修复' : '控制节奏 · 等待信号确认'
-  ctx.fillText(tip, x + w / 2, y + sc(244))
-
-  return h
-}
-
-function drawAlertFooter(ctx, x, y, w) {
-  const qrSize = sc(160)
-  const h = sc(280)
-  drawCard(ctx, x, y, w, h)
-
-  const qrX = x + (w - qrSize) / 2
-  const qrY = y + sc(32)
-  drawQrCode(ctx, qrX, qrY, qrSize)
-
-  ctx.textAlign = 'center'
-  ctx.textBaseline = 'alphabetic'
-  ctx.fillStyle = COLORS.red
-  ctx.font = `600 ${sc(26)}px ${FONT}`
-  ctx.fillText('扫码查看实时数据', x + w / 2, qrY + qrSize + sc(36))
-
-  ctx.fillStyle = COLORS.dim
-  ctx.font = `400 ${sc(18)}px ${FONT}`
-  ctx.fillText('数据仅供参考，不构成投资建议', x + w / 2, qrY + qrSize + sc(64))
+  ctx.fillText(tip, x + w / 2, y + sc(176))
 
   return h
 }
@@ -906,10 +912,10 @@ export function calcAlertPosterHeight(data) {
   const reasons = pickAlertReasons(data)
   let h = PAD
   h += sc(96) + CARD_GAP
-  h += sc(540) + CARD_GAP
+  h += sc(380) + CARD_GAP // 警示卡压缩 sc(540)→sc(380)
   h += calcAlertReasonsHeight(reasons) + CARD_GAP
-  h += sc(280) + CARD_GAP
-  h += sc(280) + PAD
+  h += sc(200) + CARD_GAP // 仓位卡压缩 sc(280)→sc(200)
+  h += calcFooterHeight() + PAD // 与完整版页脚保持一致
   return Math.ceil(h)
 }
 
@@ -924,7 +930,7 @@ export function drawAlertPoster(ctx, data) {
   y += drawAlertWarningCard(ctx, PAD, y, INNER_W, data) + CARD_GAP
   y += drawAlertReasonsCard(ctx, PAD, y, INNER_W, data) + CARD_GAP
   y += drawAlertPositionCard(ctx, PAD, y, INNER_W, data) + CARD_GAP
-  drawAlertFooter(ctx, PAD, y, INNER_W)
+  drawFooter(ctx, PAD, y, INNER_W) // 与完整版统一,弃用 drawAlertFooter
 
   return { width: w, height: h }
 }
