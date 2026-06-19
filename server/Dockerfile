@@ -11,7 +11,7 @@ ENV PORT=80
 ENV WECHAT_HTTP_VERIFY=false
 
 RUN apt-get update && apt-get install -y --no-install-recommends \
-    gcc g++ libgomp1 ca-certificates \
+    gcc g++ libgomp1 ca-certificates libgl1 libglib2.0-0 \
     && rm -rf /var/lib/apt/lists/*
 
 COPY requirements.txt .
