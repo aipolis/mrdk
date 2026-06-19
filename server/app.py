@@ -1919,6 +1919,14 @@ async def subscribe_cron_daily(x_cron_secret: str = Header(default="")):
     return {"code": 0, "data": data}
 
 
+# --- TradeCheck 子系统挂载(行情/代码反查/涨停股池) ---
+try:
+    from tradecheck_routes import tradecheck_router
+    app.include_router(tradecheck_router)
+except Exception as _tc_err:
+    logging.getLogger(__name__).warning("[app] TradeCheck 路由加载失败: %s", _tc_err)
+
+
 if __name__ == "__main__":
     import uvicorn
     from config import HOST, PORT
