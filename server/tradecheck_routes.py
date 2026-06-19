@@ -19,6 +19,8 @@ from pydantic import BaseModel
 
 import tc_code_resolver
 import tc_kline_fetcher
+import tc_image_ocr
+import tc_llm
 
 log = logging.getLogger(__name__)
 
@@ -30,6 +32,41 @@ class BuildMarketReq(BaseModel):
     raw_codes: list[str]   # 交割单里原始代码(拼音简称或 6 位数字)
     start_date: str        # YYYY-MM-DD
     end_date: str          # YYYY-MM-DD
+
+
+class ExtractCsvReq(BaseModel):
+    images: list[str]      # data:image/...;base64,xxx 数组(一张拍不全可多张)
+    broker: str = ""       # 可选,如 "同花顺"、"东财"、"通达信",用于辅助 prompt
+
+
+_EXTRACT_CSV_SYS = (
+    "你是 A 股券商交割单截图解析助手。用户上传了 OCR 提取出的成交记录文字片段"
+    "(原表格被 OCR 按 Y 坐标拆碎,可能一行被拆成 2~3 个 OCR 片段;若有多张图,"
+    "用 ---- 图片 N ---- 分隔)。\n"
+    "请把它们重组成标准 CSV,严格按以下表头与规则输出:\n"
+    "\n"
+    "成交日期,证券代码,证券名称,操作,成交价格,成交数量,成交金额,佣金,印花税,过户费\n"
+    "\n"
+    "规则:\n"
+    "1) 操作:只填\"买入\"或\"卖出\";数量一律取正数(原始可能带负号)。\n"
+    "2) 成交日期格式 YYYY-MM-DD HH:MM:SS;若 OCR 缺秒则填 :00;若两位年缺前缀 20 自行补。\n"
+    "3) 证券代码:若原文没有标准 6 位代码,用证券名称的拼音首字母大写填(例如\"高乐股份\"→\"GLGF\");\n"
+    "4) 价格、金额:保留原始小数,不带千分位,不要带其他符号;\n"
+    "5) 佣金/印花税/过户费:OCR 中没有就一律填 0;\n"
+    "6) **跳过非成交行**:申购配号、菜单(首页/行情/自选/交易/资讯)、表头、状态栏、"
+    "页面标题、筛选条件(默认/按股票/按做 T)、日期范围等都不要输出;\n"
+    "7) 一行对应一笔交易,**不要拼接或合并多笔**;\n"
+    "8) 顺序按"成交日期 升序";\n"
+    "9) **只输出 CSV 文本本身**,首行表头,不要任何解释、不要 markdown 包裹。"
+)
+
+
+def _build_extract_user_prompt(lines: list[str], broker: str) -> str:
+    head = "以下是 OCR 行片段(按 Y 上→下、X 左→右排序):\n\n"
+    if broker:
+        head = f"券商/APP:{broker}\n" + head
+    body = "\n".join(lines)
+    return head + body
 
 
 def _safe_fetch_limit_up(date_yyyymmdd: str):
@@ -58,7 +95,60 @@ def _parse_ymd(s: str) -> datetime:
 @tradecheck_router.get("/health")
 def tc_health():
     """前端探测 TradeCheck 子系统是否就绪"""
-    return {"ok": True, "feature": "tradecheck", "version": "0.1.0"}
+    llm = tc_llm.available()
+    return {
+        "ok": True,
+        "feature": "tradecheck",
+        "version": "0.2.0",
+        "capabilities": {
+            "market_csv": True,
+            "extract_csv": llm["ok"],
+        },
+        "llm": llm,
+    }
+
+
+@tradecheck_router.post("/extract_csv")
+def extract_csv(req: ExtractCsvReq):
+    """图片(单张/多张)→ OCR → LLM 解析 → 标准交割单 CSV"""
+    if not req.images:
+        raise HTTPException(400, "未收到图片")
+    if not tc_llm.available()["ok"]:
+        raise HTTPException(503, "LLM 未配置:管理员需在环境变量加 DEEPSEEK_API_KEY 或 ZHIPU_API_KEY")
+
+    # 1) OCR
+    lines, sizes = tc_image_ocr.extract_multi_images(req.images)
+    if not lines:
+        raise HTTPException(422, "OCR 未提取到任何文字,可能图片模糊或 RapidOCR 未安装")
+
+    # 2) LLM 解析
+    try:
+        user = _build_extract_user_prompt(lines, req.broker or "")
+        csv_text = tc_llm.chat(
+            [{"role": "user", "content": user}],
+            system=_EXTRACT_CSV_SYS,
+            max_tokens=8192,
+            temperature=0.0,
+        )
+    except Exception as e:
+        log.exception("[tradecheck] extract_csv LLM 调用失败")
+        raise HTTPException(500, f"LLM 调用失败: {e}")
+
+    # 3) 粗校验:首行必须包含"成交日期"
+    csv_text = (csv_text or "").strip()
+    first_line = csv_text.split("\n", 1)[0] if csv_text else ""
+    if "成交日期" not in first_line:
+        log.warning("[tradecheck] LLM 输出可能不规范: %r", csv_text[:200])
+
+    n_rows = max(0, len([l for l in csv_text.splitlines() if l.strip()]) - 1)
+    return {
+        "csv": csv_text,
+        "n_rows": n_rows,
+        "n_images": len(req.images),
+        "ocr_lines": len(lines),
+        "ocr_per_image": sizes,
+        "llm": tc_llm.available(),
+    }
 
 
 @tradecheck_router.post("/resolve_codes")
