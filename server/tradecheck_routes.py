@@ -39,6 +39,20 @@ class ExtractCsvReq(BaseModel):
     broker: str = ""       # 可选,如 "同花顺"、"东财"、"通达信",用于辅助 prompt
 
 
+class OcrReq(BaseModel):
+    images: list[str]      # 单次最多 4 张,前端分批调用以绕开网关超时
+    start_index: int = 1   # 全局图片序号(1-based),用于 ---- 图片 N ---- 分隔符
+    broker: str = ""       # 预留,当前 OCR 阶段不使用
+
+
+class ParseCsvReq(BaseModel):
+    lines: list[str]       # 所有批次 OCR 行片段汇总(含 ---- 图片 N ---- 分隔符)
+    broker: str = ""
+
+
+_OCR_MAX_IMAGES = 4
+
+
 _EXTRACT_CSV_SYS = (
     "你是 A 股券商交割单截图解析助手。用户上传了 OCR 提取出的成交记录文字片段"
     "(原表格被 OCR 按 Y 坐标拆碎,可能一行被拆成 2~3 个 OCR 片段;若有多张图,"
@@ -69,6 +83,39 @@ def _build_extract_user_prompt(lines: list[str], broker: str) -> str:
     return head + body
 
 
+def _parse_lines_to_csv(lines: list[str], broker: str = "") -> dict:
+    """OCR 行片段 → LLM → 标准交割单 CSV(供 parse_csv 与 extract_csv 复用)。"""
+    if not lines:
+        raise HTTPException(422, "OCR 行片段为空,无法解析")
+    if not tc_llm.available()["ok"]:
+        raise HTTPException(503, "LLM 未配置:管理员需在环境变量加 DEEPSEEK_API_KEY 或 ZHIPU_API_KEY")
+
+    try:
+        user = _build_extract_user_prompt(lines, broker or "")
+        csv_text = tc_llm.chat(
+            [{"role": "user", "content": user}],
+            system=_EXTRACT_CSV_SYS,
+            max_tokens=8192,
+            temperature=0.0,
+        )
+    except Exception as e:
+        log.exception("[tradecheck] parse_csv LLM 调用失败")
+        raise HTTPException(500, f"LLM 调用失败: {e}")
+
+    csv_text = (csv_text or "").strip()
+    first_line = csv_text.split("\n", 1)[0] if csv_text else ""
+    if "成交日期" not in first_line:
+        log.warning("[tradecheck] LLM 输出可能不规范: %r", csv_text[:200])
+
+    n_rows = max(0, len([l for l in csv_text.splitlines() if l.strip()]) - 1)
+    return {
+        "csv": csv_text,
+        "n_rows": n_rows,
+        "ocr_lines": len(lines),
+        "llm": tc_llm.available(),
+    }
+
+
 def _safe_fetch_limit_up(date_yyyymmdd: str):
     """惰性 import + 异常吞掉,避免 fetcher 模块某依赖异常拖垮整个路由。"""
     try:
@@ -96,59 +143,72 @@ def _parse_ymd(s: str) -> datetime:
 def tc_health():
     """前端探测 TradeCheck 子系统是否就绪"""
     llm = tc_llm.available()
+    ocr_ok = tc_image_ocr.ocr_available()
     return {
         "ok": True,
         "feature": "tradecheck",
-        "version": "0.2.0",
+        "version": "0.3.0",
         "capabilities": {
             "market_csv": True,
-            "extract_csv": llm["ok"],
+            "ocr": ocr_ok,
+            "parse_csv": llm["ok"],
+            "extract_csv": llm["ok"] and ocr_ok,  # 旧版一体接口,保留兼容
         },
         "llm": llm,
+        "ocr_batch_max": _OCR_MAX_IMAGES,
     }
+
+
+@tradecheck_router.post("/ocr")
+def ocr_images(req: OcrReq):
+    """轻量 OCR:单次最多 4 张图,仅返回行文本(不含 LLM)。前端分批调用后汇总 lines。"""
+    if not req.images:
+        raise HTTPException(400, "未收到图片")
+    if len(req.images) > _OCR_MAX_IMAGES:
+        raise HTTPException(
+            400,
+            f"单次 OCR 最多 {_OCR_MAX_IMAGES} 张图,请前端分批调用 /ocr",
+        )
+    if not tc_image_ocr.ocr_available():
+        raise HTTPException(503, "RapidOCR 未安装或加载失败")
+
+    start = max(1, req.start_index)
+    lines, sizes = tc_image_ocr.extract_multi_images(req.images, start_index=start)
+    if not lines:
+        raise HTTPException(422, "OCR 未提取到任何文字,可能图片模糊或内容非交割单")
+
+    return {
+        "lines": lines,
+        "n_images": len(req.images),
+        "ocr_lines": len(lines),
+        "ocr_per_image": sizes,
+        "start_index": start,
+    }
+
+
+@tradecheck_router.post("/parse_csv")
+def parse_csv(req: ParseCsvReq):
+    """OCR 行片段(可来自多批 /ocr) → 单次 LLM 调用 → 标准交割单 CSV"""
+    out = _parse_lines_to_csv(req.lines, req.broker or "")
+    return out
 
 
 @tradecheck_router.post("/extract_csv")
 def extract_csv(req: ExtractCsvReq):
-    """图片(单张/多张)→ OCR → LLM 解析 → 标准交割单 CSV"""
+    """图片(单张/多张)→ OCR → LLM 解析 → 标准交割单 CSV(旧版一体接口,保留兼容)"""
     if not req.images:
         raise HTTPException(400, "未收到图片")
-    if not tc_llm.available()["ok"]:
-        raise HTTPException(503, "LLM 未配置:管理员需在环境变量加 DEEPSEEK_API_KEY 或 ZHIPU_API_KEY")
+    if not tc_image_ocr.ocr_available():
+        raise HTTPException(503, "RapidOCR 未安装或加载失败")
 
-    # 1) OCR
     lines, sizes = tc_image_ocr.extract_multi_images(req.images)
     if not lines:
         raise HTTPException(422, "OCR 未提取到任何文字,可能图片模糊或 RapidOCR 未安装")
 
-    # 2) LLM 解析
-    try:
-        user = _build_extract_user_prompt(lines, req.broker or "")
-        csv_text = tc_llm.chat(
-            [{"role": "user", "content": user}],
-            system=_EXTRACT_CSV_SYS,
-            max_tokens=8192,
-            temperature=0.0,
-        )
-    except Exception as e:
-        log.exception("[tradecheck] extract_csv LLM 调用失败")
-        raise HTTPException(500, f"LLM 调用失败: {e}")
-
-    # 3) 粗校验:首行必须包含"成交日期"
-    csv_text = (csv_text or "").strip()
-    first_line = csv_text.split("\n", 1)[0] if csv_text else ""
-    if "成交日期" not in first_line:
-        log.warning("[tradecheck] LLM 输出可能不规范: %r", csv_text[:200])
-
-    n_rows = max(0, len([l for l in csv_text.splitlines() if l.strip()]) - 1)
-    return {
-        "csv": csv_text,
-        "n_rows": n_rows,
-        "n_images": len(req.images),
-        "ocr_lines": len(lines),
-        "ocr_per_image": sizes,
-        "llm": tc_llm.available(),
-    }
+    out = _parse_lines_to_csv(lines, req.broker or "")
+    out["n_images"] = len(req.images)
+    out["ocr_per_image"] = sizes
+    return out
 
 
 @tradecheck_router.post("/resolve_codes")

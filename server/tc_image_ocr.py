@@ -112,10 +112,18 @@ def extract_text_from_data_url(data_url: str) -> list[str]:
     return extract_text_lines(raw)
 
 
-def extract_multi_images(data_urls: list[str]) -> tuple[list[str], list[int]]:
+def ocr_available() -> bool:
+    """RapidOCR 是否已成功加载(供 health 探测)。"""
+    return _get_engine() is not None
+
+
+def extract_multi_images(data_urls: list[str],
+                         start_index: int = 1) -> tuple[list[str], list[int]]:
     """处理多张图(用户截屏一张拍不全要拼接),返回:
       lines: 所有图的行文本顺序拼接(图与图之间插入分隔符)
       sizes: 每张图的行数,便于排错
+
+    start_index: 分隔符「---- 图片 N ----」的起始 N(前端分批 OCR 时需传入全局序号)。
 
     多张图并发 OCR(onnxruntime 推理是线程安全的),避免顺序处理导致
     总耗时过长触发网关超时(实测 12 张图顺序处理 + LLM 调用容易超 60s)。
@@ -141,6 +149,6 @@ def extract_multi_images(data_urls: list[str]) -> tuple[list[str], list[int]]:
         sizes.append(len(lines))
         if not lines:
             continue
-        all_lines.append(f"---- 图片 {i + 1} ----")
+        all_lines.append(f"---- 图片 {start_index + i} ----")
         all_lines.extend(lines)
     return all_lines, sizes
