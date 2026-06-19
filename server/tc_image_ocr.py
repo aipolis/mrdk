@@ -9,6 +9,8 @@ from __future__ import annotations
 import base64
 import io
 import logging
+import threading
+from concurrent.futures import ThreadPoolExecutor
 from functools import lru_cache
 from typing import Optional
 
@@ -16,21 +18,28 @@ log = logging.getLogger(__name__)
 
 _engine_loaded = False
 _engine = None
+_engine_lock = threading.Lock()
 
 
 def _get_engine():
-    """惰性加载 RapidOCR,避免冷启动时 onnxruntime 一并拖慢启动。"""
+    """惰性加载 RapidOCR,避免冷启动时 onnxruntime 一并拖慢启动。
+
+    加锁防止并发 OCR 时多个线程同时触发重复加载。
+    """
     global _engine_loaded, _engine
     if _engine_loaded:
         return _engine
-    try:
-        from rapidocr_onnxruntime import RapidOCR
-        _engine = RapidOCR()
-    except Exception as e:
-        log.warning("[tc_image_ocr] RapidOCR 不可用: %s", e)
-        _engine = None
-    _engine_loaded = True
-    return _engine
+    with _engine_lock:
+        if _engine_loaded:
+            return _engine
+        try:
+            from rapidocr_onnxruntime import RapidOCR
+            _engine = RapidOCR()
+        except Exception as e:
+            log.warning("[tc_image_ocr] RapidOCR 不可用: %s", e)
+            _engine = None
+        _engine_loaded = True
+        return _engine
 
 
 def extract_text_lines(image_bytes: bytes,
@@ -107,11 +116,28 @@ def extract_multi_images(data_urls: list[str]) -> tuple[list[str], list[int]]:
     """处理多张图(用户截屏一张拍不全要拼接),返回:
       lines: 所有图的行文本顺序拼接(图与图之间插入分隔符)
       sizes: 每张图的行数,便于排错
+
+    多张图并发 OCR(onnxruntime 推理是线程安全的),避免顺序处理导致
+    总耗时过长触发网关超时(实测 12 张图顺序处理 + LLM 调用容易超 60s)。
     """
+    n = len(data_urls)
+    results: list[list[str]] = [[] for _ in range(n)]
+    if n == 1:
+        results[0] = extract_text_from_data_url(data_urls[0])
+    else:
+        with ThreadPoolExecutor(max_workers=min(4, n)) as pool:
+            futs = {pool.submit(extract_text_from_data_url, url): i for i, url in enumerate(data_urls)}
+            for fut in futs:
+                i = futs[fut]
+                try:
+                    results[i] = fut.result()
+                except Exception as e:
+                    log.warning("[tc_image_ocr] 第 %d 张图 OCR 失败: %s", i + 1, e)
+                    results[i] = []
+
     all_lines: list[str] = []
     sizes: list[int] = []
-    for i, url in enumerate(data_urls):
-        lines = extract_text_from_data_url(url)
+    for i, lines in enumerate(results):
         sizes.append(len(lines))
         if not lines:
             continue
