@@ -174,6 +174,120 @@ def save_metrics(payload: dict) -> bool:
         return False
 
 
+def get_overview() -> dict:
+    """整体统计:总报告数/总用户数/近7日新增/反馈数/平均评分"""
+    if not mysql_enabled() or not ensure_schema():
+        return {}
+
+    def _run(conn):
+        out = {}
+        with conn.cursor() as cur:
+            cur.execute(f"SELECT COUNT(*) AS n, COUNT(DISTINCT user_uuid) AS u FROM `{TABLE_METRICS}`")
+            r = cur.fetchone() or {}
+            out["total_reports"] = int(r.get("n") or 0)
+            out["total_users"] = int(r.get("u") or 0)
+            cur.execute(
+                f"SELECT COUNT(*) AS n, COUNT(DISTINCT user_uuid) AS u FROM `{TABLE_METRICS}` "
+                f"WHERE created_at >= DATE_SUB(NOW(), INTERVAL 7 DAY)"
+            )
+            r = cur.fetchone() or {}
+            out["reports_7d"] = int(r.get("n") or 0)
+            out["users_7d"] = int(r.get("u") or 0)
+            cur.execute(f"SELECT COUNT(*) AS n, AVG(rating) AS r FROM `{TABLE_FEEDBACK}`")
+            r = cur.fetchone() or {}
+            out["total_feedback"] = int(r.get("n") or 0)
+            out["avg_rating"] = float(r.get("r") or 0)
+            cur.execute(
+                f"SELECT AVG(score) AS s, AVG(win_rate) AS w, AVG(profit_loss_ratio) AS p "
+                f"FROM `{TABLE_METRICS}` WHERE n_trades > 0"
+            )
+            r = cur.fetchone() or {}
+            out["avg_score"] = float(r.get("s") or 0)
+            out["avg_win_rate"] = float(r.get("w") or 0)
+            out["avg_plr"] = float(r.get("p") or 0)
+        return out
+
+    try:
+        return with_retry(_run) or {}
+    except Exception:
+        log.exception("tc_analytics get_overview failed")
+        return {}
+
+
+def get_recent_metrics(limit: int = 50) -> list:
+    if not mysql_enabled() or not ensure_schema():
+        return []
+
+    def _run(conn):
+        with conn.cursor() as cur:
+            cur.execute(
+                f"SELECT id, user_uuid, score, grade, style, n_trades, win_rate, "
+                f"profit_loss_ratio, total_return_pct, max_drawdown_pct, pnl_bucket, "
+                f"period_start, period_end, has_market, has_dabp, upload_source, created_at "
+                f"FROM `{TABLE_METRICS}` ORDER BY id DESC LIMIT %s",
+                (int(limit),),
+            )
+            return list(cur.fetchall() or [])
+
+    try:
+        return with_retry(_run) or []
+    except Exception:
+        log.exception("tc_analytics get_recent_metrics failed")
+        return []
+
+
+def get_recent_feedback(limit: int = 100) -> list:
+    if not mysql_enabled() or not ensure_schema():
+        return []
+
+    def _run(conn):
+        with conn.cursor() as cur:
+            cur.execute(
+                f"SELECT id, user_uuid, rating, comment, report_score, report_style, created_at "
+                f"FROM `{TABLE_FEEDBACK}` ORDER BY id DESC LIMIT %s",
+                (int(limit),),
+            )
+            return list(cur.fetchall() or [])
+
+    try:
+        return with_retry(_run) or []
+    except Exception:
+        log.exception("tc_analytics get_recent_feedback failed")
+        return []
+
+
+def get_distributions() -> dict:
+    """评分分布 + 风格分布 + 万元盈亏分桶分布"""
+    if not mysql_enabled() or not ensure_schema():
+        return {}
+
+    def _run(conn):
+        out = {}
+        with conn.cursor() as cur:
+            cur.execute(
+                f"SELECT grade, COUNT(*) AS n FROM `{TABLE_METRICS}` "
+                f"WHERE n_trades > 0 GROUP BY grade ORDER BY n DESC"
+            )
+            out["grade"] = list(cur.fetchall() or [])
+            cur.execute(
+                f"SELECT style, COUNT(*) AS n FROM `{TABLE_METRICS}` "
+                f"WHERE style <> '' GROUP BY style ORDER BY n DESC"
+            )
+            out["style"] = list(cur.fetchall() or [])
+            cur.execute(
+                f"SELECT pnl_bucket, COUNT(*) AS n FROM `{TABLE_METRICS}` "
+                f"WHERE pnl_bucket <> '' GROUP BY pnl_bucket ORDER BY n DESC"
+            )
+            out["pnl_bucket"] = list(cur.fetchall() or [])
+        return out
+
+    try:
+        return with_retry(_run) or {}
+    except Exception:
+        log.exception("tc_analytics get_distributions failed")
+        return {}
+
+
 def save_feedback(payload: dict) -> bool:
     if not mysql_enabled() or not ensure_schema():
         return False

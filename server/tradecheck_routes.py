@@ -354,3 +354,29 @@ def submit_feedback(payload: dict):
         return {"ok": False, "reason": "analytics_unavailable"}
     ok = tc_analytics_store.save_feedback(payload or {})
     return {"ok": bool(ok)}
+
+
+# ---------- 管理后台(token 鉴权) ----------
+
+from fastapi import Query
+from fastapi.responses import HTMLResponse
+from config import CRON_SECRET
+
+try:
+    import tc_admin_html
+except Exception as _e:  # noqa
+    tc_admin_html = None  # type: ignore
+
+
+@tradecheck_router.get("/admin", response_class=HTMLResponse)
+def admin_dashboard(token: str = Query("", description="管理 token,等于 CRON_SECRET")):
+    """单页后台:总览 + 分布 + 最近反馈 + 最近报告。"""
+    if not CRON_SECRET or token != CRON_SECRET:
+        raise HTTPException(401, "token 无效或未配置 CRON_SECRET")
+    if not tc_analytics_store or not tc_admin_html:
+        raise HTTPException(503, "analytics 模块未加载")
+    overview = tc_analytics_store.get_overview()
+    dists = tc_analytics_store.get_distributions()
+    metrics = tc_analytics_store.get_recent_metrics(80)
+    feedback = tc_analytics_store.get_recent_feedback(50)
+    return HTMLResponse(tc_admin_html.render_admin(overview, dists, metrics, feedback))
