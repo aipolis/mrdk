@@ -327,3 +327,30 @@ def build_market_csv(req: BuildMarketReq):
         "n_resolved": len(mapping),
         "unresolved": unresolved,
     }
+
+
+# ---------- 用户聚合数据 + 反馈(opt-in) ----------
+
+try:
+    import tc_analytics_store
+except Exception as _e:  # noqa
+    tc_analytics_store = None  # type: ignore
+
+
+@tradecheck_router.post("/log_metrics")
+def log_metrics(payload: dict):
+    """前端在用户勾选「允许匿名分享聚合统计」时上报报告指标。
+    口径:不存股票代码/日期/精确金额,只存比率与万元分桶。"""
+    if not tc_analytics_store:
+        return {"ok": False, "reason": "analytics_unavailable"}
+    ok = tc_analytics_store.save_metrics(payload or {})
+    return {"ok": bool(ok)}
+
+
+@tradecheck_router.post("/feedback")
+def submit_feedback(payload: dict):
+    """前端反馈卡片:1-5 星评分 + 可选文字。"""
+    if not tc_analytics_store:
+        return {"ok": False, "reason": "analytics_unavailable"}
+    ok = tc_analytics_store.save_feedback(payload or {})
+    return {"ok": bool(ok)}

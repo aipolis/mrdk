@@ -10,7 +10,7 @@ $files = @(
     "daily_sections.py", "scheduler.py", "update_schedule.py",
     "history_store.py", "history_sync.py", "intraday.py",
     "sentiment.py", "subscribe_msg.py", "user_store.py", "wechat_http.py", "wxacode.py", "ocr.py", ".dockerignore",
-    "tradecheck_routes.py", "tc_code_resolver.py", "tc_kline_fetcher.py", "tc_image_ocr.py", "tc_llm.py"
+    "tradecheck_routes.py", "tc_code_resolver.py", "tc_kline_fetcher.py", "tc_image_ocr.py", "tc_llm.py", "tc_analytics_store.py"
 )
 
 Add-Type -AssemblyName System.IO.Compression.FileSystem
