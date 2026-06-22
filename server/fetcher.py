@@ -26,6 +26,37 @@ EM_POOL_MAX_AGE_DAYS = 30
 # 盘中 2 分钟刷新周期（略小于 IntervalTrigger 120s，避免命中旧缓存）
 INTRADAY_CACHE_TTL = 100
 
+# 2026 A 股法定休市日（含周末）。源自国务院办公厅 2026 节假日安排。
+# 同时列出周末是无害的——akshare 交易日列表本就不含周末，过滤是幂等的。
+# 仅当此处增删条目后端需要重新部署，且建议同步 _cache.pop("trade_dates_*") 清缓存。
+CN_MARKET_HOLIDAYS_2026: frozenset[str] = frozenset({
+    # 元旦：1/1（周四）—1/3（周六）
+    "20260101", "20260102", "20260103",
+    # 春节：2/15（周日）—2/24（周二），2/14、2/28 调休上班
+    "20260215", "20260216", "20260217", "20260218",
+    "20260219", "20260220", "20260221", "20260222",
+    "20260223", "20260224",
+    # 清明：4/4（周六）—4/6（周一）
+    "20260404", "20260405", "20260406",
+    # 劳动节：5/1（周五）—5/5（周二）
+    "20260501", "20260502", "20260503", "20260504", "20260505",
+    # 端午：6/19（周五）—6/21（周日）
+    "20260619", "20260620", "20260621",
+    # 中秋：9/25（周五）—9/27（周日）
+    "20260925", "20260926", "20260927",
+    # 国庆：10/1（周四）—10/8（周四）
+    "20261001", "20261002", "20261003", "20261004",
+    "20261005", "20261006", "20261007", "20261008",
+})
+
+
+def _filter_market_holidays(dates: list[str]) -> list[str]:
+    """剔除 akshare 交易日列表中误含的 A 股休市日（如新增节假日尚未同步时）。"""
+    if not dates:
+        return dates
+    return [d for d in dates if d[:8] not in CN_MARKET_HOLIDAYS_2026]
+
+
 _EM_CLIST_URLS = (
     "https://91.push2.eastmoney.com/api/qt/clist/get",
     "https://79.push2.eastmoney.com/api/qt/clist/get",
@@ -97,6 +128,7 @@ def get_recent_trade_dates(count: int = 35) -> list[str]:
         df["trade_date"] = pd.to_datetime(df["trade_date"])
         today = bj_now()
         dates = df[df["trade_date"] <= today]["trade_date"].dt.strftime("%Y%m%d").tolist()
+        dates = _filter_market_holidays(dates)
         result = dates[-count:]
         _cache_set(key, result)
         return result
@@ -104,8 +136,9 @@ def get_recent_trade_dates(count: int = 35) -> list[str]:
         result = []
         d = bj_now()
         while len(result) < count:
-            if d.weekday() < 5:
-                result.insert(0, date_str(d))
+            ds = date_str(d)
+            if d.weekday() < 5 and ds not in CN_MARKET_HOLIDAYS_2026:
+                result.insert(0, ds)
             d -= timedelta(days=1)
         return result
 

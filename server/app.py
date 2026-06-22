@@ -71,7 +71,7 @@ from update_schedule import (
     should_live_intraday,
     should_use_archive_only,
 )
-from history_store import fetch_daily_detail, fetch_history_list, fetch_intraday_series, build_history_item, dedupe_daily_market_records, save_intraday_snapshot
+from history_store import fetch_daily_detail, fetch_history_list, fetch_intraday_series, build_history_item, dedupe_daily_market_records, purge_market_holiday_records, save_intraday_snapshot
 from history_sync import (
     persist_auction_snapshot,
     persist_day,
@@ -1718,6 +1718,17 @@ def dedupe_history_cache(x_cron_secret: str = Header(default="")):
     if err := _cron_auth_error(x_cron_secret):
         return err
     info = dedupe_daily_market_records()
+    return {"code": 0, "data": info}
+
+
+@app.post("/api/cache/purge-holidays")
+def purge_holiday_cache(x_cron_secret: str = Header(default="")):
+    """清除归档表中误写入的法定休市日数据（如端午/国庆等被 akshare 当作交易日写入时）。"""
+    if err := _cron_auth_error(x_cron_secret):
+        return err
+    from fetcher import CN_MARKET_HOLIDAYS_2026
+
+    info = purge_market_holiday_records(set(CN_MARKET_HOLIDAYS_2026))
     return {"code": 0, "data": info}
 
 

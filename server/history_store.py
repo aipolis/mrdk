@@ -476,6 +476,59 @@ def dedupe_daily_market_records() -> dict:
         return {"deleted": 0, "error": "dedupe_failed"}
 
 
+def purge_market_holiday_records(holidays: set[str]) -> dict:
+    """删除归档表中误写入的休市日（如新增节假日尚未同步时）。"""
+    if not holidays:
+        return {"deleted": 0, "tables": {}}
+    if not mysql_enabled() or not ensure_schema():
+        return {"deleted": 0, "skipped": True, "reason": "mysql_disabled"}
+
+    holiday_keys = sorted({str(d).replace("-", "")[:8] for d in holidays if d})
+    if not holiday_keys:
+        return {"deleted": 0, "tables": {}}
+
+    placeholders = ",".join(["%s"] * len(holiday_keys))
+
+    def _run(conn):
+        deleted_daily: list[str] = []
+        with conn.cursor() as cur:
+            cur.execute(
+                f"SELECT trade_date FROM `{TABLE_DAILY}` WHERE trade_date IN ({placeholders})",
+                holiday_keys,
+            )
+            deleted_daily = [str(r.get("trade_date")) for r in (cur.fetchall() or [])]
+            if deleted_daily:
+                cur.execute(
+                    f"DELETE FROM `{TABLE_DAILY}` WHERE trade_date IN ({placeholders})",
+                    holiday_keys,
+                )
+
+            cur.execute(
+                f"SELECT trade_date FROM `{TABLE_INTRADAY}` WHERE trade_date IN ({placeholders})",
+                holiday_keys,
+            )
+            deleted_intra = [str(r.get("trade_date")) for r in (cur.fetchall() or [])]
+            if deleted_intra:
+                cur.execute(
+                    f"DELETE FROM `{TABLE_INTRADAY}` WHERE trade_date IN ({placeholders})",
+                    holiday_keys,
+                )
+        conn.commit()
+        return {
+            "deleted": len(deleted_daily) + len(deleted_intra),
+            "tables": {
+                TABLE_DAILY: deleted_daily,
+                TABLE_INTRADAY: deleted_intra,
+            },
+        }
+
+    try:
+        return with_retry(_run) or {"deleted": 0, "tables": {}}
+    except Exception:
+        log.exception("purge market holiday records failed")
+        return {"deleted": 0, "error": "purge_failed"}
+
+
 def fetch_history_list(days: int) -> list[dict]:
     """按交易日倒序取最近 days 条历史列表项。"""
     if not mysql_enabled() or not ensure_schema():
